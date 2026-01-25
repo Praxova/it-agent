@@ -1,0 +1,170 @@
+# ServiceNow Connector Configuration
+# Copy this file to servicenow.yaml and customize for your environment
+
+# =============================================================================
+# Instance Configuration
+# =============================================================================
+instance:
+  # ServiceNow instance URL (without trailing slash)
+  # For PDI: https://devXXXXX.service-now.com
+  # For production: https://yourcompany.service-now.com
+  url: https://dev12345.service-now.com
+  
+  # API version (usually v1 or v2)
+  api_version: v1
+
+# =============================================================================
+# Authentication
+# =============================================================================
+auth:
+  # Method: basic, oauth
+  method: basic
+  
+  # Basic auth credentials
+  # IMPORTANT: Use environment variables in production!
+  basic:
+    username: ${SERVICENOW_USERNAME}
+    password: ${SERVICENOW_PASSWORD}
+  
+  # OAuth configuration (if using OAuth)
+  # oauth:
+  #   client_id: ${SERVICENOW_CLIENT_ID}
+  #   client_secret: ${SERVICENOW_CLIENT_SECRET}
+  #   token_url: /oauth_token.do
+
+# =============================================================================
+# Queue Configuration
+# =============================================================================
+queue:
+  # Table to query (usually 'incident' for ITSM)
+  table: incident
+  
+  # Assignment group sys_id
+  # Find this in ServiceNow: System Security > Groups > [Your Group] > Copy sys_id
+  assignment_group: null  # e.g., "a1b2c3d4e5f6g7h8i9j0"
+  
+  # Query filter (ServiceNow encoded query)
+  # Default: Open incidents assigned to the group
+  query_filter: "active=true^state!=7^assignment_group={assignment_group}"
+  
+  # Fields to retrieve
+  fields:
+    - sys_id
+    - number
+    - short_description
+    - description
+    - caller_id
+    - state
+    - priority
+    - assignment_group
+    - assigned_to
+    - opened_at
+    - sys_updated_on
+  
+  # Order by (for consistent processing)
+  order_by: opened_at
+  
+  # Maximum results per query
+  limit: 100
+
+# =============================================================================
+# State Mapping
+# =============================================================================
+# Map ServiceNow incident states to internal states
+states:
+  # ServiceNow state values -> internal state
+  1: new           # New
+  2: in_progress   # In Progress  
+  3: on_hold       # On Hold
+  6: resolved      # Resolved
+  7: closed        # Closed
+  8: canceled      # Canceled
+
+# States that indicate a ticket needs processing
+processable_states:
+  - 1  # New
+  - 2  # In Progress (may be reassigned to agent)
+
+# =============================================================================
+# Updates Configuration
+# =============================================================================
+updates:
+  # Field to use for work notes (internal)
+  work_notes_field: work_notes
+  
+  # Field to use for customer-visible comments
+  comments_field: comments
+  
+  # State to set when agent starts working
+  working_state: 2  # In Progress
+  
+  # State to set when resolved
+  resolved_state: 6  # Resolved
+  
+  # Close code for successful resolution
+  close_code: Solved (Permanently)
+  
+  # Close notes template
+  close_notes_template: |
+    This incident was automatically resolved by Lucid IT Agent.
+    
+    Actions taken:
+    {actions}
+    
+    If you experience further issues, please open a new ticket.
+
+# =============================================================================
+# Escalation
+# =============================================================================
+escalation:
+  # Group to reassign escalated tickets to
+  # sys_id of the human support group
+  group: null  # e.g., "b2c3d4e5f6g7h8i9j0k1"
+  
+  # Comment to add when escalating
+  comment_template: |
+    This ticket has been escalated for manual review.
+    
+    Reason: {reason}
+    
+    Classification confidence: {confidence}%
+
+# =============================================================================
+# Rate Limiting
+# =============================================================================
+rate_limit:
+  # Maximum API calls per minute
+  max_calls_per_minute: 60
+  
+  # Backoff settings for rate limit errors
+  backoff:
+    initial_delay: 1  # seconds
+    max_delay: 60     # seconds
+    multiplier: 2
+
+# =============================================================================
+# PDI-Specific Settings (Development)
+# =============================================================================
+pdi:
+  # PDI instances are deleted after 10 days of inactivity
+  # Set to true to enable keep-alive pings
+  keep_alive: true
+  keep_alive_interval: 86400  # 24 hours (seconds)
+  
+  # Bootstrap data (created by setup script)
+  bootstrap:
+    # Test users created in PDI
+    test_users:
+      - name: Test User 1
+        user_name: test.user1
+        email: test.user1@example.com
+      - name: Test User 2
+        user_name: test.user2
+        email: test.user2@example.com
+    
+    # Test assignment groups
+    test_groups:
+      - name: Lucid IT Agent
+        description: Automated IT support queue
+      - name: IT Support L2
+        description: Human escalation queue

@@ -1,0 +1,209 @@
+# Tool Server Configuration
+# Copy this file to tools.yaml and customize for your environment
+
+# =============================================================================
+# Active Directory Configuration
+# =============================================================================
+active_directory:
+  # LDAP server settings
+  ldap:
+    # Domain controller hostname or IP
+    # Can be a list for failover
+    servers:
+      - dc01.yourdomain.local
+      # - dc02.yourdomain.local  # Backup DC
+    
+    # Port (389 for LDAP, 636 for LDAPS)
+    port: 636
+    
+    # Use SSL/TLS
+    use_ssl: true
+    
+    # Validate SSL certificate
+    validate_certs: true
+    
+    # Connection timeout (seconds)
+    timeout: 30
+  
+  # Authentication
+  auth:
+    # Service account for AD operations
+    # IMPORTANT: Use environment variables in production!
+    username: ${AD_SERVICE_ACCOUNT}
+    password: ${AD_SERVICE_PASSWORD}
+    
+    # Domain in various formats
+    domain: yourdomain.local
+    domain_netbios: YOURDOMAIN
+  
+  # Search settings
+  search:
+    # Base DN for user searches
+    user_base_dn: "OU=Users,DC=yourdomain,DC=local"
+    
+    # Base DN for group searches  
+    group_base_dn: "OU=Groups,DC=yourdomain,DC=local"
+    
+    # User search filter template
+    # {username} will be replaced with the actual username
+    user_filter: "(sAMAccountName={username})"
+    
+    # Group search filter template
+    group_filter: "(cn={groupname})"
+
+# =============================================================================
+# Password Reset Tool
+# =============================================================================
+password_reset:
+  # Enable/disable this tool
+  enabled: true
+  
+  # Password generation settings
+  password:
+    # Length of generated temporary password
+    length: 16
+    
+    # Include these character types
+    include_uppercase: true
+    include_lowercase: true
+    include_numbers: true
+    include_special: true
+    
+    # Special characters to use
+    special_chars: "!@#$%^&*"
+    
+    # Exclude ambiguous characters (0, O, l, 1, etc.)
+    exclude_ambiguous: true
+  
+  # Force password change on next login
+  must_change: true
+  
+  # Unlock account when resetting password
+  unlock_account: true
+  
+  # OUs where password resets are allowed
+  # Leave empty to allow all (subject to deny list)
+  allowed_ous:
+    - "OU=Users,DC=yourdomain,DC=local"
+    - "OU=Contractors,DC=yourdomain,DC=local"
+  
+  # OUs where password resets are NOT allowed
+  denied_ous:
+    - "OU=Admins,DC=yourdomain,DC=local"
+    - "OU=Service Accounts,DC=yourdomain,DC=local"
+
+# =============================================================================
+# Group Management Tool
+# =============================================================================
+group_management:
+  # Enable/disable this tool
+  enabled: true
+  
+  # Groups that users can be added to
+  # If empty, all groups allowed (subject to deny list)
+  allowed_groups: []
+  
+  # Groups that cannot be modified
+  denied_groups:
+    - Domain Admins
+    - Enterprise Admins
+    - Schema Admins
+    - Administrators
+    - Account Operators
+    - Server Operators
+    - Print Operators
+    - Backup Operators
+  
+  # Require approval for certain groups
+  approval_required_groups:
+    - VPN Users
+    - Remote Desktop Users
+  
+  # Maximum groups a user can be added to in single ticket
+  max_groups_per_ticket: 5
+
+# =============================================================================
+# File Permission Tool
+# =============================================================================
+file_permissions:
+  # Enable/disable this tool
+  enabled: false  # Enable when ready
+  
+  # File server settings
+  file_server:
+    # UNC path prefix for shares
+    # e.g., \\\\fileserver01 (double backslash in YAML)
+    unc_prefix: "\\\\fileserver01"
+  
+  # Allowed share roots
+  # Users can only modify permissions under these paths
+  allowed_paths:
+    - "\\\\fileserver01\\Departments"
+    - "\\\\fileserver01\\Projects"
+    - "\\\\fileserver01\\Shared"
+  
+  # Denied paths (always blocked, even if under allowed paths)
+  denied_paths:
+    - "\\\\fileserver01\\IT"
+    - "\\\\fileserver01\\HR"
+    - "\\\\fileserver01\\Finance"
+  
+  # Permission levels that can be granted
+  # Maps friendly names to NTFS permissions
+  permission_levels:
+    read: "ReadAndExecute"
+    write: "Modify"
+    full: "FullControl"
+  
+  # Default permission level when not specified
+  default_permission: read
+  
+  # Maximum depth from share root
+  max_depth: 5
+
+# =============================================================================
+# Audit Logging
+# =============================================================================
+audit:
+  # Enable audit logging
+  enabled: true
+  
+  # Audit log file
+  log_file: /var/log/lucid-agent/audit.log
+  
+  # Fields to include in audit log
+  fields:
+    - timestamp
+    - ticket_id
+    - action
+    - target_user
+    - target_resource
+    - performed_by
+    - result
+    - error_message
+  
+  # Send audit events to external system
+  # external:
+  #   type: syslog
+  #   host: syslog.yourdomain.local
+  #   port: 514
+  #   protocol: udp
+
+# =============================================================================
+# Health Check
+# =============================================================================
+health:
+  # Enable health check endpoint
+  enabled: true
+  
+  # Port for health check API
+  port: 8000
+  
+  # Endpoint path
+  path: /health
+  
+  # Checks to perform
+  checks:
+    - ldap_connectivity
+    - dns_resolution
+    - service_account_valid

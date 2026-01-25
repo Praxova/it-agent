@@ -1,0 +1,154 @@
+# Lucid IT Agent - Main Configuration
+# Copy this file to agent.yaml and customize for your environment
+
+# =============================================================================
+# LLM Configuration
+# =============================================================================
+llm:
+  # Provider: ollama, openai, anthropic
+  provider: ollama
+  
+  # Model name (provider-specific)
+  # Ollama: llama3.1, mistral, etc.
+  # OpenAI: gpt-4, gpt-4-turbo, gpt-3.5-turbo
+  # Anthropic: claude-3-sonnet-20240229, claude-3-opus-20240229
+  model: llama3.1
+  
+  # Ollama-specific settings
+  ollama:
+    base_url: http://localhost:11434
+    # Timeout for LLM requests (seconds)
+    timeout: 120
+  
+  # OpenAI-specific settings (if using OpenAI)
+  # openai:
+  #   api_key: ${OPENAI_API_KEY}  # Use environment variable
+  #   organization: null
+  
+  # Anthropic-specific settings (if using Anthropic)
+  # anthropic:
+  #   api_key: ${ANTHROPIC_API_KEY}  # Use environment variable
+  
+  # Generation parameters
+  temperature: 0.1  # Lower = more deterministic
+  max_tokens: 4096
+
+# =============================================================================
+# Agent Behavior
+# =============================================================================
+agent:
+  # Confidence threshold for autonomous action (0.0 - 1.0)
+  # Below this threshold, escalate to human
+  confidence_threshold: 0.8
+  
+  # Maximum retries for failed tool calls
+  max_retries: 3
+  
+  # Dry run mode - log actions without executing
+  dry_run: false
+  
+  # Ticket types the agent will handle
+  # Others will be escalated automatically
+  enabled_ticket_types:
+    - password_reset
+    - group_access_add
+    - group_access_remove
+    # - file_permission  # Enable when tool is ready
+
+# =============================================================================
+# Logging
+# =============================================================================
+logging:
+  # Level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  
+  # Format: json, text
+  format: json
+  
+  # Log file (null for stdout only)
+  file: /var/log/lucid-agent/agent.log
+  
+  # Rotate logs
+  max_size_mb: 100
+  backup_count: 5
+  
+  # Redact sensitive fields in logs
+  redact_fields:
+    - password
+    - api_key
+    - token
+    - secret
+
+# =============================================================================
+# Queue Polling
+# =============================================================================
+queue:
+  # Polling interval (seconds)
+  poll_interval: 30
+  
+  # Maximum tickets to process per poll
+  batch_size: 10
+  
+  # Assignment group to monitor (connector-specific)
+  # For ServiceNow, this is the sys_id of the assignment group
+  assignment_group: null  # Set in servicenow.yaml
+
+# =============================================================================
+# Tool Server
+# =============================================================================
+tool_server:
+  # Base URL for the tool server API
+  base_url: http://localhost:8000
+  
+  # API authentication
+  api_key: ${TOOL_SERVER_API_KEY}
+  
+  # Timeout for tool calls (seconds)
+  timeout: 60
+
+# =============================================================================
+# Security
+# =============================================================================
+security:
+  # Accounts that cannot be modified (usernames or patterns)
+  # Supports wildcards: admin*, *-svc, etc.
+  deny_list_users:
+    - Administrator
+    - admin
+    - "*-admin"
+    - "*-svc"
+    - "svc-*"
+  
+  # Groups that cannot be modified
+  deny_list_groups:
+    - Domain Admins
+    - Enterprise Admins
+    - Schema Admins
+    - Administrators
+    - Backup Operators
+  
+  # Paths that cannot be modified (for file permissions)
+  deny_list_paths:
+    - "C:\\Windows\\*"
+    - "C:\\Program Files\\*"
+    - "C:\\Program Files (x86)\\*"
+  
+  # Rate limiting
+  rate_limit:
+    # Maximum actions per hour
+    max_actions_per_hour: 100
+    # Maximum actions per ticket
+    max_actions_per_ticket: 10
+
+# =============================================================================
+# Escalation
+# =============================================================================
+escalation:
+  # How to handle tickets the agent can't process
+  method: reassign  # reassign, comment, both
+  
+  # Group to reassign escalated tickets to
+  escalation_group: null  # Set in servicenow.yaml
+  
+  # Add comment explaining escalation
+  add_comment: true
