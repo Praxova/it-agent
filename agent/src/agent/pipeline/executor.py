@@ -10,6 +10,7 @@ from agent.classifier import ClassificationResult, TicketClassifier, TicketType
 
 from .config import PipelineConfig
 from .handlers.base import BaseHandler, HandlerResult
+from .handlers.file_permission import FilePermissionHandler
 from .handlers.group_access import GroupAccessHandler
 from .handlers.password_reset import PasswordResetHandler
 
@@ -68,6 +69,7 @@ class TicketExecutor:
         handlers = [
             PasswordResetHandler(tool_server_url=self.config.tool_server_url),
             GroupAccessHandler(tool_server_url=self.config.tool_server_url),
+            FilePermissionHandler(tool_server_url=self.config.tool_server_url),
         ]
 
         for handler in handlers:

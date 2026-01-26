@@ -6,6 +6,10 @@ from fastapi import APIRouter, HTTPException, status
 
 from tool_server.api.models import (
     ErrorResponse,
+    FilePermissionListResponse,
+    FilePermissionRequest,
+    FilePermissionResponse,
+    FilePermissionRevokeRequest,
     GroupInfoResponse,
     GroupMembershipRequest,
     GroupMembershipResponse,
@@ -23,6 +27,13 @@ from tool_server.services import (
     ADPermissionDeniedError,
     ADService,
     ADUserNotFoundError,
+)
+from tool_server.services.file_service import (
+    FileServiceError,
+    PathNotAllowedError,
+    PathNotFoundError,
+    PermissionLevel,
+    file_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,10 +137,10 @@ async def reset_password(request: PasswordResetRequest) -> PasswordResetResponse
     "/health",
     response_model=HealthResponse,
     summary="Health check",
-    description="Check service health and LDAP connectivity",
+    description="Check service health, LDAP connectivity, and WinRM connectivity",
 )
 async def health_check() -> HealthResponse:
-    """Check service health and LDAP connectivity.
+    """Check service health, LDAP connectivity, and WinRM connectivity.
 
     Returns:
         HealthResponse with service status.
@@ -137,18 +148,29 @@ async def health_check() -> HealthResponse:
     try:
         # Test LDAP connection
         result = await get_ad_service().test_connection()
+        ldap_ok = result["connected"]
+
+        # Test WinRM connection
+        winrm_ok = file_service.health_check()
+
+        all_ok = ldap_ok and winrm_ok
+        status_str = "healthy" if all_ok else "degraded"
 
         return HealthResponse(
-            status="healthy",
-            ldap_connected=result["connected"],
+            status=status_str,
+            ldap_connected=ldap_ok,
+            winrm_connected=winrm_ok,
             message=result["message"],
         )
 
     except (ADConnectionError, ADAuthenticationError) as e:
         logger.warning(f"Health check failed: {e}")
+        # Still try WinRM
+        winrm_ok = file_service.health_check()
         return HealthResponse(
-            status="unhealthy",
+            status="degraded",
             ldap_connected=False,
+            winrm_connected=winrm_ok,
             message=f"LDAP connection failed: {str(e)}",
         )
 
@@ -157,6 +179,7 @@ async def health_check() -> HealthResponse:
         return HealthResponse(
             status="unhealthy",
             ldap_connected=False,
+            winrm_connected=False,
             message=f"Unexpected error: {str(e)}",
         )
 
@@ -467,6 +490,241 @@ async def get_user_groups(username: str) -> UserGroupsResponse:
 
     except Exception as e:
         logger.exception(f"Unexpected error during get user groups: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "InternalError",
+                "message": "An unexpected error occurred",
+                "detail": str(e),
+            },
+        )
+
+
+@router.post(
+    "/permissions/grant",
+    response_model=FilePermissionResponse,
+    responses={
+        200: {"description": "Permission granted successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid request or operation failed"},
+        403: {"model": ErrorResponse, "description": "Path not allowed"},
+        404: {"model": ErrorResponse, "description": "Path not found"},
+        500: {"model": ErrorResponse, "description": "Server error"},
+    },
+    summary="Grant file permission",
+    description="Grant Read or Write permission to a user on a file or folder",
+)
+async def grant_permission(request: FilePermissionRequest) -> FilePermissionResponse:
+    """Grant file/folder permission to a user.
+
+    Args:
+        request: File permission request with username, path, permission level, and ticket.
+
+    Returns:
+        FilePermissionResponse with operation result.
+
+    Raises:
+        HTTPException: If operation fails.
+    """
+    logger.info(
+        f"Permission grant requested: {request.username} -> {request.path} "
+        f"({request.permission}) - ticket {request.ticket_number}"
+    )
+
+    # Validate permission level
+    try:
+        perm_level = PermissionLevel(request.permission)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "InvalidPermission",
+                "message": f"Invalid permission level: {request.permission}. Must be 'Read' or 'Write'",
+            },
+        )
+
+    try:
+        file_service.grant_permission(
+            path=request.path,
+            username=request.username,
+            permission=perm_level,
+        )
+
+        return FilePermissionResponse(
+            success=True,
+            username=request.username,
+            path=request.path,
+            action="granted",
+            permission=request.permission,
+            message=f"{request.permission} access granted to {request.username} on {request.path}",
+        )
+
+    except PathNotAllowedError as e:
+        logger.warning(f"Path not allowed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "PathNotAllowed", "message": str(e)},
+        )
+
+    except PathNotFoundError as e:
+        logger.warning(f"Path not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "PathNotFound", "message": str(e)},
+        )
+
+    except FileServiceError as e:
+        logger.error(f"File service error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "FileServiceError", "message": str(e)},
+        )
+
+    except Exception as e:
+        logger.exception(f"Unexpected error during grant permission: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "InternalError",
+                "message": "An unexpected error occurred",
+                "detail": str(e),
+            },
+        )
+
+
+@router.post(
+    "/permissions/revoke",
+    response_model=FilePermissionResponse,
+    responses={
+        200: {"description": "Permission revoked successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid request or operation failed"},
+        403: {"model": ErrorResponse, "description": "Path not allowed"},
+        404: {"model": ErrorResponse, "description": "Path not found"},
+        500: {"model": ErrorResponse, "description": "Server error"},
+    },
+    summary="Revoke file permission",
+    description="Revoke all explicit permissions for a user on a file or folder",
+)
+async def revoke_permission(request: FilePermissionRevokeRequest) -> FilePermissionResponse:
+    """Revoke file/folder permissions from a user.
+
+    Args:
+        request: File permission revoke request with username, path, and ticket.
+
+    Returns:
+        FilePermissionResponse with operation result.
+
+    Raises:
+        HTTPException: If operation fails.
+    """
+    logger.info(
+        f"Permission revoke requested: {request.username} -> {request.path} "
+        f"- ticket {request.ticket_number}"
+    )
+
+    try:
+        file_service.revoke_permission(
+            path=request.path,
+            username=request.username,
+        )
+
+        return FilePermissionResponse(
+            success=True,
+            username=request.username,
+            path=request.path,
+            action="revoked",
+            permission=None,
+            message=f"Permissions revoked for {request.username} on {request.path}",
+        )
+
+    except PathNotAllowedError as e:
+        logger.warning(f"Path not allowed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "PathNotAllowed", "message": str(e)},
+        )
+
+    except PathNotFoundError as e:
+        logger.warning(f"Path not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "PathNotFound", "message": str(e)},
+        )
+
+    except FileServiceError as e:
+        logger.error(f"File service error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "FileServiceError", "message": str(e)},
+        )
+
+    except Exception as e:
+        logger.exception(f"Unexpected error during revoke permission: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "InternalError",
+                "message": "An unexpected error occurred",
+                "detail": str(e),
+            },
+        )
+
+
+@router.get(
+    "/permissions/{path:path}",
+    response_model=FilePermissionListResponse,
+    responses={
+        200: {"description": "Permissions retrieved successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid request or operation failed"},
+        404: {"model": ErrorResponse, "description": "Path not found"},
+        500: {"model": ErrorResponse, "description": "Server error"},
+    },
+    summary="List permissions",
+    description="List all permissions on a file or folder",
+)
+async def list_permissions(path: str) -> FilePermissionListResponse:
+    """List permissions on a path.
+
+    Args:
+        path: URL-encoded path (e.g., 172.16.119.20/lucidtestshare/folder).
+               Will be converted to UNC path format.
+
+    Returns:
+        FilePermissionListResponse with list of permissions.
+
+    Raises:
+        HTTPException: If operation fails.
+    """
+    # URL decode and fix path format
+    # Path comes in as: 172.16.119.20/lucidtestshare/folder
+    # Need to convert to: \\172.16.119.20\lucidtestshare\folder
+    unc_path = f"\\\\{path.replace('/', '\\')}"
+
+    logger.info(f"List permissions requested for: {unc_path}")
+
+    try:
+        permissions = file_service.list_permissions(unc_path)
+
+        return FilePermissionListResponse(
+            path=unc_path,
+            permissions=permissions,
+        )
+
+    except PathNotFoundError as e:
+        logger.warning(f"Path not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "PathNotFound", "message": str(e)},
+        )
+
+    except FileServiceError as e:
+        logger.error(f"File service error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "FileServiceError", "message": str(e)},
+        )
+
+    except Exception as e:
+        logger.exception(f"Unexpected error during list permissions: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={

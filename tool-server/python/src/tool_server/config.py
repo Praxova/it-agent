@@ -52,3 +52,30 @@ class Settings(BaseSettings):
         "Print Operators",
         "Cert Publishers",
     ]
+
+    # WinRM Settings (for file permissions)
+    winrm_host: str = "172.16.119.20"
+    winrm_username: str | None = None  # Uses ldap_bind_user if not specified
+    winrm_password: str | None = None  # Uses ldap_bind_password if not specified
+    winrm_transport: str = "ntlm"  # ntlm, kerberos, or basic
+
+    # File Permission Settings
+    file_permission_denied_paths: list[str] = [
+        r"\\*\C$",
+        r"\\*\D$",
+        r"\\*\ADMIN$",
+        r"\\*\SYSVOL",
+        r"\\*\NETLOGON",
+    ]
+
+    # Empty = allow all paths not in denied list
+    file_permission_allowed_paths: list[str] = []
+
+    @property
+    def ldap_domain(self) -> str:
+        """Extract domain from base DN (e.g., DC=example,DC=com -> example.com)"""
+        parts = []
+        for component in self.ldap_base_dn.split(','):
+            if component.strip().upper().startswith('DC='):
+                parts.append(component.split('=', 1)[1].strip())
+        return '.'.join(parts)

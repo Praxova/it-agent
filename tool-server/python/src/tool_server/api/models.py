@@ -63,11 +63,13 @@ class HealthResponse(BaseModel):
     Attributes:
         status: Health status (healthy, degraded, unhealthy).
         ldap_connected: Whether LDAP connection is working.
+        winrm_connected: Whether WinRM connection is working.
         message: Optional status message.
     """
 
     status: str = Field(..., description="Health status")
     ldap_connected: bool = Field(..., description="Whether LDAP connection is working")
+    winrm_connected: bool = Field(True, description="Whether WinRM connection is working")
     message: str | None = Field(None, description="Optional status message")
 
 
@@ -148,3 +150,65 @@ class UserGroupsResponse(BaseModel):
     success: bool = Field(..., description="Whether the operation succeeded")
     username: str = Field(..., description="Username that was queried")
     groups: list[str] = Field(default_factory=list, description="List of groups user belongs to")
+
+
+class FilePermissionRequest(BaseModel):
+    """Request to grant file permission.
+
+    Attributes:
+        username: sAMAccountName of user.
+        path: UNC path to file or folder.
+        permission: Permission level: Read or Write.
+        ticket_number: Associated ticket number.
+    """
+
+    username: str = Field(..., description="sAMAccountName of user")
+    path: str = Field(..., description="UNC path to file or folder")
+    permission: str = Field(..., description="Permission level: Read or Write")
+    ticket_number: str = Field(..., description="Associated ticket number")
+
+
+class FilePermissionRevokeRequest(BaseModel):
+    """Request to revoke file permission.
+
+    Attributes:
+        username: sAMAccountName of user.
+        path: UNC path to file or folder.
+        ticket_number: Associated ticket number.
+    """
+
+    username: str = Field(..., description="sAMAccountName of user")
+    path: str = Field(..., description="UNC path to file or folder")
+    ticket_number: str = Field(..., description="Associated ticket number")
+
+
+class FilePermissionResponse(BaseModel):
+    """Response from file permission operation.
+
+    Attributes:
+        success: Whether the operation succeeded.
+        username: The username affected.
+        path: The path affected.
+        action: "granted" or "revoked".
+        permission: Permission level if granted.
+        message: Human-readable result message.
+    """
+
+    success: bool
+    username: str
+    path: str
+    action: str  # "granted" or "revoked"
+    permission: str | None = None
+    message: str
+
+
+class FilePermissionListResponse(BaseModel):
+    """List of permissions on a path.
+
+    Attributes:
+        path: The path queried.
+        permissions: List of permission dicts.
+    """
+
+    path: str
+    permissions: list[dict]

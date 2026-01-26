@@ -19,6 +19,7 @@ dependencies = [
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "python-dotenv>=1.0.0",
+    "pywinrm>=0.4.3",
 ]
 
 [project.optional-dependencies]
