@@ -6,11 +6,10 @@ build-backend = "hatchling.build"
 name = "lucid-it-agent"
 version = "0.1.0"
 description = "AI-powered IT helpdesk automation agent"
-readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [
-    { name = "Alton Crossley" }
+    { name = "Alton Lord" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
