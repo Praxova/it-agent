@@ -1,0 +1,94 @@
+{
+  "single_incident": {
+    "sys_id": "abc123def456",
+    "number": "INC0010001",
+    "short_description": "Password reset request",
+    "description": "User forgot password and cannot log in to workstation",
+    "state": "1",
+    "priority": "3",
+    "caller_id": {
+      "display_value": "john.doe",
+      "link": "https://dev341394.service-now.com/api/now/table/sys_user/xyz789"
+    },
+    "assignment_group": {
+      "display_value": "Helpdesk",
+      "link": "https://dev341394.service-now.com/api/now/table/sys_user_group/grp123"
+    },
+    "sys_created_on": "2024-01-15 14:30:00",
+    "sys_updated_on": "2024-01-15 14:30:00"
+  },
+  "incident_list": [
+    {
+      "sys_id": "abc123def456",
+      "number": "INC0010001",
+      "short_description": "Password reset request",
+      "description": "User forgot password and cannot log in to workstation",
+      "state": "1",
+      "priority": "3",
+      "caller_id": {
+        "display_value": "john.doe",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user/xyz789"
+      },
+      "assignment_group": {
+        "display_value": "Helpdesk",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user_group/grp123"
+      },
+      "sys_created_on": "2024-01-15 14:30:00",
+      "sys_updated_on": "2024-01-15 14:30:00"
+    },
+    {
+      "sys_id": "def456ghi789",
+      "number": "INC0010002",
+      "short_description": "Cannot access shared drive",
+      "description": "User reports they cannot access the Finance shared drive",
+      "state": "2",
+      "priority": "4",
+      "caller_id": {
+        "display_value": "jane.smith",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user/xyz790"
+      },
+      "assignment_group": {
+        "display_value": "Helpdesk",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user_group/grp123"
+      },
+      "sys_created_on": "2024-01-15 15:45:00",
+      "sys_updated_on": "2024-01-15 16:00:00"
+    },
+    {
+      "sys_id": "ghi789jkl012",
+      "number": "INC0010003",
+      "short_description": "Add user to Distribution List",
+      "description": "Please add user to the Marketing distribution list",
+      "state": "1",
+      "priority": "5",
+      "caller_id": {
+        "display_value": "bob.johnson",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user/xyz791"
+      },
+      "assignment_group": {
+        "display_value": "Helpdesk",
+        "link": "https://dev341394.service-now.com/api/now/table/sys_user_group/grp123"
+      },
+      "sys_created_on": "2024-01-15 16:15:00",
+      "sys_updated_on": "2024-01-15 16:15:00"
+    }
+  ],
+  "updated_incident": {
+    "sys_id": "abc123def456",
+    "number": "INC0010001",
+    "short_description": "Password reset request",
+    "description": "User forgot password and cannot log in to workstation",
+    "state": "6",
+    "priority": "3",
+    "caller_id": {
+      "display_value": "john.doe",
+      "link": "https://dev341394.service-now.com/api/now/table/sys_user/xyz789"
+    },
+    "assignment_group": {
+      "display_value": "Helpdesk",
+      "link": "https://dev341394.service-now.com/api/now/table/sys_user_group/grp123"
+    },
+    "sys_created_on": "2024-01-15 14:30:00",
+    "sys_updated_on": "2024-01-15 17:00:00"
+  }
+}
