@@ -20,24 +20,23 @@ This document tracks the development sprints for Lucid IT Agent. Each sprint is 
 - [x] Documentation framework (README, ARCHITECTURE, CLAUDE_CONTEXT)
 - [x] License selection (Apache 2.0)
 - [x] pyproject.toml configuration
-- [ ] Local development environment setup
-  - [ ] Install Ollama
-  - [ ] Pull Llama 3.1 8B model
-  - [ ] Verify Griptape + Ollama integration
-- [ ] Basic agent scaffold
-  - [ ] Simple agent with OllamaPromptDriver
-  - [ ] Verify tool calling works
-  - [ ] Basic logging setup
+- [x] Local development environment setup
+  - [x] Install Ollama
+  - [x] Pull Llama 3.1 8B model
+  - [x] Verify Griptape + Ollama integration
+- [x] Basic agent scaffold
+  - [x] Simple agent with OllamaPromptDriver
+  - [x] Verify tool calling works (CalculatorTool test passing)
+  - [x] Ruleset test passing (agent identifies as "Lucid")
+  - [ ] Basic logging setup (using Griptape default for now)
 - [ ] ServiceNow PDI setup
   - [ ] Create PDI instance
   - [ ] Create API user
   - [ ] Document PDI setup process
   - [ ] Create PDI bootstrap script
-- [ ] DC mock environment
-  - [ ] PowerShell script: Create-MockUsers.ps1
-  - [ ] PowerShell script: Create-MockGroups.ps1
-  - [ ] PowerShell script: Create-MockShares.ps1
-  - [ ] Document DC setup process
+- [x] DC mock environment script created
+  - [x] Setup-TestEnvironment.ps1 (creates users, groups, shares)
+  - [ ] Run script on actual DC to verify
 
 ### Acceptance Criteria
 

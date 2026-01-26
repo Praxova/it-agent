@@ -125,12 +125,19 @@ lucid-it-agent/
 
 ## Current Sprint Focus
 
-**Sprint 0 - Foundation** (Current)
+**Sprint 0 - Foundation** (Current - ~80% Complete)
 - [x] Project structure
-- [ ] Local development environment (Ollama + Llama 3.1)
-- [ ] Basic agent scaffold with tool calling test
-- [ ] ServiceNow PDI setup script
-- [ ] DC mock environment PowerShell scripts
+- [x] Local development environment (Ollama + Llama 3.1 8B)
+- [x] Basic agent scaffold with tool calling test (5/5 tests passing)
+- [x] DC mock environment PowerShell script (Setup-TestEnvironment.ps1)
+- [ ] ServiceNow PDI setup (next task)
+- [ ] Run DC script on actual Domain Controller
+
+**Sprint 1 - ServiceNow Connector** (Next)
+- ServiceNow REST client
+- Ticket model (Pydantic)
+- Queue polling logic
+- BaseConnector interface
 
 ## ServiceNow API Reference
 
@@ -156,6 +163,29 @@ Authentication: Basic auth or OAuth 2.0
 2. **Griptape logging**: Set `Defaults.logging_config.logger_name` for custom logging
 3. **ServiceNow rate limits**: PDI has strict rate limits; implement backoff
 4. **AD connection**: Use `ldap3` library with TLS; test connectivity before operations
+
+## Integration Test Suite
+
+Run the integration tests to verify your environment:
+
+```bash
+cd /home/alton/Documents/lucid-it-agent
+source .venv/bin/activate
+cd agent
+python scripts/test_ollama_integration.py
+```
+
+**Tests included**:
+1. Import verification (structures, drivers, tasks, rules, tools, artifacts)
+2. Ollama connection (server running, llama3.1 model available)
+3. Simple agent (basic prompt without tools)
+4. Agent with tool (CalculatorTool - verifies tool calling works)
+5. Agent with ruleset (agent identifies as "Lucid")
+
+All 5 tests should pass. Response times with warm model:
+- Simple prompt: ~0.15s
+- Tool call: ~0.50s
+- Ruleset: ~0.30s
 
 ## References
 
