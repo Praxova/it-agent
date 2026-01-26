@@ -17,7 +17,7 @@ annual support contracts ($20k/agent/year).
 ### Pinned Versions (January 2025)
 
 ```
-griptape==1.8.13
+griptape>=1.8.0  (currently using 1.9.0)
 python>=3.10
 ollama (latest)
 ```
