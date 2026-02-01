@@ -56,12 +56,14 @@ public class AgentExportService : IAgentExportService
     private async Task<Agent?> LoadAgentWithAllRelationsAsync(Guid agentId, CancellationToken ct)
     {
         // Load agent with all navigation properties needed for export
+        // Note: FromStep is automatically populated by EF Core's fix-up when loading OutgoingTransitions
         return await _db.Agents
             .Include(a => a.LlmServiceAccount)
             .Include(a => a.ServiceNowAccount)
             .Include(a => a.WorkflowDefinition)
                 .ThenInclude(w => w!.Steps.OrderBy(s => s.SortOrder))
                     .ThenInclude(s => s.OutgoingTransitions.OrderBy(t => t.SortOrder))
+                        .ThenInclude(t => t.ToStep)
             .Include(a => a.WorkflowDefinition)
                 .ThenInclude(w => w!.Steps)
                     .ThenInclude(s => s.RulesetMappings)
@@ -155,6 +157,21 @@ public class AgentExportService : IAgentExportService
             .Where(name => !string.IsNullOrEmpty(name))
             .ToList();
 
+        // Collect all transitions from all steps
+        var allTransitions = workflow.Steps
+            .SelectMany(s => s.OutgoingTransitions)
+            .OrderBy(t => t.SortOrder)
+            .Select(t => new WorkflowTransitionExportInfo
+            {
+                FromStepName = t.FromStep?.Name ?? workflow.Steps.FirstOrDefault(s => s.Id == t.FromStepId)?.Name ?? "unknown",
+                ToStepName = t.ToStep?.Name ?? workflow.Steps.FirstOrDefault(s => s.Id == t.ToStepId)?.Name ?? "unknown",
+                Condition = t.Condition,
+                Label = t.Label,
+                OutputIndex = t.OutputIndex,
+                InputIndex = t.InputIndex
+            })
+            .ToList();
+
         return new WorkflowExportInfo
         {
             Id = workflow.Id,
@@ -166,6 +183,7 @@ public class AgentExportService : IAgentExportService
                 .OrderBy(s => s.SortOrder)
                 .Select(MapStepInfo)
                 .ToList(),
+            Transitions = allTransitions,
             WorkflowRulesets = workflowRulesets
         };
     }

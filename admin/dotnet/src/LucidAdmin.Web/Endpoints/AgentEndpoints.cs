@@ -20,7 +20,7 @@ public static class AgentEndpoints
     {
         var group = app.MapGroup("/api/agents")
             .WithTags("Agents")
-            .RequireAuthorization();
+            .AllowAnonymous();  // For development and Python agent access
 
         // GET /api/agents - List all agents
         group.MapGet("/", async (IAgentRepository repository) =>
@@ -231,6 +231,7 @@ public static class AgentEndpoints
                 ? Results.NotFound(new { error = $"Agent with ID {id} not found" })
                 : Results.Ok(export);
         })
+        .AllowAnonymous()
         .WithName("ExportAgent")
         .WithSummary("Export complete agent definition")
         .WithDescription("Returns all linked data (workflow, rulesets, examples) as a self-contained JSON document. Credentials are exported as references only.")
@@ -248,6 +249,7 @@ public static class AgentEndpoints
                 ? Results.NotFound(new { error = $"Agent with name '{name}' not found" })
                 : Results.Ok(export);
         })
+        .AllowAnonymous()
         .WithName("ExportAgentByName")
         .WithSummary("Export complete agent definition by name")
         .Produces<AgentExportResponse>(200)

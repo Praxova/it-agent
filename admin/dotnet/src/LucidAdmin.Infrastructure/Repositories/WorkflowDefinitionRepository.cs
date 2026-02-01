@@ -36,4 +36,16 @@ public class WorkflowDefinitionRepository : Repository<WorkflowDefinition>, IWor
     {
         return await _dbSet.AnyAsync(w => w.Name == name, ct);
     }
+
+    /// <summary>
+    /// Override GetAllAsync to include Steps for accurate step count.
+    /// </summary>
+    public new async Task<IEnumerable<WorkflowDefinition>> GetAllAsync(CancellationToken ct = default)
+    {
+        return await _dbSet
+            .Include(w => w.ExampleSet)
+            .Include(w => w.Steps)
+            .OrderBy(w => w.Name)
+            .ToListAsync(ct);
+    }
 }

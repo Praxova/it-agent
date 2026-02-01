@@ -230,9 +230,9 @@ public static class WorkflowEndpoints
             workflow.LayoutJson = request.LayoutJson;
 
             // Clear existing steps and transitions
-            db.StepTransitions.RemoveRange(workflow.Steps.SelectMany(s => s.OutgoingTransitions));
-            db.WorkflowSteps.RemoveRange(workflow.Steps);
-            workflow.Steps.Clear();
+            var existingSteps = workflow.Steps.ToList();
+            db.StepTransitions.RemoveRange(existingSteps.SelectMany(s => s.OutgoingTransitions));
+            db.WorkflowSteps.RemoveRange(existingSteps);
 
             // Create new steps
             var stepNameToEntity = new Dictionary<string, WorkflowStep>();
@@ -250,13 +250,11 @@ public static class WorkflowEndpoints
                     DrawflowNodeId = stepDto.DrawflowNodeId,
                     SortOrder = stepDto.SortOrder
                 };
-                workflow.Steps.Add(step);
+                db.WorkflowSteps.Add(step);
                 stepNameToEntity[step.Name] = step;
             }
 
-            await db.SaveChangesAsync();
-
-            // Create transitions (after steps have IDs)
+            // Create transitions (steps will get IDs when we save at the end)
             foreach (var transDto in request.Transitions)
             {
                 if (stepNameToEntity.TryGetValue(transDto.FromStepName, out var fromStep) &&

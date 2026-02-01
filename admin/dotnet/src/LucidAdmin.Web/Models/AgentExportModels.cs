@@ -63,7 +63,21 @@ public record WorkflowExportInfo
     public string? TriggerType { get; init; }
     public Dictionary<string, object?>? TriggerConfig { get; init; }
     public required List<WorkflowStepExportInfo> Steps { get; init; }
+    public required List<WorkflowTransitionExportInfo> Transitions { get; init; }
     public required List<string> WorkflowRulesets { get; init; }
+}
+
+/// <summary>
+/// Workflow-level transition with step names for runtime execution.
+/// </summary>
+public record WorkflowTransitionExportInfo
+{
+    public required string FromStepName { get; init; }
+    public required string ToStepName { get; init; }
+    public string? Condition { get; init; }
+    public string? Label { get; init; }
+    public int OutputIndex { get; init; }
+    public int InputIndex { get; init; }
 }
 
 public record WorkflowStepExportInfo

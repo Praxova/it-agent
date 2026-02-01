@@ -108,6 +108,29 @@ builder.Services.AddAuthentication(options =>
     options.AccessDeniedPath = "/access-denied";
     options.ExpireTimeSpan = TimeSpan.FromHours(8);
     options.SlidingExpiration = true;
+
+    // For API routes, return 401 instead of redirecting to login
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = 401;
+            return Task.CompletedTask;
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = 403;
+            return Task.CompletedTask;
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
 })
 .AddJwtBearer(options =>
 {
@@ -166,6 +189,7 @@ builder.Services.AddScoped<IToolServerService, LucidAdmin.Web.Services.ToolServe
 builder.Services.AddScoped<IAgentService, LucidAdmin.Web.Services.AgentService>();
 builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.CapabilityMappingService>();
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
+builder.Services.AddScoped<LucidAdmin.Infrastructure.Services.DrawflowLayoutGenerator>();
 
 // MVC Controllers for Account management
 builder.Services.AddControllers();
