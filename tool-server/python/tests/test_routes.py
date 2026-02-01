@@ -176,9 +176,16 @@ class TestHealthRoute:
         mock_ad_service = Mock()
         mock_ad_service.test_connection = AsyncMock(return_value=mock_result)
 
+        # Create mock File service
+        mock_file_service = Mock()
+        mock_file_service.health_check = Mock(return_value=True)
+
         with patch(
             "tool_server.api.routes.get_ad_service",
             return_value=mock_ad_service,
+        ), patch(
+            "tool_server.api.routes.get_file_service",
+            return_value=mock_file_service,
         ):
             response = await client.get("/api/v1/health")
 
@@ -186,6 +193,7 @@ class TestHealthRoute:
             data = response.json()
             assert data["status"] == "healthy"
             assert data["ldap_connected"] is True
+            assert data["winrm_connected"] is True
 
     @pytest.mark.asyncio
     async def test_health_check_connection_failed(self, client: AsyncClient) -> None:
@@ -196,16 +204,24 @@ class TestHealthRoute:
             side_effect=ADConnectionError("Connection failed")
         )
 
+        # Create mock File service
+        mock_file_service = Mock()
+        mock_file_service.health_check = Mock(return_value=False)
+
         with patch(
             "tool_server.api.routes.get_ad_service",
             return_value=mock_ad_service,
+        ), patch(
+            "tool_server.api.routes.get_file_service",
+            return_value=mock_file_service,
         ):
             response = await client.get("/api/v1/health")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
-            assert data["status"] == "unhealthy"
+            assert data["status"] == "degraded"
             assert data["ldap_connected"] is False
+            assert data["winrm_connected"] is False
 
     @pytest.mark.asyncio
     async def test_health_check_auth_failed(self, client: AsyncClient) -> None:
@@ -216,16 +232,24 @@ class TestHealthRoute:
             side_effect=ADAuthenticationError("Invalid credentials")
         )
 
+        # Create mock File service
+        mock_file_service = Mock()
+        mock_file_service.health_check = Mock(return_value=False)
+
         with patch(
             "tool_server.api.routes.get_ad_service",
             return_value=mock_ad_service,
+        ), patch(
+            "tool_server.api.routes.get_file_service",
+            return_value=mock_file_service,
         ):
             response = await client.get("/api/v1/health")
 
             assert response.status_code == status.HTTP_200_OK
             data = response.json()
-            assert data["status"] == "unhealthy"
+            assert data["status"] == "degraded"
             assert data["ldap_connected"] is False
+            assert data["winrm_connected"] is False
 
 
 class TestRootRoute:

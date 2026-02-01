@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 
-from ldap3 import ALL, Connection, Server, Tls
+from ldap3 import ALL, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE, Connection, Server, Tls
 from ldap3.core.exceptions import (
     LDAPException,
     LDAPInvalidCredentialsResult,
@@ -214,7 +214,7 @@ class ADService:
 
             success = conn.modify(
                 user_dn,
-                {"unicodePwd": [(3, [password_value])]},  # MODIFY_REPLACE = 3
+                {"unicodePwd": [(MODIFY_REPLACE, [password_value])]},
             )
 
             if not success:
@@ -437,7 +437,7 @@ class ADService:
             # Add user to group (modify group's member attribute)
             success = conn.modify(
                 group_dn,
-                {"member": [(0, [user_dn])]},  # MODIFY_ADD = 0
+                {"member": [(MODIFY_ADD, [user_dn])]},
             )
 
             if not success:
@@ -510,7 +510,7 @@ class ADService:
             # Remove user from group (modify group's member attribute)
             success = conn.modify(
                 group_dn,
-                {"member": [(1, [user_dn])]},  # MODIFY_DELETE = 1
+                {"member": [(MODIFY_DELETE, [user_dn])]},
             )
 
             if not success:

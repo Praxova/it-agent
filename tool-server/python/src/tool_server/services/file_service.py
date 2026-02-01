@@ -2,16 +2,16 @@
 
 import logging
 import fnmatch
-from enum import StrEnum
+from enum import Enum
 
 import winrm
 
-from ..config import settings
+from ..config import Settings
 
 logger = logging.getLogger(__name__)
 
 
-class PermissionLevel(StrEnum):
+class PermissionLevel(str, Enum):
     """Supported permission levels for file operations."""
 
     READ = "Read"
@@ -46,8 +46,13 @@ class UserNotFoundError(FileServiceError):
 class FileService:
     """File permission operations via WinRM/PowerShell."""
 
-    def __init__(self):
-        """Initialize file service."""
+    def __init__(self, settings: Settings):
+        """Initialize file service.
+
+        Args:
+            settings: Configuration settings with WinRM parameters.
+        """
+        self.settings = settings
         self._session: winrm.Session | None = None
 
     def _get_session(self) -> winrm.Session:
@@ -58,17 +63,17 @@ class FileService:
         """
         if self._session is None:
             # Use winrm credentials if provided, otherwise use ldap credentials
-            username = settings.winrm_username or settings.ldap_bind_user
-            password = settings.winrm_password or settings.ldap_bind_password
+            username = self.settings.winrm_username or self.settings.ldap_bind_user
+            password = self.settings.winrm_password or self.settings.ldap_bind_password
 
             # Format: user@domain or domain\user
             if '@' not in username and '\\' not in username:
-                username = f"{username}@{settings.ldap_domain}"
+                username = f"{username}@{self.settings.ldap_domain}"
 
             self._session = winrm.Session(
-                target=f"http://{settings.winrm_host}:5985/wsman",
+                target=f"http://{self.settings.winrm_host}:5985/wsman",
                 auth=(username, password),
-                transport=settings.winrm_transport,
+                transport=self.settings.winrm_transport,
             )
         return self._session
 
@@ -121,17 +126,17 @@ class FileService:
         normalized = path.replace("/", "\\")
 
         # Check denied paths
-        for pattern in settings.file_permission_denied_paths:
+        for pattern in self.settings.file_permission_denied_paths:
             if fnmatch.fnmatch(normalized.lower(), pattern.lower()):
                 logger.warning(f"Path {path} matches denied pattern {pattern}")
                 return False
 
         # If no allowed paths specified, allow everything not denied
-        if not settings.file_permission_allowed_paths:
+        if not self.settings.file_permission_allowed_paths:
             return True
 
         # Check allowed paths
-        for pattern in settings.file_permission_allowed_paths:
+        for pattern in self.settings.file_permission_allowed_paths:
             if fnmatch.fnmatch(normalized.lower(), pattern.lower()):
                 return True
 
@@ -216,7 +221,8 @@ $rules | ForEach-Object {{ $_.FileSystemRights.ToString() }}
         rights = rights_map[permission]
 
         # Build domain\user format
-        domain_user = f"{settings.ldap_domain.split('.')[0]}\\{username}"
+        domain_part = self.settings.ldap_domain.split('.')[0]
+        domain_user = f"{domain_part}\\{username}"
 
         script = f'''
 $path = "{path}"
@@ -276,7 +282,8 @@ try {{
         if not self.path_exists(path):
             raise PathNotFoundError(f"Path '{path}' does not exist")
 
-        domain_user = f"{settings.ldap_domain.split('.')[0]}\\{username}"
+        domain_part = self.settings.ldap_domain.split('.')[0]
+        domain_user = f"{domain_part}\\{username}"
 
         script = f'''
 $path = "{path}"
@@ -351,7 +358,3 @@ $acl.Access | ForEach-Object {{
                     })
 
         return permissions
-
-
-# Singleton instance
-file_service = FileService()

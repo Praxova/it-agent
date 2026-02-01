@@ -29,11 +29,11 @@ from tool_server.services import (
     ADUserNotFoundError,
 )
 from tool_server.services.file_service import (
+    FileService,
     FileServiceError,
     PathNotAllowedError,
     PathNotFoundError,
     PermissionLevel,
-    file_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,23 @@ def get_ad_service() -> ADService:
         settings = Settings()
         _ad_service = ADService(settings)
     return _ad_service
+
+
+# Global File service instance (initialized on first use)
+_file_service = None
+
+
+def get_file_service() -> FileService:
+    """Get or create File service instance.
+
+    Returns:
+        FileService instance.
+    """
+    global _file_service
+    if _file_service is None:
+        settings = Settings()
+        _file_service = FileService(settings)
+    return _file_service
 
 
 @router.post(
@@ -151,7 +168,7 @@ async def health_check() -> HealthResponse:
         ldap_ok = result["connected"]
 
         # Test WinRM connection
-        winrm_ok = file_service.health_check()
+        winrm_ok = get_file_service().health_check()
 
         all_ok = ldap_ok and winrm_ok
         status_str = "healthy" if all_ok else "degraded"
@@ -166,7 +183,7 @@ async def health_check() -> HealthResponse:
     except (ADConnectionError, ADAuthenticationError) as e:
         logger.warning(f"Health check failed: {e}")
         # Still try WinRM
-        winrm_ok = file_service.health_check()
+        winrm_ok = get_file_service().health_check()
         return HealthResponse(
             status="degraded",
             ldap_connected=False,
@@ -543,7 +560,7 @@ async def grant_permission(request: FilePermissionRequest) -> FilePermissionResp
         )
 
     try:
-        file_service.grant_permission(
+        get_file_service().grant_permission(
             path=request.path,
             username=request.username,
             permission=perm_level,
@@ -622,7 +639,7 @@ async def revoke_permission(request: FilePermissionRevokeRequest) -> FilePermiss
     )
 
     try:
-        file_service.revoke_permission(
+        get_file_service().revoke_permission(
             path=request.path,
             username=request.username,
         )
@@ -697,12 +714,14 @@ async def list_permissions(path: str) -> FilePermissionListResponse:
     # URL decode and fix path format
     # Path comes in as: 172.16.119.20/lucidtestshare/folder
     # Need to convert to: \\172.16.119.20\lucidtestshare\folder
-    unc_path = f"\\\\{path.replace('/', '\\')}"
+    #unc_path = f"\\\\{path.replace('/', '\\')}" # To fix issue with Python 3.10
+    path_fixed = path.replace('/', '\\')
+    unc_path = f"\\\\{path_fixed}"
 
     logger.info(f"List permissions requested for: {unc_path}")
 
     try:
-        permissions = file_service.list_permissions(unc_path)
+        permissions = get_file_service().list_permissions(unc_path)
 
         return FilePermissionListResponse(
             path=unc_path,
