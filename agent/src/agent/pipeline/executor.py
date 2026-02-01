@@ -2,11 +2,15 @@
 
 import asyncio
 import logging
+import socket
 from datetime import datetime
 
 from connectors import ServiceNowConnector, Ticket, TicketState, TicketUpdate
 
 from agent.classifier import ClassificationResult, TicketClassifier, TicketType
+from agent.config.admin_client import AdminPortalClient, AgentConfiguration
+from agent.drivers import create_prompt_driver
+from agent.routing import CapabilityRouter
 
 from .config import PipelineConfig
 from .handlers.base import BaseHandler, HandlerResult
@@ -36,40 +40,104 @@ class TicketExecutor:
         self._classifier: TicketClassifier | None = None
         self._handlers: dict[str, BaseHandler] = {}
 
+        # Admin Portal components (ADR-008)
+        self._admin_client: AdminPortalClient | None = None
+        self._capability_router: CapabilityRouter | None = None
+        self._admin_config: AgentConfiguration | None = None
+
         self._running = False
         self._last_poll: datetime | None = None
+        self._tickets_processed: int = 0  # Track for heartbeat reporting
 
     async def initialize(self):
-        """Initialize all components."""
+        """Initialize all components.
+
+        Supports two modes:
+        1. Admin Portal mode (admin_portal_enabled=True): Fetch configuration from Admin Portal
+        2. Legacy mode (admin_portal_enabled=False): Use environment variables
+        """
         logger.info("Initializing TicketExecutor...")
 
-        # ServiceNow connector (skip if already set, e.g., in tests)
-        if not self._connector:
-            self._connector = ServiceNowConnector(
-                instance=self.config.servicenow_instance,
-                username=self.config.servicenow_username,
-                password=self.config.servicenow_password,
-                assignment_group=self.config.assignment_group,
+        if self.config.admin_portal_enabled:
+            # ===== ADMIN PORTAL MODE =====
+            logger.info("Admin Portal mode enabled - fetching configuration...")
+
+            # Initialize Admin Portal client
+            self._admin_client = AdminPortalClient(
+                base_url=self.config.admin_portal_url,
+                agent_name=self.config.agent_name,
             )
 
-        # Classifier (skip if already set, e.g., in tests)
-        if not self._classifier:
-            self._classifier = TicketClassifier(
-                model=self.config.ollama_model,
-                base_url=self.config.ollama_base_url,
+            # Fetch configuration
+            self._admin_config = await self._admin_client.get_configuration()
+
+            # Initialize capability router for Tool Server discovery
+            self._capability_router = CapabilityRouter(
+                admin_portal_url=self.config.admin_portal_url,
             )
+
+            # Create LLM PromptDriver from ServiceAccount configuration
+            llm_driver = create_prompt_driver(self._admin_config.llm_provider)
+
+            # ServiceNow connector from Admin Portal config
+            if not self._connector:
+                snow_cfg = self._admin_config.servicenow
+                self._connector = ServiceNowConnector(
+                    instance=snow_cfg.instance_url or "",
+                    username=snow_cfg.username or "",
+                    password=snow_cfg.password or "",
+                    assignment_group=self._admin_config.assignment_group or "Helpdesk",
+                )
+
+            # Classifier with Admin Portal LLM driver
+            if not self._classifier:
+                self._classifier = TicketClassifier(driver=llm_driver)
+
+            logger.info(
+                f"Admin Portal configuration loaded: "
+                f"LLM={self._admin_config.llm_provider.provider_type}, "
+                f"ServiceNow={self._admin_config.servicenow.provider_type}"
+            )
+
+        else:
+            # ===== LEGACY MODE =====
+            logger.info("Legacy mode - using environment variables...")
+
+            # ServiceNow connector (skip if already set, e.g., in tests)
+            if not self._connector:
+                self._connector = ServiceNowConnector(
+                    instance=self.config.servicenow_instance,
+                    username=self.config.servicenow_username,
+                    password=self.config.servicenow_password,
+                    assignment_group=self.config.assignment_group,
+                )
+
+            # Classifier (skip if already set, e.g., in tests)
+            if not self._classifier:
+                self._classifier = TicketClassifier(
+                    model=self.config.ollama_model,
+                    base_url=self.config.ollama_base_url,
+                )
 
         # Register handlers
         self._register_handlers()
 
         logger.info(f"Initialized with {len(self._handlers)} handler types")
 
+        # Send initial heartbeat to Admin Portal
+        if self._admin_client:
+            await self._send_heartbeat()
+
     def _register_handlers(self):
         """Register all ticket handlers."""
+        # Note: Handlers will be updated to accept capability_router in a follow-up change
+        # For now, we still use tool_server_url for backward compatibility
+        tool_server_url = self.config.tool_server_url
+
         handlers = [
-            PasswordResetHandler(tool_server_url=self.config.tool_server_url),
-            GroupAccessHandler(tool_server_url=self.config.tool_server_url),
-            FilePermissionHandler(tool_server_url=self.config.tool_server_url),
+            PasswordResetHandler(tool_server_url=tool_server_url),
+            GroupAccessHandler(tool_server_url=tool_server_url),
+            FilePermissionHandler(tool_server_url=tool_server_url),
         ]
 
         for handler in handlers:
@@ -77,8 +145,32 @@ class TicketExecutor:
                 self._handlers[ticket_type] = handler
                 logger.debug(f"Registered handler for {ticket_type}")
 
+    async def _send_heartbeat(self):
+        """Send heartbeat to Admin Portal (if enabled)."""
+        if not self._admin_client:
+            return
+
+        try:
+            hostname = socket.gethostname()
+            last_poll_iso = self._last_poll.isoformat() if self._last_poll else None
+
+            await self._admin_client.send_heartbeat(
+                host_name=hostname,
+                status="Healthy",
+                last_poll=last_poll_iso,
+                tickets_processed=self._tickets_processed,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send heartbeat: {e}")
+            # Don't raise - heartbeat failures shouldn't stop agent
+
     async def close(self):
         """Clean up resources."""
+        # Send final heartbeat before closing
+        if self._admin_client:
+            await self._send_heartbeat()
+            await self._admin_client.close()
+
         if self._connector:
             await self._connector.close()
 
@@ -97,6 +189,10 @@ class TicketExecutor:
         tickets = await self._connector.poll_queue(since=self._last_poll)
         self._last_poll = datetime.now()
 
+        # Send heartbeat after poll
+        if self._admin_client:
+            await self._send_heartbeat()
+
         if not tickets:
             logger.info("No tickets to process")
             return 0
@@ -108,8 +204,13 @@ class TicketExecutor:
             try:
                 await self.process_ticket(ticket)
                 processed += 1
+                self._tickets_processed += 1
             except Exception as e:
                 logger.exception(f"Error processing ticket {ticket.number}: {e}")
+
+        # Send heartbeat after processing batch
+        if self._admin_client and processed > 0:
+            await self._send_heartbeat()
 
         return processed
 

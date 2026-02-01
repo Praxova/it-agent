@@ -17,17 +17,22 @@ class PipelineConfig(BaseSettings):
         extra="ignore",
     )
 
-    # ServiceNow
-    servicenow_instance: str
-    servicenow_username: str
-    servicenow_password: str
+    # Admin Portal (ADR-008: Agent Configuration from Admin Portal)
+    admin_portal_enabled: bool = False  # Set to True to fetch config from Admin Portal
+    admin_portal_url: str = "http://localhost:5000"  # Admin Portal API base URL
+    agent_name: str = "lucid-agent-01"  # Agent name for configuration lookup
+
+    # ServiceNow (legacy mode - used if admin_portal_enabled=False)
+    servicenow_instance: str = ""
+    servicenow_username: str = ""
+    servicenow_password: str = ""
     assignment_group: str = "Helpdesk"
     agent_user: str = "Lucid Agent"  # Display name for assignment
 
-    # Tool Server
+    # Tool Server (legacy mode - used if admin_portal_enabled=False)
     tool_server_url: str = "http://127.0.0.1:8100"
 
-    # LLM
+    # LLM (legacy mode - used if admin_portal_enabled=False)
     ollama_model: str = "llama3.1"
     ollama_base_url: str = "http://localhost:11434"
 

@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field as PydanticField
 
 logger = logging.getLogger(__name__)
 
+# Forward declaration for type hints (avoid circular import)
+try:
+    from agent.routing import CapabilityRouter
+except ImportError:
+    CapabilityRouter = None  # type: ignore
+
 
 class ToolServerConfig(BaseModel):
     """Configuration for Tool Server connection.
@@ -36,16 +42,23 @@ class ToolServerConfig(BaseModel):
 class BaseToolServerTool(BaseTool):
     """Base class for tools that interact with the Tool Server.
 
-    Provides common HTTP client functionality and error handling.
+    Supports two modes:
+    1. Admin Portal mode: Uses CapabilityRouter to discover Tool Servers dynamically (ADR-007)
+    2. Legacy mode: Uses fixed tool_server_url from configuration
 
     Attributes:
-        tool_server_config: Tool Server configuration.
+        tool_server_config: Tool Server configuration (legacy mode).
+        capability_router: Capability router for dynamic Tool Server discovery (Admin Portal mode).
+        capability_name: Name of the capability this tool requires (e.g., "ad-password-reset").
     """
 
     tool_server_config: ToolServerConfig = field(
         default=Factory(lambda: ToolServerConfig()),
         kw_only=True,
     )
+
+    capability_router: Any = field(default=None, kw_only=True)  # CapabilityRouter | None
+    capability_name: str | None = field(default=None, kw_only=True)
 
     async def _make_request(
         self,
@@ -54,6 +67,10 @@ class BaseToolServerTool(BaseTool):
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Make HTTP request to Tool Server.
+
+        Supports two modes:
+        1. Admin Portal mode: Resolves Tool Server dynamically via CapabilityRouter
+        2. Legacy mode: Uses fixed base_url from configuration
 
         Args:
             method: HTTP method (GET, POST, etc.).
@@ -64,9 +81,32 @@ class BaseToolServerTool(BaseTool):
             Response JSON as dictionary.
 
         Raises:
-            Exception: If request fails.
+            Exception: If request fails or no Tool Server available.
         """
-        url = f"{self.tool_server_config.base_url}/{endpoint.lstrip('/')}"
+        # Resolve base URL
+        if self.capability_router and self.capability_name:
+            # Admin Portal mode: resolve capability to Tool Server
+            logger.debug(f"Resolving capability: {self.capability_name}")
+
+            server_info = await self.capability_router.get_server_for_capability(
+                self.capability_name
+            )
+
+            if not server_info:
+                raise Exception(
+                    f"No Tool Server available for capability: {self.capability_name}. "
+                    f"Ensure at least one Tool Server is registered and healthy."
+                )
+
+            base_url = server_info.url.rstrip("/")
+            logger.info(
+                f"Resolved {self.capability_name} to Tool Server: {server_info.name} ({base_url})"
+            )
+        else:
+            # Legacy mode: use fixed base_url
+            base_url = self.tool_server_config.base_url.rstrip("/")
+
+        url = f"{base_url}/{endpoint.lstrip('/')}"
 
         logger.info(f"Making {method} request to {url}")
 

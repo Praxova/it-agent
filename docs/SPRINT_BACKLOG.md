@@ -4,351 +4,298 @@
 
 This document tracks the development sprints for Lucid IT Agent. Each sprint is approximately 1-2 weeks depending on complexity.
 
-**Target**: MVP capable of handling password resets from ServiceNow queue with local LLM.
+**Updated**: January 2025 - Revised to reflect .NET Tool Server migration and Admin Portal architecture.
+
+**MVP Target**: Enterprise-ready IT automation agent with centralized management.
 
 ---
 
-## Sprint 0: Foundation (Current)
+## Completed Work
 
-**Goal**: Project setup, development environment, basic agent scaffold
+### Sprint 0: Foundation ✅
+
+- [x] Project structure created
+- [x] Documentation framework (README, ARCHITECTURE, CLAUDE_CONTEXT)
+- [x] License selection (Apache 2.0)
+- [x] Local development environment (Ollama + Llama 3.1 8B)
+- [x] Basic agent scaffold with tool calling test (5/5 tests passing)
+- [x] DC test environment PowerShell script
+
+### Python Tool Server MVP ✅ (Deprecated)
+
+- [x] FastAPI application with health endpoint
+- [x] Password reset via LDAP (blocked by LDAPS requirement)
+- [x] Group membership operations
+- [x] File permissions via WinRM
+- **Status**: Deprecated per ADR-005. Replaced by .NET Tool Server.
+
+### .NET Tool Server ✅
+
+- [x] ASP.NET Core Minimal API scaffold
+- [x] All 9 API endpoints matching Python version
+- [x] Native AD operations via System.DirectoryServices.AccountManagement
+- [x] Native NTFS operations via System.Security.AccessControl
+- [x] Windows container support (Dockerfile)
+- [x] Password reset working (the killer feature!)
+- [x] Group operations working
+- [x] File permissions working
+- [x] Accessible from Linux workstation
+
+---
+
+## Current Sprint: Service Account & Multi-Account Support
+
+**Goal**: Proper service account configuration and multi-account architecture
 
 **Status**: 🟡 In Progress
 
 ### Tasks
 
-- [x] Project structure created
-- [x] Documentation framework (README, ARCHITECTURE, CLAUDE_CONTEXT)
-- [x] License selection (Apache 2.0)
-- [x] pyproject.toml configuration
-- [x] Local development environment setup
-  - [x] Install Ollama
-  - [x] Pull Llama 3.1 8B model
-  - [x] Verify Griptape + Ollama integration
-- [x] Basic agent scaffold
-  - [x] Simple agent with OllamaPromptDriver
-  - [x] Verify tool calling works (CalculatorTool test passing)
-  - [x] Ruleset test passing (agent identifies as "Lucid")
-  - [ ] Basic logging setup (using Griptape default for now)
-- [ ] ServiceNow PDI setup
-  - [ ] Create PDI instance
-  - [ ] Create API user
-  - [ ] Document PDI setup process
-  - [ ] Create PDI bootstrap script
-- [x] DC mock environment script created
-  - [x] Setup-TestEnvironment.ps1 (creates users, groups, shares)
-  - [ ] Run script on actual DC to verify
+- [ ] **Service Account Setup (gMSA)**
+  - [ ] Create gMSA on Domain Controller
+  - [ ] Grant AD permissions (password reset, group management)
+  - [ ] Grant file share permissions
+  - [ ] Install gMSA on Tool Server host
+  - [ ] Test running app as gMSA
+  - [ ] Document setup process
+
+- [ ] **Multi-Account Support in Tool Server**
+  - [ ] Update ToolServerSettings to support multiple accounts
+  - [ ] Create CredentialProvider abstraction
+    - [ ] gMSA provider
+    - [ ] Service account provider (with password)
+    - [ ] Current user provider (for dev/testing)
+  - [ ] Map capabilities to accounts in configuration
+  - [ ] Update services to use mapped accounts
+  - [ ] Per-capability health checks
+
+- [ ] **Configuration Schema**
+  - [ ] Define YAML/JSON schema for service accounts
+  - [ ] Define capability mapping schema
+  - [ ] Validation on startup
+  - [ ] Helpful error messages for misconfiguration
 
 ### Acceptance Criteria
 
-1. `ollama run llama3.1` works on development machine
-2. Simple Griptape agent can call a mock tool
-3. ServiceNow PDI accessible via API
-4. DC has test users and groups for development
-
-### Notes
-
-- PDI instances are deleted after 10 days of inactivity - need bootstrap script
-- DC environment scripts should be idempotent (can run multiple times safely)
+1. Tool server runs as gMSA (not Domain Admin)
+2. Configuration supports multiple accounts per capability
+3. Health endpoint reports status per capability
+4. Clear documentation for service account setup
 
 ---
 
-## Sprint 1: ServiceNow Connector
+## Next Sprint: Admin Portal - Foundation
 
-**Goal**: Fetch tickets from ServiceNow queue
+**Goal**: Config Service API and database layer
 
 **Status**: ⬜ Not Started
 
 ### Tasks
 
-- [ ] ServiceNow REST client
-  - [ ] Authentication (Basic auth initially)
-  - [ ] Incident table queries
-  - [ ] Error handling and retries
-- [ ] Ticket model
-  - [ ] Pydantic model for Incident
-  - [ ] Field mapping (ServiceNow → internal)
-- [ ] Queue polling
-  - [ ] Poll for new/updated incidents
-  - [ ] Filter by assignment group
-  - [ ] Handle pagination
-- [ ] Connector interface
-  - [ ] Define BaseConnector abstract class
-  - [ ] Implement ServiceNowConnector
-- [ ] Unit tests
-  - [ ] Mock ServiceNow responses
-  - [ ] Test error conditions
+- [ ] **Project Setup**
+  - [ ] Create LucidAdmin.sln solution structure
+  - [ ] LucidAdmin.Core (domain layer)
+  - [ ] LucidAdmin.Infrastructure (data layer)
+  - [ ] LucidAdmin.Api (Config Service)
+  - [ ] Configure dependency injection
+
+- [ ] **Database Layer**
+  - [ ] Define entity classes
+  - [ ] EF Core DbContext with provider abstraction
+  - [ ] SQLite provider configuration
+  - [ ] Repository implementations
+  - [ ] Initial migration
+
+- [ ] **Core Entities**
+  - [ ] ServiceAccount entity
+  - [ ] CapabilityMapping entity
+  - [ ] ToolServerRegistration entity
+  - [ ] User entity (for local auth)
+  - [ ] AuditLogEntry entity
+
+- [ ] **Config Service API - CRUD**
+  - [ ] Service account endpoints
+  - [ ] Capability mapping endpoints
+  - [ ] Tool server registration endpoints
+  - [ ] Basic error handling
 
 ### Acceptance Criteria
 
-1. Can authenticate to ServiceNow PDI
-2. Can retrieve list of incidents from queue
-3. Can fetch single incident by sys_id
-4. Proper error handling for network/auth failures
-
-### Definition of Done
-
-- [ ] Code reviewed
-- [ ] Unit tests passing
-- [ ] Integration test with PDI passing
-- [ ] Documentation updated
+1. API runs and connects to SQLite database
+2. Can CRUD service accounts via API
+3. Can register/list tool servers
+4. Database migrations work correctly
 
 ---
 
-## Sprint 2: Ticket Classification
+## Sprint: Admin Portal - Tool Server Integration
 
-**Goal**: Agent can classify tickets by type
+**Goal**: Tool servers pull config from and report to Admin
 
 **Status**: ⬜ Not Started
 
 ### Tasks
 
-- [ ] Classification pipeline
-  - [ ] PromptTask for classification
-  - [ ] Output schema (structured output)
-  - [ ] Confidence scoring
-- [ ] Ticket types
-  - [ ] password_reset
-  - [ ] group_access_add
-  - [ ] group_access_remove
-  - [ ] file_permission
-  - [ ] unknown/escalate
-- [ ] Classification rules
-  - [ ] Ruleset for classification behavior
-  - [ ] Examples in prompt
-- [ ] Routing logic
-  - [ ] Route to appropriate pipeline based on type
-  - [ ] Escalate unknown types
-- [ ] Tests
-  - [ ] Test classification accuracy
-  - [ ] Test edge cases
+- [ ] **Tool Server Registration Flow**
+  - [ ] Tool server registers on startup
+  - [ ] Config Service stores registration
+  - [ ] Tool server pulls configuration
+
+- [ ] **Heartbeat & Health**
+  - [ ] Tool server sends periodic heartbeat
+  - [ ] Config Service tracks last seen
+  - [ ] Health status aggregation
+  - [ ] Capability-level health tracking
+
+- [ ] **Configuration Push/Pull**
+  - [ ] Tool server polls for config changes
+  - [ ] Or: webhook notification on config change
+  - [ ] Config version tracking
+  - [ ] Graceful handling of Config Service unavailability
+
+- [ ] **Audit Log Collection**
+  - [ ] Tool server sends audit entries
+  - [ ] Config Service stores and indexes
+  - [ ] Query endpoint for audit logs
 
 ### Acceptance Criteria
 
-1. Agent correctly classifies password reset tickets >90% of time
-2. Agent correctly classifies group access tickets >90% of time
-3. Unknown ticket types are escalated (not misclassified)
+1. Tool server registers with Config Service
+2. Tool server gets configuration from Config Service
+3. Health dashboard shows tool server status
+4. Audit logs flow from Tool Server to Config Service
 
 ---
 
-## Sprint 3: Password Reset Tool
+## Sprint: Admin Portal - Web UI
 
-**Goal**: Agent can reset AD passwords
+**Goal**: Blazor-based admin interface
 
 **Status**: ⬜ Not Started
 
 ### Tasks
 
-- [ ] Tool server setup (Python MVP)
-  - [ ] FastAPI application
-  - [ ] Health check endpoint
-  - [ ] API authentication
-- [ ] Password reset implementation
-  - [ ] ldap3 integration
-  - [ ] Reset password function
-  - [ ] Generate temporary password
-  - [ ] Error handling
-- [ ] Griptape tool wrapper
-  - [ ] PasswordResetTool class
-  - [ ] Input validation
-  - [ ] Call tool server API
-- [ ] Security
-  - [ ] Deny list (admin accounts)
-  - [ ] Audit logging
-  - [ ] Rate limiting
-- [ ] Tests
-  - [ ] Unit tests with mocked LDAP
-  - [ ] Integration tests with DC
+- [ ] **Project Setup**
+  - [ ] LucidAdmin.Web Blazor Server project
+  - [ ] Shared layout and navigation
+  - [ ] CSS/styling framework (Bootstrap or Tailwind)
+  - [ ] API client service
+
+- [ ] **Authentication**
+  - [ ] Login page
+  - [ ] Local user authentication
+  - [ ] JWT token handling
+  - [ ] Protected routes
+
+- [ ] **Dashboard**
+  - [ ] Tool server health cards (green/yellow/red)
+  - [ ] Recent activity feed
+  - [ ] Quick stats (tickets processed, success rate)
+
+- [ ] **Service Account Management**
+  - [ ] List service accounts
+  - [ ] Create new account form
+  - [ ] Edit account
+  - [ ] Delete with confirmation
+  - [ ] Test account connectivity
+
+- [ ] **Tool Server Management**
+  - [ ] List registered tool servers
+  - [ ] View details and health
+  - [ ] Capability status per server
 
 ### Acceptance Criteria
 
-1. Can reset password for test user in DC
-2. Cannot reset password for admin accounts
-3. Audit log shows all attempts
-4. Temporary password meets complexity requirements
+1. Can log in to Admin Portal
+2. Dashboard shows tool server health
+3. Can manage service accounts through UI
+4. Can view tool server status
 
 ---
 
-## Sprint 4: AD Group Management Tool
+## Sprint: Admin Portal - Capability Mappings & Audit
 
-**Goal**: Agent can add/remove users from AD groups
+**Goal**: Complete the management UI
 
 **Status**: ⬜ Not Started
 
 ### Tasks
 
-- [ ] Group membership implementation
-  - [ ] Add user to group
-  - [ ] Remove user from group
-  - [ ] Verify membership
-- [ ] Griptape tool wrapper
-  - [ ] AddToGroupTool class
-  - [ ] RemoveFromGroupTool class
-- [ ] Security
-  - [ ] Protected groups deny list
-  - [ ] Audit logging
-- [ ] Tests
+- [ ] **Capability Mapping UI**
+  - [ ] List all mappings
+  - [ ] Create mapping (tool + capability + account)
+  - [ ] Edit scope restrictions
+  - [ ] Enable/disable mappings
+
+- [ ] **Audit Log Viewer**
+  - [ ] Searchable audit log table
+  - [ ] Filter by date, tool server, action type
+  - [ ] Export to CSV
+  - [ ] Detail view for entries
+
+- [ ] **Settings Pages**
+  - [ ] Protected groups/accounts configuration
+  - [ ] Global settings
+  - [ ] About/version info
 
 ### Acceptance Criteria
 
-1. Can add test user to test group
-2. Can remove test user from test group
-3. Cannot modify protected groups
-4. Changes verified in AD
-
----
-
-## Sprint 5: Execution Pipeline
-
-**Goal**: Full ticket processing workflow
-
-**Status**: ⬜ Not Started
-
-### Tasks
-
-- [ ] Planning pipeline
-  - [ ] Generate execution plan
-  - [ ] Validate plan against capabilities
-  - [ ] Permission checking
-- [ ] Execution pipeline
-  - [ ] Execute plan steps
-  - [ ] Handle step failures
-  - [ ] Rollback on failure (where possible)
-- [ ] Validation
-  - [ ] Verify tool execution succeeded
-  - [ ] Confirm expected state
-- [ ] Integration
-  - [ ] Connect all pipelines
-  - [ ] End-to-end flow
-
-### Acceptance Criteria
-
-1. Agent processes password reset ticket end-to-end
-2. Agent processes group access ticket end-to-end
-3. Failed executions are handled gracefully
-4. Partial failures don't leave inconsistent state
-
----
-
-## Sprint 6: User Communication
-
-**Goal**: Agent communicates with end users via ticket updates
-
-**Status**: ⬜ Not Started
-
-### Tasks
-
-- [ ] Response generation
-  - [ ] Generate user-friendly messages
-  - [ ] Include relevant details
-  - [ ] Professional tone
-- [ ] ServiceNow updates
-  - [ ] Add work notes
-  - [ ] Add customer-visible comments
-  - [ ] Update ticket state
-  - [ ] Close ticket with resolution
-- [ ] Communication rules
-  - [ ] Ruleset for communication style
-- [ ] Tests
-
-### Acceptance Criteria
-
-1. Agent adds appropriate comments to tickets
-2. Messages are professional and helpful
-3. Ticket state reflects actual status
-4. Users understand what was done
-
----
-
-## Sprint 7: Production Hardening
-
-**Goal**: Production-ready error handling and logging
-
-**Status**: ⬜ Not Started
-
-### Tasks
-
-- [ ] Comprehensive logging
-  - [ ] Structured logging (JSON)
-  - [ ] Log levels appropriate
-  - [ ] Sensitive data redacted
-- [ ] Error handling
-  - [ ] Graceful degradation
-  - [ ] Retry logic with backoff
-  - [ ] Circuit breaker for external services
-- [ ] Monitoring
-  - [ ] Health check endpoints
-  - [ ] Metrics collection
-- [ ] Configuration
-  - [ ] Environment-based config
-  - [ ] Secrets management
-- [ ] Documentation
-  - [ ] Deployment guide
-  - [ ] Operations runbook
-
-### Acceptance Criteria
-
-1. No unhandled exceptions in normal operation
-2. Failures are logged with context
-3. Can diagnose issues from logs alone
-4. Secrets not exposed in logs or errors
-
----
-
-## Sprint 8: File Permissions Tool
-
-**Goal**: Agent can modify NTFS permissions
-
-**Status**: ⬜ Not Started
-
-### Tasks
-
-- [ ] File permission implementation
-  - [ ] Grant permissions
-  - [ ] Revoke permissions
-  - [ ] List current permissions
-- [ ] Griptape tool wrapper
-- [ ] Security controls
-- [ ] Tests
-
-### Acceptance Criteria
-
-1. Can grant read access to test share
-2. Can revoke access from test share
-3. Cannot modify system folders
-4. Changes verified on file system
+1. Can create and manage capability mappings
+2. Can search and filter audit logs
+3. Can configure protected groups
+4. All CRUD operations work through UI
 
 ---
 
 ## Future Sprints (Backlog)
 
-### Teams Integration
-- Microsoft Teams connector
-- Direct message notifications
-- Interactive approval workflows
+### Authentication Enhancements
+- Active Directory authentication
+- Entra ID (Azure AD) integration
+- Role-based access control
+- MFA support
 
-### Email Integration
-- Email-to-ticket processing
-- Email notifications
+### Multi-Domain Support
+- Multiple AD domain configuration
+- Cross-domain operations
+- Forest trust handling
 
-### Web UI
-- Dashboard for monitoring
-- Configuration interface
-- Audit log viewer
+### Agent Integration (Full Loop)
+- ServiceNow connector completion
+- Ticket classification
+- Execution pipeline
+- User communication
+- End-to-end testing
 
-### Onboarding Agent
-- Automated customer setup
-- Environment validation
-- Configuration wizard
+### Production Hardening
+- Structured logging throughout
+- Metrics and monitoring
+- Alerting integration
+- Performance optimization
+- Security audit
 
-### C# Tool Server
-- Production tool server rewrite
-- Windows Service deployment
-- Enhanced security
+### Advanced Features
+- Rules/prompts configuration UI
+- Approval workflows
+- Scheduled tasks
+- Reporting and analytics
 
-### Multi-Agent Support
-- Multiple agents for scale
-- Work distribution
-- Agent coordination
+### Container Improvements
+- Tool Server with gMSA in container
+- Admin Portal container
+- Docker Compose for full stack
+- Kubernetes manifests
+
+---
+
+## Architecture Documents
+
+| Document | Purpose |
+|----------|---------|
+| ADR-005 | Windows-native Tool Server with .NET |
+| ADR-006 | Admin Portal and Config Service |
+| WINDOWS_CONTAINERS_PRIMER.md | Guide for Windows containers |
+| ADMIN_PROJECT_STRUCTURE.md | Admin component structure |
 
 ---
 
@@ -368,6 +315,7 @@ Track these for each completed sprint:
 
 ## Notes
 
-- Sprints may be combined or split based on actual complexity
-- Priorities may shift based on customer feedback
-- Security reviews before each major feature release
+- Service account setup is critical path for production readiness
+- Admin Portal can be developed in parallel with service account work
+- Database abstraction layer is foundational - get it right early
+- SQLite for MVP, plan for SQL Server migration

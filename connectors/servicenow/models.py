@@ -7,6 +7,52 @@ from pydantic import BaseModel, Field, field_validator
 from ..base import Ticket, TicketState
 
 
+# ServiceNow state display value to integer mapping
+STATE_MAP = {
+    "New": 1,
+    "In Progress": 2,
+    "On Hold": 3,
+    "Resolved": 6,
+    "Closed": 7,
+    "Canceled": 8,
+    # Also handle integer strings
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+}
+
+
+def parse_state(value: str | int) -> int:
+    """Convert ServiceNow state to integer.
+
+    Handles both display values ("New", "In Progress") and integer strings ("1", "2").
+
+    Args:
+        value: State value from ServiceNow API.
+
+    Returns:
+        Integer state value.
+
+    Raises:
+        ValueError: If state value is not recognized.
+    """
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        # Try mapping from display value
+        if value in STATE_MAP:
+            return STATE_MAP[value]
+        # Try parsing as integer directly
+        try:
+            return int(value)
+        except ValueError:
+            pass
+    raise ValueError(f"Unknown state value: {value}")
+
+
 class IncidentResponse(BaseModel):
     """ServiceNow incident API response model.
 
@@ -87,8 +133,8 @@ class IncidentResponse(BaseModel):
             number=self.number,
             short_description=self.short_description,
             description=self.description,
-            state=TicketState(int(self.state)),
-            priority=int(self.priority),
+            state=TicketState(parse_state(self.state)),
+            priority=int(self.priority) if self.priority.isdigit() else 3,  # Default to medium priority
             caller_username=caller_username,
             assignment_group=assignment_group_name,
             created_at=created_at,

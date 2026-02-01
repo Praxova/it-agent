@@ -24,8 +24,29 @@ Your job is to analyze incoming tickets and classify them so the agent knows how
 5. If confidence < 0.6 OR the request is ambiguous/complex, set should_escalate=true
 
 ## Output Format
-Respond with valid JSON matching this schema:
-{schema}
+Respond with valid JSON using this exact structure:
+```json
+{
+  "ticket_type": "password_reset",
+  "confidence": 0.95,
+  "reasoning": "Brief explanation",
+  "affected_user": "username",
+  "target_group": null,
+  "target_resource": null,
+  "should_escalate": false,
+  "escalation_reason": null
+}
+```
+
+Field descriptions:
+- ticket_type: One of: password_reset, group_access_add, group_access_remove, file_permission, unknown
+- confidence: Number between 0.0 and 1.0
+- reasoning: Brief explanation of your classification
+- affected_user: Username of the person needing help (or null)
+- target_group: AD group name (or null)
+- target_resource: File/folder path (or null)
+- should_escalate: true if human review needed, false otherwise
+- escalation_reason: Explanation of why escalation is needed (or null)
 
 ## Important
 - Extract usernames exactly as written (e.g., "jsmith", "john.smith")
@@ -202,12 +223,8 @@ def build_classification_prompt(ticket: dict[str, Any]) -> str:
     Returns:
         Complete prompt string for LLM.
     """
-    # Get schema
-    schema = get_classification_schema()
-    schema_str = json.dumps(schema, indent=2)
-
-    # Build system prompt with schema
-    system_text = SYSTEM_PROMPT.format(schema=schema_str)
+    # Build system prompt (no schema needed anymore)
+    system_text = SYSTEM_PROMPT
 
     # Build few-shot examples
     examples_text = "## Examples\n\n"
