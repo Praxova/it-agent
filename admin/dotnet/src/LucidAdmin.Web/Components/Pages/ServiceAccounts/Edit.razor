@@ -1,0 +1,517 @@
+@page "/service-accounts/{Id:guid}/edit"
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Enums
+@using LucidAdmin.Core.Interfaces.Credentials
+@using LucidAdmin.Core.Interfaces.Providers
+@using LucidAdmin.Core.Interfaces.Repositories
+@using LucidAdmin.Core.Interfaces.Services
+@using LucidAdmin.Core.Models
+@using LucidAdmin.Web.Components.Shared
+@inject IServiceAccountRepository Repository
+@inject IProviderRegistry ProviderRegistry
+@inject ICredentialService CredentialService
+@inject NavigationManager Navigation
+@inject HttpClient Http
+@attribute [StreamRendering]
+
+<PageTitle>Edit Service Account - Lucid Admin</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-person-gear"></i> Edit Service Account</h1>
+    <a href="/service-accounts" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to List
+    </a>
+</div>
+
+@if (_loading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (_error != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @_error
+        <button type="button" class="btn-close" @onclick="() => _error = null"></button>
+    </div>
+}
+else if (_serviceAccount == null)
+{
+    <div class="alert alert-danger">Service account not found.</div>
+}
+else
+{
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Account Details</h5>
+                </div>
+                <div class="card-body">
+                    <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                        <div class="mb-3">
+                            <label class="form-label">Name *</label>
+                            <input type="text" class="form-control" @bind="_serviceAccount.Name" disabled />
+                            <div class="form-text">Name cannot be changed after creation.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Display Name</label>
+                            <input type="text" class="form-control" @bind="_serviceAccount.DisplayName" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" @bind="_serviceAccount.Description" rows="2"></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Provider *</label>
+                                <input type="text" class="form-control" value="@_serviceAccount.Provider" disabled />
+                                <div class="form-text">Provider cannot be changed after creation.</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Account Type *</label>
+                                <input type="text" class="form-control" value="@_serviceAccount.AccountType" disabled />
+                                <div class="form-text">Account type cannot be changed after creation.</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Configuration (JSON)</label>
+                            <textarea class="form-control font-monospace" @bind="_serviceAccount.Configuration" rows="5"></textarea>
+                            <div class="form-text">Provider-specific configuration in JSON format.</div>
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <h5><i class="bi bi-key"></i> Credentials</h5>
+
+                        <div class="mb-3">
+                            <label class="form-label">Credential Storage *</label>
+                            <select class="form-select" @bind="_serviceAccount.CredentialStorage"
+                                    @bind:after="OnCredentialStorageChanged" required>
+                                @foreach (var storage in Enum.GetValues<CredentialStorageType>())
+                                {
+                                    <option value="@storage">@storage</option>
+                                }
+                            </select>
+                            <div class="form-text">
+                                @switch (_serviceAccount.CredentialStorage)
+                                {
+                                    case CredentialStorageType.Database:
+                                        <span>Credentials will be encrypted and stored in the database.</span>
+                                        break;
+                                    case CredentialStorageType.Environment:
+                                        <span>Credentials will be read from environment variables on the server.</span>
+                                        break;
+                                    case CredentialStorageType.None:
+                                        <span>No credentials needed (gMSA or current user authentication).</span>
+                                        break;
+                                    default:
+                                        <span>@_serviceAccount.CredentialStorage storage selected.</span>
+                                        break;
+                                }
+                            </div>
+                        </div>
+
+                        @if (_serviceAccount.CredentialStorage == CredentialStorageType.Environment)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label">Credential Reference</label>
+                                <input type="text" class="form-control" @bind="_serviceAccount.CredentialReference"
+                                       placeholder="e.g., SERVICENOW_PASSWORD" />
+                                <div class="form-text">Environment variable name containing the credential.</div>
+                            </div>
+                        }
+
+                        @if (_serviceAccount.CredentialStorage == CredentialStorageType.Database)
+                        {
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    @if (_hasExistingCredentials)
+                                    {
+                                        <div class="alert alert-info mb-3">
+                                            <i class="bi bi-info-circle"></i>
+                                            Credentials are already stored. Leave fields blank to keep existing values,
+                                            or enter new values to update.
+                                        </div>
+                                    }
+
+                                    @foreach (var field in GetCredentialFields())
+                                    {
+                                        <div class="mb-3">
+                                            <label class="form-label">
+                                                @field.Label
+                                                @if (field.Required && !_hasExistingCredentials)
+                                                {
+                                                    <span class="text-danger">*</span>
+                                                }
+                                            </label>
+                                            @if (field.IsSecret)
+                                            {
+                                                <div class="input-group">
+                                                    <input type="@(_showSecrets.GetValueOrDefault(field.Key) ? "text" : "password")"
+                                                           class="form-control"
+                                                           value="@GetCredentialValue(field.Key)"
+                                                           @onchange="e => SetCredentialValue(field.Key, e.Value?.ToString())"
+                                                           placeholder="@(field.Placeholder ?? ((_hasExistingCredentials ? "Leave blank to keep existing" : "")))" />
+                                                    <button type="button" class="btn btn-outline-secondary"
+                                                            @onclick="() => ToggleShowSecret(field.Key)">
+                                                        <i class="bi @(_showSecrets.GetValueOrDefault(field.Key) ? "bi-eye-slash" : "bi-eye")"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <input type="text" class="form-control"
+                                                       value="@GetCredentialValue(field.Key)"
+                                                       @onchange="e => SetCredentialValue(field.Key, e.Value?.ToString())"
+                                                       placeholder="@field.Placeholder" />
+                                            }
+                                            @if (!string.IsNullOrEmpty(field.HelpText))
+                                            {
+                                                <div class="form-text">@field.HelpText</div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" @bind="_serviceAccount.IsEnabled" />
+                                <label class="form-check-label">Enabled</label>
+                            </div>
+                        </div>
+
+                        @if (ProviderRequiresToolServer && !_hasToolServerMapping)
+                        {
+                            <div class="alert alert-info" role="alert">
+                                <i class="bi bi-info-circle"></i>
+                                <strong>Tool Server Required:</strong>
+                                Testing AD connections requires a Tool Server with capability mappings.
+                                <div class="mt-2">
+                                    <a href="/tool-servers" class="alert-link">Configure Tool Server</a> |
+                                    <a href="/capability-mappings" class="alert-link">Configure Capability Mappings</a>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary" disabled="@_saving">
+                                @if (_saving)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                <i class="bi bi-check-lg"></i> Save Changes
+                            </button>
+                            <a href="/service-accounts" class="btn btn-secondary">Cancel</a>
+                            <button type="button" class="btn btn-outline-info ms-auto" @onclick="TestConnectivity" disabled="@_testing">
+                                @if (_testing)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                <i class="bi bi-wifi"></i> Test Connection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            @if (_testResult != null)
+            {
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">Connection Test Result</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert @(_testResult.Status == HealthStatus.Healthy ? "alert-success" : _testResult.Status == HealthStatus.Degraded ? "alert-warning" : "alert-danger")">
+                            <strong>@_testResult.Status</strong>: @_testResult.Message
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Status</h5>
+                </div>
+                <div class="card-body">
+                    <dl>
+                        <dt>Created</dt>
+                        <dd>@_serviceAccount.CreatedAt.ToString("g")</dd>
+                        <dt>Last Updated</dt>
+                        <dd>@_serviceAccount.UpdatedAt.ToString("g")</dd>
+                        <dt>Credentials</dt>
+                        <dd>
+                            <CredentialStatusBadge
+                                HasCredentials="@_hasExistingCredentials"
+                                StorageType="@_serviceAccount.CredentialStorage.ToString()"
+                                LastUpdated="@_serviceAccount.CredentialsUpdatedAt" />
+                        </dd>
+                        @if (_serviceAccount.LastHealthCheck.HasValue)
+                        {
+                            <dt>Last Health Check</dt>
+                            <dd>
+                                @_serviceAccount.LastHealthCheck.Value.ToString("g")
+                                <span class="badge @GetHealthBadgeClass(_serviceAccount.HealthStatus)">
+                                    @_serviceAccount.HealthStatus
+                                </span>
+                            </dd>
+                        }
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ServiceAccount? _serviceAccount;
+    private Dictionary<string, string> _credentials = new();
+    private Dictionary<string, bool> _showSecrets = new();
+    private bool _hasExistingCredentials;
+    private bool _hasToolServerMapping;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _testing;
+    private string? _error;
+    private HealthCheckResult? _testResult;
+
+    private bool ProviderRequiresToolServer =>
+        _serviceAccount?.Provider.ToLower() == "windows-ad";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _serviceAccount = await Repository.GetByIdAsync(Id);
+            if (_serviceAccount != null)
+            {
+                _hasExistingCredentials = await CredentialService.HasCredentialsAsync(Id);
+
+                // Check if tool server mapping exists for AD providers
+                if (ProviderRequiresToolServer)
+                {
+                    _hasToolServerMapping = await CheckToolServerMapping();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load service account: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<bool> CheckToolServerMapping()
+    {
+        try
+        {
+            // Call API to check if any AD capability mappings exist
+            var response = await Http.GetAsync("/api/v1/capability-mappings");
+            if (response.IsSuccessStatusCode)
+            {
+                var mappingsJson = await response.Content.ReadAsStringAsync();
+                // Simple check - if there are any mappings with "ad-" capabilities, we have tool server support
+                return mappingsJson.Contains("\"ad-", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_serviceAccount == null) return;
+
+        _saving = true;
+        _error = null;
+
+        try
+        {
+            _serviceAccount.UpdatedAt = DateTime.UtcNow;
+            await Repository.UpdateAsync(_serviceAccount);
+
+            // Store credentials if using database storage and credentials were entered
+            if (_serviceAccount.CredentialStorage == CredentialStorageType.Database && _credentials.Any())
+            {
+                var credSet = new CredentialSet(_credentials);
+                var result = await CredentialService.StoreCredentialsAsync(_serviceAccount.Id, credSet);
+
+                if (!result.Success)
+                {
+                    _error = $"Account saved but credentials failed: {result.ErrorMessage}";
+                    return;
+                }
+
+                _hasExistingCredentials = true;
+            }
+
+            Navigation.NavigateTo("/service-accounts");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to save: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task TestConnectivity()
+    {
+        if (_serviceAccount == null) return;
+
+        _testing = true;
+        _testResult = null;
+
+        try
+        {
+            // If there are unsaved credentials, temporarily store them for the test
+            if (_serviceAccount.CredentialStorage == CredentialStorageType.Database && _credentials.Any())
+            {
+                var credSet = new CredentialSet(_credentials);
+                await CredentialService.StoreCredentialsAsync(_serviceAccount.Id, credSet);
+                _hasExistingCredentials = true;
+            }
+
+            // Call the API endpoint which handles delegation to Tool Server for AD providers
+            var response = await Http.PostAsync($"/api/v1/service-accounts/{_serviceAccount.Id}/test-connectivity", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TestConnectivityApiResponse>();
+                if (result != null)
+                {
+                    _testResult = result.Status.ToLower() switch
+                    {
+                        "healthy" => HealthCheckResult.Healthy(result.Message),
+                        "warning" => new HealthCheckResult(HealthStatus.Degraded, result.Message, result.CheckedAt),
+                        _ => HealthCheckResult.Unhealthy(result.Message)
+                    };
+                }
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _testResult = HealthCheckResult.Unhealthy($"API Error: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _testResult = HealthCheckResult.Unhealthy($"Test failed: {ex.Message}");
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private record TestConnectivityApiResponse(string Status, string Message, DateTime CheckedAt);
+
+    private void OnCredentialStorageChanged()
+    {
+        _credentials.Clear();
+    }
+
+    private string GetCredentialValue(string key)
+    {
+        return _credentials.TryGetValue(key, out var value) ? value : "";
+    }
+
+    private void SetCredentialValue(string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            _credentials.Remove(key);
+        }
+        else
+        {
+            _credentials[key] = value;
+        }
+    }
+
+    private void ToggleShowSecret(string key)
+    {
+        _showSecrets[key] = !_showSecrets.GetValueOrDefault(key);
+    }
+
+    private List<CredentialField> GetCredentialFields()
+    {
+        if (_serviceAccount == null) return new();
+
+        return _serviceAccount.Provider.ToLowerInvariant() switch
+        {
+            "servicenow" when _serviceAccount.AccountType == "basic-auth" => new()
+            {
+                new("password", "Password", true, true, null, "ServiceNow user password")
+            },
+            "servicenow" when _serviceAccount.AccountType == "oauth" => new()
+            {
+                new("client_secret", "Client Secret", true, true, null, "OAuth2 client secret"),
+                new("refresh_token", "Refresh Token", true, false, null, "OAuth2 refresh token (optional)")
+            },
+            "llm-openai" or "openai" => new()
+            {
+                new("api_key", "API Key", true, true, "sk-...", "OpenAI API key")
+            },
+            "llm-anthropic" or "anthropic" => new()
+            {
+                new("api_key", "API Key", true, true, "sk-ant-...", "Anthropic API key")
+            },
+            "llm-azure-openai" or "azure-openai" => new()
+            {
+                new("api_key", "API Key", true, true, null, "Azure OpenAI resource key")
+            },
+            "windows-ad" when _serviceAccount.AccountType == "traditional" => new()
+            {
+                new("password", "Password", true, true, null, "AD service account password")
+            },
+            "linux" when _serviceAccount.AccountType == "ssh-key" => new()
+            {
+                new("private_key", "Private Key", true, true, null, "SSH private key (PEM format)"),
+                new("passphrase", "Key Passphrase", true, false, null, "Passphrase if key is encrypted")
+            },
+            "linux" when _serviceAccount.AccountType == "password" => new()
+            {
+                new("password", "Password", true, true, null, "SSH password")
+            },
+            _ => new()
+            {
+                new("password", "Password/Secret", true, false, null, "Primary credential"),
+                new("api_key", "API Key", true, false, null, "API key (if applicable)")
+            }
+        };
+    }
+
+    private static string GetHealthBadgeClass(HealthStatus status) => status switch
+    {
+        HealthStatus.Healthy => "bg-success",
+        HealthStatus.Degraded => "bg-warning text-dark",
+        HealthStatus.Unhealthy => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private record CredentialField(string Key, string Label, bool IsSecret, bool Required, string? Placeholder, string? HelpText);
+}

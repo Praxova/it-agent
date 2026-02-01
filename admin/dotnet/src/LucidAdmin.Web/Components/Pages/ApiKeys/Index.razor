@@ -1,0 +1,598 @@
+@page "/api-keys"
+@using LucidAdmin.Core.Interfaces.Repositories
+@using LucidAdmin.Core.Interfaces.Services
+@using LucidAdmin.Web.Components.Shared
+@inject IApiKeyRepository ApiKeyRepository
+@inject IApiKeyService ApiKeyService
+@inject IAgentRepository AgentRepository
+@inject IToolServerRepository ToolServerRepository
+@inject NavigationManager Navigation
+@attribute [StreamRendering]
+
+<PageTitle>API Keys</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1>API Keys</h1>
+        <div>
+            <button class="btn btn-primary" @onclick="OpenCreateDialog">
+                <i class="bi bi-plus-circle"></i> Create API Key
+            </button>
+        </div>
+    </div>
+
+    @if (_error != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            @_error
+            <button type="button" class="btn-close" @onclick="() => _error = null"></button>
+        </div>
+    }
+
+    @if (_newKeyCreated != null)
+    {
+        <div class="alert alert-warning border-warning">
+            <h5><i class="bi bi-exclamation-triangle"></i> API Key Created - Save Now!</h5>
+            <p class="mb-2">This is the only time the full API key will be shown. Store it securely!</p>
+            <div class="input-group mb-2">
+                <input type="text" class="form-control font-monospace" value="@_newKeyCreated.PlaintextKey" readonly />
+                <CopyButton Text="@_newKeyCreated.PlaintextKey" ButtonText="Copy Key" />
+            </div>
+            <small class="text-muted">Key Name: @_newKeyCreated.Key.Name</small>
+        </div>
+    }
+
+    <div class="mb-3">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <input type="text" class="form-control" placeholder="Filter by name or prefix..."
+                       @bind="_filterText" @bind:event="oninput" />
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" @bind="_filterRole">
+                    <option value="">All Roles</option>
+                    <option value="Agent">Agent</option>
+                    <option value="ToolServer">Tool Server</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" @bind="_filterStatus">
+                    <option value="">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Expired">Expired</option>
+                    <option value="Revoked">Revoked</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (_apiKeys == null || !_apiKeys.Any())
+    {
+        <div class="alert alert-info">
+            No API keys found. Create one to get started.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Key Prefix</th>
+                        <th>Role</th>
+                        <th>Associated With</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Last Used</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var key in FilteredKeys)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@key.Name</strong>
+                                @if (!string.IsNullOrEmpty(key.Description))
+                                {
+                                    <br /><small class="text-muted">@key.Description</small>
+                                }
+                            </td>
+                            <td><code>@key.KeyPrefix</code></td>
+                            <td><span class="badge bg-secondary">@key.Role</span></td>
+                            <td>
+                                @if (key.AgentId != null)
+                                {
+                                    <span>Agent: @key.AgentName</span>
+                                }
+                                else if (key.ToolServerId != null)
+                                {
+                                    <span>Tool Server: @key.ToolServerName</span>
+                                }
+                            </td>
+                            <td>
+                                @if (!key.IsActive)
+                                {
+                                    <span class="badge bg-danger" title="Revoked: @key.RevocationReason">Revoked</span>
+                                }
+                                else if (!key.IsValid)
+                                {
+                                    <span class="badge bg-warning text-dark" title="Expired: @key.ExpiresAt?.ToString("yyyy-MM-dd")">Expired</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">Active</span>
+                                }
+                            </td>
+                            <td><small>@key.CreatedAt.ToString("yyyy-MM-dd HH:mm")</small></td>
+                            <td>
+                                @if (key.LastUsedAt != null)
+                                {
+                                    <small title="From IP: @key.LastUsedFromIp">@key.LastUsedAt.Value.ToString("yyyy-MM-dd HH:mm")</small>
+                                }
+                                else
+                                {
+                                    <small class="text-muted">Never</small>
+                                }
+                            </td>
+                            <td>
+                                @if (key.IsActive && key.IsValid)
+                                {
+                                    <button class="btn btn-sm btn-danger" @onclick="() => OpenRevokeDialog(key)">
+                                        Revoke
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@* Create API Key Modal *@
+@if (_showCreateDialog)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create API Key</h5>
+                    <button type="button" class="btn-close" @onclick="CloseCreateDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Key Type</label>
+                        <select class="form-select" @bind="_createKeyType">
+                            <option value="agent">Agent Key</option>
+                            <option value="tool-server">Tool Server Key</option>
+                        </select>
+                    </div>
+
+                    @if (_createKeyType == "agent")
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Agent</label>
+                            <select class="form-select" @bind="_createAgentId">
+                                <option value="">Select an agent...</option>
+                                @if (_agents != null)
+                                {
+                                    @foreach (var agent in _agents)
+                                    {
+                                        <option value="@agent.Id">@agent.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Tool Server</label>
+                            <select class="form-select" @bind="_createToolServerId">
+                                <option value="">Select a tool server...</option>
+                                @if (_toolServers != null)
+                                {
+                                    @foreach (var ts in _toolServers)
+                                    {
+                                        <option value="@ts.Id">@ts.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" class="form-control" @bind="_createName" placeholder="e.g., Production API Key" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description (optional)</label>
+                        <textarea class="form-control" @bind="_createDescription" rows="2"
+                                  placeholder="Optional description"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Expires At (optional)</label>
+                        <input type="datetime-local" class="form-control" @bind="_createExpiresAt" />
+                        <div class="form-text">Leave blank for no expiration</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCreateDialog">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateApiKey"
+                            disabled="@(_createKeyType == "agent" ? string.IsNullOrEmpty(_createAgentId) : string.IsNullOrEmpty(_createToolServerId))">
+                        Create Key
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Revoke API Key Modal *@
+@if (_showRevokeDialog && _revokeKey != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Revoke API Key</h5>
+                    <button type="button" class="btn-close" @onclick="CloseRevokeDialog"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to revoke the API key <strong>@_revokeKey.Name</strong>?</p>
+                    <p class="text-danger">This action cannot be undone. Any applications using this key will immediately lose access.</p>
+
+                    <div class="mb-3">
+                        <label class="form-label">Reason (optional)</label>
+                        <textarea class="form-control" @bind="_revokeReason" rows="2"
+                                  placeholder="e.g., Key compromised, no longer needed"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseRevokeDialog">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="RevokeApiKey">
+                        Revoke Key
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApiKeyResponse>? _apiKeys;
+    private List<AgentResponse>? _agents;
+    private List<ToolServerResponse>? _toolServers;
+    private bool _loading = true;
+    private string? _error;
+
+    private string _filterText = "";
+    private string _filterRole = "";
+    private string _filterStatus = "";
+
+    private bool _showCreateDialog = false;
+    private string _createKeyType = "agent";
+    private string? _createAgentId;
+    private string? _createToolServerId;
+    private string _createName = "";
+    private string? _createDescription;
+    private DateTime? _createExpiresAt;
+    private ApiKeyCreateResponse? _newKeyCreated;
+
+    private bool _showRevokeDialog = false;
+    private ApiKeyResponse? _revokeKey;
+    private string? _revokeReason;
+
+    private IEnumerable<ApiKeyResponse> FilteredKeys
+    {
+        get
+        {
+            if (_apiKeys == null) return Enumerable.Empty<ApiKeyResponse>();
+
+            var filtered = _apiKeys.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_filterText))
+            {
+                var search = _filterText.ToLowerInvariant();
+                filtered = filtered.Where(k =>
+                    k.Name.ToLowerInvariant().Contains(search) ||
+                    k.KeyPrefix.ToLowerInvariant().Contains(search));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterRole))
+            {
+                filtered = filtered.Where(k => k.Role == _filterRole);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                filtered = _filterStatus switch
+                {
+                    "Active" => filtered.Where(k => k.IsActive && k.IsValid),
+                    "Expired" => filtered.Where(k => k.IsActive && !k.IsValid),
+                    "Revoked" => filtered.Where(k => !k.IsActive),
+                    _ => filtered
+                };
+            }
+
+            return filtered.OrderByDescending(k => k.CreatedAt);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var keysTask = ApiKeyRepository.GetAllAsync();
+            var agentsTask = AgentRepository.GetAllAsync();
+            var toolServersTask = ToolServerRepository.GetAllAsync();
+
+            await Task.WhenAll(keysTask, agentsTask, toolServersTask);
+
+            var keys = await keysTask;
+            var agents = await agentsTask;
+            var toolServers = await toolServersTask;
+
+            _apiKeys = keys.Select(k => new ApiKeyResponse(
+                k.Id,
+                k.Name,
+                k.Description,
+                k.KeyPrefix,
+                k.Role.ToString(),
+                k.AgentId,
+                k.Agent?.Name,
+                k.ToolServerId,
+                k.ToolServer?.Name,
+                k.IsActive,
+                k.IsValid(),
+                k.ExpiresAt,
+                k.LastUsedAt,
+                k.LastUsedFromIp,
+                k.RevokedAt,
+                k.RevokedBy,
+                k.RevocationReason,
+                k.CreatedAt
+            )).ToList();
+
+            _agents = agents.Select(a => new AgentResponse(a.Id, a.Name)).ToList();
+            _toolServers = toolServers.Select(ts => new ToolServerResponse(ts.Id, ts.Name)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load data: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenCreateDialog()
+    {
+        _showCreateDialog = true;
+        _createKeyType = "agent";
+        _createAgentId = null;
+        _createToolServerId = null;
+        _createName = "";
+        _createDescription = null;
+        _createExpiresAt = null;
+        _newKeyCreated = null;
+    }
+
+    private void CloseCreateDialog()
+    {
+        _showCreateDialog = false;
+    }
+
+    private async Task CreateApiKey()
+    {
+        _error = null;
+
+        try
+        {
+            if (_createKeyType == "agent")
+            {
+                if (string.IsNullOrEmpty(_createAgentId) || !Guid.TryParse(_createAgentId, out var agentId))
+                {
+                    _error = "Please select an agent";
+                    return;
+                }
+
+                var result = await ApiKeyService.CreateAgentKeyAsync(
+                    agentId,
+                    _createName,
+                    _createDescription,
+                    _createExpiresAt
+                );
+
+                if (result.Success && result.Key != null)
+                {
+                    _newKeyCreated = new ApiKeyCreateResponse(
+                        new ApiKeyResponse(
+                            result.Key.Id,
+                            result.Key.Name,
+                            result.Key.Description,
+                            result.Key.KeyPrefix,
+                            result.Key.Role.ToString(),
+                            result.Key.AgentId,
+                            result.Key.Agent?.Name,
+                            result.Key.ToolServerId,
+                            result.Key.ToolServer?.Name,
+                            result.Key.IsActive,
+                            result.Key.IsValid(),
+                            result.Key.ExpiresAt,
+                            result.Key.LastUsedAt,
+                            result.Key.LastUsedFromIp,
+                            result.Key.RevokedAt,
+                            result.Key.RevokedBy,
+                            result.Key.RevocationReason,
+                            result.Key.CreatedAt
+                        ),
+                        result.PlaintextKey!,
+                        "Save this key securely. You won't be able to see it again."
+                    );
+                    _showCreateDialog = false;
+                    await LoadData();
+                }
+                else
+                {
+                    _error = $"Failed to create API key: {result.ErrorMessage}";
+                }
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(_createToolServerId) || !Guid.TryParse(_createToolServerId, out var toolServerId))
+                {
+                    _error = "Please select a tool server";
+                    return;
+                }
+
+                var result = await ApiKeyService.CreateToolServerKeyAsync(
+                    toolServerId,
+                    _createName,
+                    _createDescription,
+                    _createExpiresAt
+                );
+
+                if (result.Success && result.Key != null)
+                {
+                    _newKeyCreated = new ApiKeyCreateResponse(
+                        new ApiKeyResponse(
+                            result.Key.Id,
+                            result.Key.Name,
+                            result.Key.Description,
+                            result.Key.KeyPrefix,
+                            result.Key.Role.ToString(),
+                            result.Key.AgentId,
+                            result.Key.Agent?.Name,
+                            result.Key.ToolServerId,
+                            result.Key.ToolServer?.Name,
+                            result.Key.IsActive,
+                            result.Key.IsValid(),
+                            result.Key.ExpiresAt,
+                            result.Key.LastUsedAt,
+                            result.Key.LastUsedFromIp,
+                            result.Key.RevokedAt,
+                            result.Key.RevokedBy,
+                            result.Key.RevocationReason,
+                            result.Key.CreatedAt
+                        ),
+                        result.PlaintextKey!,
+                        "Save this key securely. You won't be able to see it again."
+                    );
+                    _showCreateDialog = false;
+                    await LoadData();
+                }
+                else
+                {
+                    _error = $"Failed to create API key: {result.ErrorMessage}";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create API key: {ex.Message}";
+        }
+    }
+
+    private void OpenRevokeDialog(ApiKeyResponse key)
+    {
+        _revokeKey = key;
+        _revokeReason = null;
+        _showRevokeDialog = true;
+    }
+
+    private void CloseRevokeDialog()
+    {
+        _showRevokeDialog = false;
+        _revokeKey = null;
+    }
+
+    private async Task RevokeApiKey()
+    {
+        if (_revokeKey == null) return;
+
+        _error = null;
+
+        try
+        {
+            var success = await ApiKeyService.RevokeKeyAsync(_revokeKey.Id, "Admin", _revokeReason);
+
+            if (success)
+            {
+                _showRevokeDialog = false;
+                await LoadData();
+            }
+            else
+            {
+                _error = "Failed to revoke API key";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to revoke API key: {ex.Message}";
+        }
+    }
+
+    // DTOs matching the API responses
+    private record ApiKeyResponse(
+        Guid Id,
+        string Name,
+        string? Description,
+        string KeyPrefix,
+        string Role,
+        Guid? AgentId,
+        string? AgentName,
+        Guid? ToolServerId,
+        string? ToolServerName,
+        bool IsActive,
+        bool IsValid,
+        DateTime? ExpiresAt,
+        DateTime? LastUsedAt,
+        string? LastUsedFromIp,
+        DateTime? RevokedAt,
+        string? RevokedBy,
+        string? RevocationReason,
+        DateTime CreatedAt
+    );
+
+    private record ApiKeyCreateResponse(
+        ApiKeyResponse Key,
+        string PlaintextKey,
+        string Warning
+    );
+
+    private record CreateApiKeyRequest(
+        string Name,
+        string? Description = null,
+        DateTime? ExpiresAt = null
+    );
+
+    private record RevokeApiKeyRequest(
+        string? Reason = null
+    );
+
+    private record AgentResponse(Guid Id, string Name);
+    private record ToolServerResponse(Guid Id, string Name);
+}

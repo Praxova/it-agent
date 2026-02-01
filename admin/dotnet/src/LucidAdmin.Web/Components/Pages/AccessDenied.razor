@@ -1,0 +1,32 @@
+@page "/access-denied"
+@inject NavigationManager Navigation
+
+<PageTitle>Access Denied - Lucid Admin Portal</PageTitle>
+
+<div class="login-container">
+    <div class="login-card">
+        <h1>Access Denied</h1>
+        <p>You do not have permission to access this resource.</p>
+
+        <div class="alert alert-warning" role="alert">
+            <strong>Insufficient Permissions</strong><br/>
+            Your account does not have the required permissions to view this page.
+            Please contact your administrator if you believe this is an error.
+        </div>
+
+        <button class="btn btn-primary" @onclick="GoHome">Return to Home</button>
+        <button class="btn btn-secondary" @onclick="GoToLogin">Login with Different Account</button>
+    </div>
+</div>
+
+@code {
+    private void GoHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private void GoToLogin()
+    {
+        Navigation.NavigateTo("/logout", forceLoad: true);
+    }
+}

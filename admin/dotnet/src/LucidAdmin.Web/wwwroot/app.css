@@ -1,0 +1,73 @@
+/* Custom overrides for Lucid Admin Portal */
+html, body {
+    font-family: 'Roboto', sans-serif;
+}
+
+/* Utility classes */
+.gap-2 {
+    gap: 0.5rem;
+}
+
+.flex-wrap {
+    flex-wrap: wrap;
+}
+
+/* Typography utilities */
+.font-monospace {
+    font-family: 'Courier New', Courier, monospace;
+}
+
+/* Spacing utilities */
+.mb-2 {
+    margin-bottom: 0.5rem;
+}
+
+.mb-3 {
+    margin-bottom: 1rem;
+}
+
+.mb-4 {
+    margin-bottom: 1.5rem;
+}
+
+.mt-2 {
+    margin-top: 0.5rem;
+}
+
+.pa-3 {
+    padding: 1rem;
+}
+
+/* Display utilities */
+.d-flex {
+    display: flex;
+}
+
+.d-block {
+    display: block;
+}
+
+.align-items-center {
+    align-items: center;
+}
+
+.justify-content-between {
+    justify-content: space-between;
+}
+
+/* Text utilities */
+.text-muted {
+    color: #6c757d;
+}
+
+.text-success {
+    color: #28a745;
+}
+
+.text-danger {
+    color: #dc3545;
+}
+
+.text-dark {
+    color: #212529;
+}

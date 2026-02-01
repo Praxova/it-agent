@@ -1,0 +1,349 @@
+@page "/rulesets/edit/{Id:guid}"
+@page "/rulesets/create"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Core.Enums
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>@(_isCreate ? "Create Ruleset" : "Edit Ruleset") - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(_isCreate ? "Create Ruleset" : $"Edit Ruleset: {_model.Name}")</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_model != null)
+{
+    <MudPaper Elevation="2" Class="pa-4 mb-4">
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.Name"
+                                  Label="Name"
+                                  Required="true"
+                                  Disabled="@(!_isCreate || _model.IsBuiltIn)"
+                                  HelperText="Unique identifier for the ruleset (cannot be changed after creation)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.DisplayName"
+                                  Label="Display Name"
+                                  Disabled="@_model.IsBuiltIn"
+                                  HelperText="Friendly name for display (optional)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect @bind-Value="_model.Category"
+                               Label="Category"
+                               Required="true"
+                               Disabled="@_model.IsBuiltIn">
+                        @foreach (var category in RulesetCategory.All)
+                        {
+                            <MudSelectItem Value="@category">@category</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSwitch T="bool"
+                               @bind-Checked="_model.IsActive"
+                               Label="Active"
+                               Color="Color.Success"
+                               Disabled="@_model.IsBuiltIn" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description"
+                                  Label="Description"
+                                  Lines="3"
+                                  Disabled="@_model.IsBuiltIn"
+                                  HelperText="Optional description of the ruleset's purpose" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+
+        <MudDivider Class="my-4" />
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <MudText Typo="Typo.h6">Rules</MudText>
+            @if (!_model.IsBuiltIn)
+            {
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Size="Size.Small"
+                           OnClick="AddRule">
+                    Add Rule
+                </MudButton>
+            }
+        </div>
+
+        @if (_model.Rules.Any())
+        {
+            <MudTable Items="@_model.Rules.OrderBy(r => r.Priority)"
+                      Dense="true"
+                      Hover="true"
+                      Elevation="0">
+                <HeaderContent>
+                    <MudTh>Priority</MudTh>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Rule Text</MudTh>
+                    <MudTh>Active</MudTh>
+                    <MudTh>Actions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Priority">
+                        @if (!_model.IsBuiltIn)
+                        {
+                            <MudNumericField @bind-Value="context.Priority" Min="0" Max="1000" Variant="Variant.Text" Margin="Margin.Dense" />
+                        }
+                        else
+                        {
+                            <MudText>@context.Priority</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Name">
+                        @if (!_model.IsBuiltIn)
+                        {
+                            <MudTextField @bind-Value="context.Name" Variant="Variant.Text" Margin="Margin.Dense" />
+                        }
+                        else
+                        {
+                            <MudText>@context.Name</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Rule Text">
+                        @if (!_model.IsBuiltIn)
+                        {
+                            <MudTextField @bind-Value="context.RuleText" Variant="Variant.Text" Margin="Margin.Dense" Lines="2" />
+                        }
+                        else
+                        {
+                            <MudText Class="text-truncate" Style="max-width: 400px;" title="@context.RuleText">@context.RuleText</MudText>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Active">
+                        @if (!_model.IsBuiltIn)
+                        {
+                            <MudSwitch T="bool" @bind-Checked="context.IsActive" Color="Color.Success" />
+                        }
+                        else
+                        {
+                            @if (context.IsActive)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+                            }
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Actions">
+                        @if (!_model.IsBuiltIn)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => RemoveRule(context))"
+                                           title="Delete Rule" />
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info">No rules defined yet. Add some rules to provide behavioral guidance to agents.</MudAlert>
+        }
+
+        <MudDivider Class="my-4" />
+
+        <div class="d-flex justify-content-between">
+            <MudButton Variant="Variant.Outlined"
+                       OnClick="Cancel">
+                Cancel
+            </MudButton>
+            @if (!_model.IsBuiltIn)
+            {
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="@(!_isValid || _saving)"
+                           OnClick="Save">
+                    @if (_saving)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        <span class="ms-2">Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Save</span>
+                    }
+                </MudButton>
+            }
+        </div>
+    </MudPaper>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load ruleset</MudAlert>
+}
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private RulesetFormModel _model = new();
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _loading = true;
+    private bool _saving = false;
+    private bool _isCreate => !Id.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRuleset();
+    }
+
+    private async Task LoadRuleset()
+    {
+        _loading = true;
+        try
+        {
+            if (_isCreate)
+            {
+                _model = new RulesetFormModel
+                {
+                    Category = "Custom",
+                    IsActive = true
+                };
+            }
+            else
+            {
+                var response = await Http.GetFromJsonAsync<RulesetResponse>($"/api/rulesets/{Id}/with-rules");
+                if (response != null)
+                {
+                    _model = RulesetFormModel.FromResponse(response);
+                }
+                else
+                {
+                    Snackbar.Add("Ruleset not found", Severity.Error);
+                    Navigation.NavigateTo("/rulesets");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load ruleset: {ex.Message}", Severity.Error);
+            Navigation.NavigateTo("/rulesets");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void AddRule()
+    {
+        _model.Rules.Add(new RuleFormModel
+        {
+            RulesetId = _model.Id ?? Guid.Empty,
+            Name = $"Rule {_model.Rules.Count + 1}",
+            RuleText = "",
+            Priority = (_model.Rules.Any() ? _model.Rules.Max(r => r.Priority) : 0) + 10,
+            IsActive = true
+        });
+    }
+
+    private void RemoveRule(RuleFormModel rule)
+    {
+        _model.Rules.Remove(rule);
+    }
+
+    private async Task Save()
+    {
+        if (!_isValid || _saving) return;
+
+        _saving = true;
+        try
+        {
+            if (_isCreate)
+            {
+                // Create ruleset
+                var createRequest = _model.ToCreateRequest();
+                var createResponse = await Http.PostAsJsonAsync("/api/rulesets", createRequest);
+
+                if (createResponse.IsSuccessStatusCode)
+                {
+                    var createdRuleset = await createResponse.Content.ReadFromJsonAsync<RulesetResponse>();
+                    if (createdRuleset != null)
+                    {
+                        // Create all rules
+                        foreach (var rule in _model.Rules)
+                        {
+                            rule.RulesetId = createdRuleset.Id;
+                            var ruleRequest = rule.ToCreateRequest();
+                            await Http.PostAsJsonAsync("/api/rules", ruleRequest);
+                        }
+
+                        Snackbar.Add($"Ruleset '{_model.Name}' created successfully", Severity.Success);
+                        Navigation.NavigateTo("/rulesets");
+                    }
+                }
+                else
+                {
+                    var error = await createResponse.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to create ruleset: {error}", Severity.Error);
+                }
+            }
+            else
+            {
+                // Update ruleset
+                var updateRequest = _model.ToUpdateRequest();
+                var updateResponse = await Http.PutAsJsonAsync($"/api/rulesets/{Id}", updateRequest);
+
+                if (updateResponse.IsSuccessStatusCode)
+                {
+                    // Update or create rules
+                    foreach (var rule in _model.Rules)
+                    {
+                        if (rule.Id.HasValue)
+                        {
+                            // Update existing rule
+                            var ruleUpdateRequest = rule.ToUpdateRequest();
+                            await Http.PutAsJsonAsync($"/api/rules/{rule.Id}", ruleUpdateRequest);
+                        }
+                        else
+                        {
+                            // Create new rule
+                            rule.RulesetId = Id.Value;
+                            var ruleCreateRequest = rule.ToCreateRequest();
+                            await Http.PostAsJsonAsync("/api/rules", ruleCreateRequest);
+                        }
+                    }
+
+                    Snackbar.Add($"Ruleset '{_model.Name}' updated successfully", Severity.Success);
+                    Navigation.NavigateTo("/rulesets");
+                }
+                else
+                {
+                    var error = await updateResponse.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to update ruleset: {error}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save ruleset: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/rulesets");
+    }
+}

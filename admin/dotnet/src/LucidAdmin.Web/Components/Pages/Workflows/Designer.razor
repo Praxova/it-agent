@@ -1,0 +1,531 @@
+@page "/workflows/designer/{Id:guid}"
+@page "/workflows/designer/create"
+@attribute [Authorize]
+@using LucidAdmin.Web.Api.Models.Requests
+@using LucidAdmin.Web.Api.Models.Responses
+@using LucidAdmin.Core.Enums
+@using System.Text.Json
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>@(_isNew ? "Create Workflow" : "Edit Workflow") - Lucid Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="mt-4 pa-0" Style="height: calc(100vh - 100px);">
+    <MudGrid Style="height: 100%;">
+        @* Left Sidebar *@
+        <MudItem xs="12" md="3" Style="height: 100%; overflow-y: auto;">
+            <MudPaper Class="pa-3" Style="height: 100%;">
+                <MudExpansionPanels Multi Expansion="true">
+                    <MudExpansionPanel Text="Workflow Details" IsInitiallyExpanded="true">
+                        <MudTextField @bind-Value="_name" Label="Name" Required="true"
+                                      Disabled="@(!_isNew)" Class="mb-2"
+                                      HelperText="Unique identifier" />
+                        <MudTextField @bind-Value="_displayName" Label="Display Name" Class="mb-2" />
+                        <MudTextField @bind-Value="_description" Label="Description" Lines="2" Class="mb-2" />
+                        <MudSelect @bind-Value="_exampleSetId" Label="Example Set" Class="mb-2"
+                                   Clearable="true" T="Guid?">
+                            @foreach (var es in _exampleSets)
+                            {
+                                <MudSelectItem T="Guid?" Value="@((Guid?)es.Id)">@(es.DisplayName ?? es.Name)</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Primary" />
+                    </MudExpansionPanel>
+
+                    @* Step Palette *@
+                    <MudExpansionPanel Text="Step Palette" IsInitiallyExpanded="true">
+                        <MudText Typo="Typo.caption" Class="mb-2">Drag steps onto the canvas</MudText>
+                        @foreach (var stepType in _stepTypes)
+                        {
+                            <MudPaper Class="pa-2 mb-2 step-palette-item" Elevation="1"
+                                      Style="@($"border-left: 4px solid {stepType.Color}; cursor: grab;")"
+                                      @ondragstart="@(() => OnDragStart(stepType))"
+                                      draggable="true">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText>@stepType.Icon</MudText>
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@stepType.Name</MudText>
+                                        <MudText Typo="Typo.caption" Style="font-size: 0.7em;">@stepType.Description</MudText>
+                                    </MudStack>
+                                </MudStack>
+                            </MudPaper>
+                        }
+                    </MudExpansionPanel>
+
+                    @* Selected Node Properties *@
+                    @if (_selectedStep != null)
+                    {
+                        <MudExpansionPanel Text="Step Properties" IsInitiallyExpanded="true">
+                            <MudTextField Value="@_stepEdit_Name"
+                                          ValueChanged="@((string val) => UpdateStepName(val))"
+                                          Label="Step Name" Class="mb-2" />
+                            <MudTextField Value="@_stepEdit_DisplayName"
+                                          ValueChanged="@((string val) => UpdateStepDisplayName(val))"
+                                          Label="Display Name" Class="mb-2" />
+                            <MudText Typo="Typo.overline">Type: @_selectedStep.StepType</MudText>
+
+                            @* Type-specific configuration *@
+                            @switch (_selectedStep.StepType)
+                            {
+                                case StepType.Execute:
+                                    <MudTextField @bind-Value="_stepConfig_Capability"
+                                                  Label="Capability" Class="mb-2"
+                                                  HelperText="e.g., ad-password-reset" />
+                                    break;
+                                case StepType.Condition:
+                                    <MudTextField @bind-Value="_stepConfig_Condition"
+                                                  Label="Condition" Class="mb-2"
+                                                  HelperText="e.g., confidence >= 0.8" />
+                                    break;
+                                case StepType.Notify:
+                                    <MudSelect @bind-Value="_stepConfig_NotifyType" Label="Notify Type" Class="mb-2" T="string">
+                                        <MudSelectItem Value="@("email")">Email</MudSelectItem>
+                                        <MudSelectItem Value="@("teams")">Teams</MudSelectItem>
+                                        <MudSelectItem Value="@("ticket")">Ticket Comment</MudSelectItem>
+                                    </MudSelect>
+                                    break;
+                            }
+
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                       OnClick="DeleteSelectedStep" Class="mt-2">
+                                Delete Step
+                            </MudButton>
+                        </MudExpansionPanel>
+                    }
+                </MudExpansionPanels>
+
+                @* Action Buttons *@
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="SaveWorkflow" Disabled="_saving">
+                        @(_saving ? "Saving..." : "Save")
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               OnClick="@(() => Navigation.NavigateTo("/workflows"))">
+                        Cancel
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        @* Canvas Area *@
+        <MudItem xs="12" md="9" Style="height: 100%;">
+            <MudPaper Style="height: 100%; position: relative;">
+                @* Toolbar *@
+                <MudStack Row="true" Class="pa-2" Style="position: absolute; top: 0; right: 0; z-index: 10;">
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomIn" OnClick="ZoomIn" Size="Size.Small" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomOut" OnClick="ZoomOut" Size="Size.Small" />
+                    <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" OnClick="ZoomReset" Size="Size.Small" />
+                </MudStack>
+
+                @* Drawflow Container *@
+                <div id="drawflow-container"
+                     @ondrop="OnDrop"
+                     @ondragover="OnDragOver"
+                     @ondragover:preventDefault="true"
+                     style="width: 100%; height: 100%;">
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private bool _isNew => !Id.HasValue;
+    private bool _saving = false;
+    private DotNetObjectReference<Designer>? _dotNetRef;
+
+    // Workflow details
+    private string _name = "";
+    private string? _displayName;
+    private string? _description;
+    private Guid? _exampleSetId;
+    private bool _isActive = true;
+
+    // Step types palette
+    private List<StepTypeInfo> _stepTypes = new();
+    private StepTypeInfo? _draggedStepType;
+
+    // Canvas state (synced with Drawflow)
+    private List<WorkflowStepDto> _steps = new();
+    private List<StepTransitionDto> _transitions = new();
+    private WorkflowStepDto? _selectedStep;
+
+    // Step edit fields (for selected step - records are immutable)
+    private string? _stepEdit_Name;
+    private string? _stepEdit_DisplayName;
+
+    // Step config fields (for selected step)
+    private string? _stepConfig_Capability;
+    private string? _stepConfig_Condition;
+    private string? _stepConfig_NotifyType;
+
+    // Example sets
+    private List<ExampleSetResponse> _exampleSets = new();
+
+    // Node ID mapping (Drawflow ID -> step name)
+    private Dictionary<int, string> _nodeIdToStepName = new();
+    private int _nextStepNumber = 1;
+
+    private string? _layoutJson;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load step types
+        _stepTypes = await Http.GetFromJsonAsync<List<StepTypeInfo>>("/api/v1/workflows/step-types") ?? new();
+
+        // Load example sets
+        _exampleSets = await Http.GetFromJsonAsync<List<ExampleSetResponse>>("/api/v1/example-sets") ?? new();
+
+        if (!_isNew)
+        {
+            await LoadWorkflow();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("drawflowInterop.initialize", "drawflow-container", _dotNetRef);
+
+            // If editing, restore layout
+            if (!_isNew && !string.IsNullOrEmpty(_layoutJson))
+            {
+                await JS.InvokeVoidAsync("drawflowInterop.import", _layoutJson);
+            }
+        }
+    }
+
+    private async Task LoadWorkflow()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<WorkflowDetailResponse>($"/api/v1/workflows/{Id}");
+            if (response != null)
+            {
+                _name = response.Name;
+                _displayName = response.DisplayName;
+                _description = response.Description;
+                _exampleSetId = response.ExampleSetId;
+                _isActive = response.IsActive;
+                _layoutJson = response.LayoutJson;
+
+                // Convert steps to DTOs
+                foreach (var step in response.Steps)
+                {
+                    _steps.Add(new WorkflowStepDto(
+                        step.Id, step.Name, step.DisplayName, step.StepType,
+                        step.ConfigurationJson, step.PositionX, step.PositionY,
+                        step.DrawflowNodeId, step.SortOrder
+                    ));
+
+                    if (step.DrawflowNodeId.HasValue)
+                    {
+                        _nodeIdToStepName[step.DrawflowNodeId.Value] = step.Name;
+                    }
+                }
+
+                // Convert transitions
+                foreach (var trans in response.Transitions)
+                {
+                    _transitions.Add(new StepTransitionDto(
+                        trans.Id, trans.FromStepName, trans.ToStepName,
+                        trans.Label, trans.Condition,
+                        trans.OutputIndex, trans.InputIndex
+                    ));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading workflow: {ex.Message}", Severity.Error);
+        }
+    }
+
+    // Drag and drop handlers
+    private void OnDragStart(StepTypeInfo stepType)
+    {
+        _draggedStepType = stepType;
+    }
+
+    private void OnDragOver(DragEventArgs e)
+    {
+        // Allow drop
+    }
+
+    private async Task OnDrop(DragEventArgs e)
+    {
+        if (_draggedStepType is null) return;
+
+        // Calculate drop coordinates (account for sidebar and toolbar offset)
+        var posX = (int)e.ClientX - 300; // Approximate sidebar width
+        var posY = (int)e.ClientY - 100; // Approximate toolbar height
+
+        var stepName = $"{_draggedStepType.Value.ToString().ToLower()}-{_nextStepNumber++}";
+
+        var nodeId = await JS.InvokeAsync<int>("drawflowInterop.addNode",
+            _draggedStepType.Value.ToString(),
+            posX, posY,
+            _draggedStepType.DefaultInputs,
+            _draggedStepType.DefaultOutputs,
+            new { name = stepName, stepType = _draggedStepType.Value.ToString() }
+        );
+
+        _nodeIdToStepName[nodeId] = stepName;
+        _steps.Add(new WorkflowStepDto(
+            null, stepName, _draggedStepType.Name, _draggedStepType.Value,
+            null, posX, posY, nodeId, _steps.Count
+        ));
+
+        _draggedStepType = null;
+        StateHasChanged();
+    }
+
+    // JS Interop callbacks
+    [JSInvokable]
+    public void OnNodeCreated(int nodeId, string name, double posX, double posY)
+    {
+        // Already handled in OnDrop for drag-created nodes
+    }
+
+    [JSInvokable]
+    public void OnNodeRemoved(int nodeId)
+    {
+        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        {
+            _steps.RemoveAll(s => s.Name == stepName);
+            _transitions.RemoveAll(t => t.FromStepName == stepName || t.ToStepName == stepName);
+            _nodeIdToStepName.Remove(nodeId);
+
+            if (_selectedStep?.Name == stepName)
+                _selectedStep = null;
+
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public void OnNodeMoved(int nodeId, double posX, double posY)
+    {
+        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        {
+            var step = _steps.FirstOrDefault(s => s.Name == stepName);
+            if (step != null)
+            {
+                var index = _steps.IndexOf(step);
+                _steps[index] = step with { PositionX = (int)posX, PositionY = (int)posY };
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnNodeSelected(int nodeId)
+    {
+        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        {
+            _selectedStep = _steps.FirstOrDefault(s => s.Name == stepName);
+            LoadStepConfig();
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public void OnConnectionCreated(int outputNodeId, int inputNodeId, int outputIndex, int inputIndex)
+    {
+        if (_nodeIdToStepName.TryGetValue(outputNodeId, out var fromName) &&
+            _nodeIdToStepName.TryGetValue(inputNodeId, out var toName))
+        {
+            _transitions.Add(new StepTransitionDto(
+                null, fromName, toName, null, null, outputIndex, inputIndex
+            ));
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public void OnConnectionRemoved(int outputNodeId, int inputNodeId)
+    {
+        if (_nodeIdToStepName.TryGetValue(outputNodeId, out var fromName) &&
+            _nodeIdToStepName.TryGetValue(inputNodeId, out var toName))
+        {
+            _transitions.RemoveAll(t => t.FromStepName == fromName && t.ToStepName == toName);
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void LoadStepConfig()
+    {
+        if (_selectedStep is not null)
+        {
+            _stepEdit_Name = _selectedStep.Name;
+            _stepEdit_DisplayName = _selectedStep.DisplayName;
+
+            if (_selectedStep.ConfigurationJson is not null)
+            {
+                try
+                {
+                    var config = JsonSerializer.Deserialize<Dictionary<string, string>>(_selectedStep.ConfigurationJson);
+                    _stepConfig_Capability = config?.GetValueOrDefault("capability");
+                    _stepConfig_Condition = config?.GetValueOrDefault("condition");
+                    _stepConfig_NotifyType = config?.GetValueOrDefault("notifyType");
+                }
+                catch { }
+            }
+        }
+    }
+
+    private void UpdateStepName(string newName)
+    {
+        if (_selectedStep is null || string.IsNullOrWhiteSpace(newName)) return;
+
+        _stepEdit_Name = newName;
+        var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
+        if (index >= 0)
+        {
+            _steps[index] = _steps[index] with { Name = newName };
+            _selectedStep = _steps[index];
+        }
+    }
+
+    private void UpdateStepDisplayName(string newDisplayName)
+    {
+        if (_selectedStep is null) return;
+
+        _stepEdit_DisplayName = newDisplayName;
+        var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
+        if (index >= 0)
+        {
+            _steps[index] = _steps[index] with { DisplayName = newDisplayName };
+            _selectedStep = _steps[index];
+        }
+    }
+
+    private async Task DeleteSelectedStep()
+    {
+        if (_selectedStep?.DrawflowNodeId is not null)
+        {
+            await JS.InvokeVoidAsync("drawflowInterop.removeNode", _selectedStep.DrawflowNodeId);
+        }
+    }
+
+    // Zoom controls
+    private async Task ZoomIn() => await JS.InvokeVoidAsync("drawflowInterop.zoomIn");
+    private async Task ZoomOut() => await JS.InvokeVoidAsync("drawflowInterop.zoomOut");
+    private async Task ZoomReset() => await JS.InvokeVoidAsync("drawflowInterop.zoomReset");
+
+    // Save workflow
+    private async Task SaveWorkflow()
+    {
+        _saving = true;
+        try
+        {
+            // Update step configs before saving
+            if (_selectedStep is not null)
+            {
+                UpdateSelectedStepConfig();
+            }
+
+            var layoutJson = await JS.InvokeAsync<string>("drawflowInterop.export");
+
+            if (_isNew)
+            {
+                // Create workflow first
+                var createRequest = new CreateWorkflowRequest(_name, _displayName, _description, _exampleSetId, _isActive);
+                var createResponse = await Http.PostAsJsonAsync("/api/v1/workflows", createRequest);
+
+                if (!createResponse.IsSuccessStatusCode)
+                {
+                    var error = await createResponse.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Error: {error}", Severity.Error);
+                    return;
+                }
+
+                var created = await createResponse.Content.ReadFromJsonAsync<WorkflowListResponse>();
+                Id = created?.Id;
+            }
+            else
+            {
+                // Update metadata
+                var updateRequest = new UpdateWorkflowRequest(_displayName, _description, null, _exampleSetId, _isActive);
+                await Http.PutAsJsonAsync($"/api/v1/workflows/{Id}", updateRequest);
+            }
+
+            // Save layout (steps and transitions)
+            var layoutRequest = new SaveWorkflowLayoutRequest(layoutJson, _steps.ToList(), _transitions.ToList());
+            var layoutResponse = await Http.PutAsJsonAsync($"/api/v1/workflows/{Id}/layout", layoutRequest);
+
+            if (layoutResponse.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Workflow saved successfully", Severity.Success);
+                if (_isNew)
+                {
+                    Navigation.NavigateTo($"/workflows/designer/{Id}");
+                }
+            }
+            else
+            {
+                var error = await layoutResponse.Content.ReadAsStringAsync();
+                Snackbar.Add($"Error saving layout: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void UpdateSelectedStepConfig()
+    {
+        if (_selectedStep is null) return;
+
+        var config = new Dictionary<string, string>();
+
+        switch (_selectedStep.StepType)
+        {
+            case StepType.Execute when !string.IsNullOrEmpty(_stepConfig_Capability):
+                config["capability"] = _stepConfig_Capability;
+                break;
+            case StepType.Condition when !string.IsNullOrEmpty(_stepConfig_Condition):
+                config["condition"] = _stepConfig_Condition;
+                break;
+            case StepType.Notify when !string.IsNullOrEmpty(_stepConfig_NotifyType):
+                config["notifyType"] = _stepConfig_NotifyType;
+                break;
+        }
+
+        var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
+        if (index >= 0 && config.Count > 0)
+        {
+            _steps[index] = _steps[index] with { ConfigurationJson = JsonSerializer.Serialize(config) };
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_dotNetRef != null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("drawflowInterop.destroy");
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already disconnected, ignore
+            }
+            _dotNetRef.Dispose();
+        }
+    }
+}

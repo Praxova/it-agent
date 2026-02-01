@@ -1,0 +1,279 @@
+@page "/workflows/edit/{Id:guid}"
+@page "/workflows/create"
+@attribute [Authorize]
+@using LucidAdmin.Web.Api.Models.Requests
+@using LucidAdmin.Web.Api.Models.Responses
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isCreate ? "Create Workflow" : $"Edit Workflow: {_model.Name}") - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(_isCreate ? "Create Workflow" : "Edit Workflow")</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_model != null)
+{
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-3">Workflow Details</MudText>
+                <MudForm @ref="_form" @bind-IsValid="@_isValid">
+                    <MudTextField @bind-Value="_model.Name"
+                                  Label="Name"
+                                  Required="true"
+                                  Disabled="@(!_isCreate || _model.IsBuiltIn)"
+                                  HelperText="Unique identifier (cannot change after creation)" />
+
+                    <MudTextField @bind-Value="_model.DisplayName"
+                                  Label="Display Name"
+                                  Disabled="@_model.IsBuiltIn"
+                                  Class="mt-3" />
+
+                    <MudTextField @bind-Value="_model.Description"
+                                  Label="Description"
+                                  Lines="3"
+                                  Disabled="@_model.IsBuiltIn"
+                                  Class="mt-3" />
+
+                    @if (!_isCreate)
+                    {
+                        <MudTextField @bind-Value="_model.Version"
+                                      Label="Version"
+                                      Disabled="@_model.IsBuiltIn"
+                                      Class="mt-3" />
+                    }
+
+                    <MudSelect @bind-Value="_model.ExampleSetId"
+                               Label="Example Set"
+                               Clearable="true"
+                               Disabled="@_model.IsBuiltIn"
+                               Class="mt-3"
+                               T="Guid?">
+                        @foreach (var exampleSet in _exampleSets)
+                        {
+                            <MudSelectItem Value="@exampleSet.Id">@(exampleSet.DisplayName ?? exampleSet.Name)</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudSwitch T="bool"
+                               @bind-Checked="_model.IsActive"
+                               Label="Active"
+                               Color="Color.Success"
+                               Disabled="@_model.IsBuiltIn"
+                               Class="mt-3" />
+                </MudForm>
+
+                @if (_model.IsBuiltIn)
+                {
+                    <MudAlert Severity="Severity.Info" Class="mt-4">
+                        This is a built-in workflow and cannot be modified. Copy it to create a custom version.
+                    </MudAlert>
+                }
+
+                <MudDivider Class="my-4" />
+
+                <div class="d-flex justify-content-between">
+                    <MudButton Variant="Variant.Outlined" OnClick="Cancel">Cancel</MudButton>
+                    @if (!_model.IsBuiltIn)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="@(!_isValid || _saving)"
+                                   OnClick="SaveWorkflow">
+                            @if (_saving)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                <span class="ms-2">Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save</span>
+                            }
+                        </MudButton>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-3">Workflow Steps (@_model.StepCount)</MudText>
+                @if (_model.StepCount > 0)
+                {
+                    <MudAlert Severity="Severity.Info">
+                        This workflow has @_model.StepCount step(s). Visual workflow designer will be available in Phase 3B.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info">
+                        No steps configured. Visual workflow designer will be available in Phase 3B.
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private WorkflowFormModel _model = new();
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _loading = true;
+    private bool _saving = false;
+    private bool _isCreate => !Id.HasValue;
+    private List<ExampleSetResponse> _exampleSets = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExampleSets();
+        if (!_isCreate)
+        {
+            await LoadWorkflow();
+        }
+        else
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadExampleSets()
+    {
+        try
+        {
+            _exampleSets = await Http.GetFromJsonAsync<List<ExampleSetResponse>>("/api/v1/example-sets") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load example sets: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadWorkflow()
+    {
+        _loading = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<WorkflowDetailResponse>($"/api/v1/workflows/{Id}");
+            if (response == null)
+            {
+                Snackbar.Add("Workflow not found", Severity.Error);
+                Navigation.NavigateTo("/workflows");
+            }
+            else
+            {
+                _model = WorkflowFormModel.FromResponse(response);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load workflow: {ex.Message}", Severity.Error);
+            Navigation.NavigateTo("/workflows");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveWorkflow()
+    {
+        if (!_isValid || _saving) return;
+
+        _saving = true;
+        try
+        {
+            if (_isCreate)
+            {
+                var request = _model.ToCreateRequest();
+                var response = await Http.PostAsJsonAsync("/api/v1/workflows", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Workflow created successfully", Severity.Success);
+                    Navigation.NavigateTo("/workflows");
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to create: {error}", Severity.Error);
+                }
+            }
+            else
+            {
+                var request = _model.ToUpdateRequest();
+                var response = await Http.PutAsJsonAsync($"/api/v1/workflows/{Id}", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Workflow updated successfully", Severity.Success);
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to update: {error}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/workflows");
+    }
+
+    public class WorkflowFormModel
+    {
+        public Guid? Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string? Description { get; set; }
+        public string Version { get; set; } = "1.0.0";
+        public Guid? ExampleSetId { get; set; }
+        public bool IsBuiltIn { get; set; }
+        public bool IsActive { get; set; } = true;
+        public int StepCount { get; set; }
+
+        public CreateWorkflowRequest ToCreateRequest() => new(
+            Name: Name,
+            DisplayName: DisplayName,
+            Description: Description,
+            ExampleSetId: ExampleSetId,
+            IsActive: IsActive
+        );
+
+        public UpdateWorkflowRequest ToUpdateRequest() => new(
+            DisplayName: DisplayName,
+            Description: Description,
+            Version: Version,
+            ExampleSetId: ExampleSetId,
+            IsActive: IsActive
+        );
+
+        public static WorkflowFormModel FromResponse(WorkflowDetailResponse response) => new()
+        {
+            Id = response.Id,
+            Name = response.Name,
+            DisplayName = response.DisplayName,
+            Description = response.Description,
+            Version = response.Version,
+            ExampleSetId = response.ExampleSetId,
+            IsBuiltIn = response.IsBuiltIn,
+            IsActive = response.IsActive,
+            StepCount = response.Steps.Count
+        };
+    }
+}

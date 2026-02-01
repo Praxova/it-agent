@@ -1,0 +1,199 @@
+@page "/workflows"
+@attribute [Authorize]
+@using LucidAdmin.Web.Api.Models.Responses
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Workflows - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Workflows</MudText>
+
+<MudPaper Class="pa-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <MudTextField @bind-Value="_searchString"
+                      Placeholder="Search workflows..."
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium"
+                      Class="mr-4"
+                      Style="max-width: 400px;" />
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   Href="/workflows/designer/create">
+            New Workflow
+        </MudButton>
+    </div>
+
+    <MudTable Items="@FilteredWorkflows"
+              Dense="true"
+              Hover="true"
+              Loading="@_loading"
+              LoadingProgressColor="Color.Primary">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Version</MudTh>
+            <MudTh>Steps</MudTh>
+            <MudTh>Example Set</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh Style="text-align: right;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <div>
+                    <MudText Typo="Typo.body1">@context.DisplayName ?? @context.Name</MudText>
+                    @if (!string.IsNullOrEmpty(context.Description))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
+                    }
+                </div>
+            </MudTd>
+            <MudTd DataLabel="Version">
+                <MudChip T="string" Size="Size.Small">@context.Version</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Steps">@context.StepCount</MudTd>
+            <MudTd DataLabel="Example Set">
+                @if (!string.IsNullOrEmpty(context.ExampleSetName))
+                {
+                    <MudText Typo="Typo.body2">@context.ExampleSetName</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">None</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                    @(context.IsActive ? "Active" : "Inactive")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Type">
+                @if (context.IsBuiltIn)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">Built-in</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Custom</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions" Style="text-align: right;">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                               Size="Size.Small"
+                               Href="@($"/workflows/designer/{context.Id}")"
+                               Color="Color.Primary" />
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                               Size="Size.Small"
+                               OnClick="@(() => CopyWorkflow(context))"
+                               Color="Color.Info" />
+                @if (!context.IsBuiltIn)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Size="Size.Small"
+                                   OnClick="@(() => DeleteWorkflow(context))"
+                                   Color="Color.Error" />
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private List<WorkflowListResponse> _workflows = new();
+    private string _searchString = "";
+    private bool _loading = true;
+
+    private IEnumerable<WorkflowListResponse> FilteredWorkflows =>
+        _workflows.Where(w =>
+            string.IsNullOrWhiteSpace(_searchString) ||
+            (w.Name?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (w.DisplayName?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (w.Description?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false)
+        );
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadWorkflows();
+    }
+
+    private async Task LoadWorkflows()
+    {
+        _loading = true;
+        try
+        {
+            _workflows = await Http.GetFromJsonAsync<List<WorkflowListResponse>>("/api/v1/workflows") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load workflows: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CopyWorkflow(WorkflowListResponse workflow)
+    {
+        var newName = $"{workflow.Name}-copy";
+        var counter = 1;
+
+        while (_workflows.Any(w => w.Name == newName))
+        {
+            newName = $"{workflow.Name}-copy-{counter++}";
+        }
+
+        try
+        {
+            var response = await Http.PostAsync($"/api/v1/workflows/{workflow.Id}/copy?newName={newName}", null);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Workflow copied successfully as '{newName}'", Severity.Success);
+                await LoadWorkflows();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to copy workflow: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to copy workflow: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteWorkflow(WorkflowListResponse workflow)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Confirm Delete",
+            $"Are you sure you want to delete workflow '{workflow.DisplayName ?? workflow.Name}'?",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"/api/v1/workflows/{workflow.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Workflow deleted successfully", Severity.Success);
+                    await LoadWorkflows();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to delete workflow: {error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete workflow: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+}

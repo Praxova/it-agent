@@ -1,0 +1,61 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E3E379DF-F4C6-4180-9B81-6769F1CA5C88}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Core", "src\LucidAdmin.Core\LucidAdmin.Core.csproj", "{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Infrastructure", "src\LucidAdmin.Infrastructure\LucidAdmin.Infrastructure.csproj", "{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Web", "src\LucidAdmin.Web\LucidAdmin.Web.csproj", "{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Core.Tests", "tests\LucidAdmin.Core.Tests\LucidAdmin.Core.Tests.csproj", "{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Infrastructure.Tests", "tests\LucidAdmin.Infrastructure.Tests\LucidAdmin.Infrastructure.Tests.csproj", "{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidAdmin.Web.Tests", "tests\LucidAdmin.Web.Tests\LucidAdmin.Web.Tests.csproj", "{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D5F9F4A1-8B4A-11D0-8D11-00A0C91BC942} = {8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}
+		{D5F9F4A2-8B4A-11D0-8D11-00A0C91BC942} = {8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}
+		{D5F9F4A3-8B4A-11D0-8D11-00A0C91BC942} = {8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}
+		{D5F9F4A4-8B4A-11D0-8D11-00A0C91BC942} = {E3E379DF-F4C6-4180-9B81-6769F1CA5C88}
+		{D5F9F4A5-8B4A-11D0-8D11-00A0C91BC942} = {E3E379DF-F4C6-4180-9B81-6769F1CA5C88}
+		{D5F9F4A6-8B4A-11D0-8D11-00A0C91BC942} = {E3E379DF-F4C6-4180-9B81-6769F1CA5C88}
+	EndGlobalSection
+EndGlobal

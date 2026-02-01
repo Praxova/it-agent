@@ -1,0 +1,383 @@
+@page "/tool-servers"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Web.Components.Shared
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Services
+@inject IToolServerService ToolServerService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Tool Servers - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Tool Servers</MudText>
+
+<!-- Toolbar -->
+<MudPaper Elevation="0" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_searchString"
+                          Placeholder="Search servers..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          OnDebounceIntervalElapsed="OnSearch" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterStatus"
+                       Label="Status"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Statuses</MudSelectItem>
+                <MudSelectItem Value="@("Healthy")">Healthy</MudSelectItem>
+                <MudSelectItem Value="@("Degraded")">Degraded</MudSelectItem>
+                <MudSelectItem Value="@("Unhealthy")">Unhealthy</MudSelectItem>
+                <MudSelectItem Value="@("Unknown")">Unknown</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterDomain"
+                       Label="Domain"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Domains</MudSelectItem>
+                @foreach (var domain in _domains)
+                {
+                    <MudSelectItem Value="@domain">@domain</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialog"
+                       FullWidth="true">
+                Add Server
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<!-- Table -->
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_servers != null)
+{
+    <MudTable Items="@FilteredServers"
+              Hover="true"
+              Dense="false"
+              Striped="true"
+              Elevation="2">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Endpoint</MudTh>
+            <MudTh>Domain</MudTh>
+            <MudTh>Version</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Last Heartbeat</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2"><strong>@context.Name</strong></MudText>
+                @if (!string.IsNullOrWhiteSpace(context.DisplayName))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.DisplayName</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Endpoint">
+                <MudTooltip Text="@context.Endpoint">
+                    <MudText Typo="Typo.body2" Style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">
+                        @context.Endpoint
+                    </MudText>
+                </MudTooltip>
+            </MudTd>
+            <MudTd DataLabel="Domain">
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                    @context.Domain
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Version">
+                @if (!string.IsNullOrWhiteSpace(context.Version))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                        v@context.Version
+                    </MudChip>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">
+                    @context.Status
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Last Heartbeat">
+                @if (context.LastHeartbeat.HasValue)
+                {
+                    <MudText Typo="Typo.body2" Color="@GetHeartbeatColor(context.LastHeartbeat.Value)">
+                        @GetRelativeTime(context.LastHeartbeat.Value)
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">Never</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Enabled">
+                @if (context.IsEnabled)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialog(context))"
+                                   title="Edit" />
+                    <MudIconButton Icon="@Icons.Material.Filled.NetworkCheck"
+                                   Color="Color.Info"
+                                   Size="Size.Small"
+                                   OnClick="@(() => TestConnectivity(context))"
+                                   title="Test Connectivity" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenDeleteDialog(context))"
+                                   title="Delete" />
+                </MudButtonGroup>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No tool servers found</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load tool servers</MudAlert>
+}
+
+@code {
+    private List<ToolServerResponse>? _servers;
+    private bool _loading = true;
+    private string _searchString = string.Empty;
+    private string? _filterStatus;
+    private string? _filterDomain;
+
+    private IEnumerable<string> _domains => _servers?
+        .Where(s => !string.IsNullOrWhiteSpace(s.Domain))
+        .Select(s => s.Domain)
+        .Distinct()
+        .OrderBy(d => d) ?? Enumerable.Empty<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServers();
+    }
+
+    private async Task LoadServers()
+    {
+        _loading = true;
+        try
+        {
+            var servers = await ToolServerService.GetAllAsync();
+            _servers = servers.Select(MapToResponse).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load tool servers: {ex.Message}", Severity.Error);
+            _servers = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<ToolServerResponse> FilteredServers
+    {
+        get
+        {
+            if (_servers == null)
+                return Enumerable.Empty<ToolServerResponse>();
+
+            var filtered = _servers.AsEnumerable();
+
+            // Search filter
+            if (!string.IsNullOrWhiteSpace(_searchString))
+            {
+                filtered = filtered.Where(s =>
+                    s.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ||
+                    (s.DisplayName?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    s.Endpoint.Contains(_searchString, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Status filter
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                filtered = filtered.Where(s => s.Status == _filterStatus);
+            }
+
+            // Domain filter
+            if (!string.IsNullOrWhiteSpace(_filterDomain))
+            {
+                filtered = filtered.Where(s => s.Domain == _filterDomain);
+            }
+
+            return filtered;
+        }
+    }
+
+    private void OnSearch()
+    {
+        StateHasChanged();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<ToolServerDialog>();
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<ToolServerDialog>("Add Tool Server", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadServers();
+        }
+    }
+
+    private async Task OpenEditDialog(ToolServerResponse server)
+    {
+        var parameters = new DialogParameters<ToolServerDialog>
+        {
+            { x => x.ExistingServer, server }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<ToolServerDialog>("Edit Tool Server", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadServers();
+        }
+    }
+
+    private async Task OpenDeleteDialog(ToolServerResponse server)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.ContentText, $"Are you sure you want to delete the tool server '{server.Name}'? This will also remove all capability mappings associated with this server." },
+            { x => x.ConfirmText, "Delete" },
+            { x => x.ConfirmColor, Color.Error }
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirm Delete", parameters);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await DeleteServer(server.Id);
+        }
+    }
+
+    private async Task DeleteServer(Guid id)
+    {
+        try
+        {
+            await ToolServerService.DeleteAsync(id);
+            Snackbar.Add("Tool server deleted successfully", Severity.Success);
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete tool server: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task TestConnectivity(ToolServerResponse server)
+    {
+        try
+        {
+            Snackbar.Add($"Testing connectivity for {server.Name}...", Severity.Info);
+
+            var result = await ToolServerService.TestConnectivityAsync(server.Id);
+
+            var severity = result.Status.ToString().ToLower() switch
+            {
+                "healthy" => Severity.Success,
+                "unhealthy" => Severity.Error,
+                _ => Severity.Warning
+            };
+
+            Snackbar.Add($"Connectivity test: {result.Message}", severity);
+            await LoadServers();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to test connectivity: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Color GetStatusColor(string status) => status.ToLower() switch
+    {
+        "healthy" => Color.Success,
+        "degraded" => Color.Warning,
+        "unhealthy" => Color.Error,
+        _ => Color.Default
+    };
+
+    private Color GetHeartbeatColor(DateTime lastHeartbeat)
+    {
+        var age = DateTime.UtcNow - lastHeartbeat;
+        if (age.TotalMinutes < 5) return Color.Success;
+        if (age.TotalMinutes < 15) return Color.Warning;
+        return Color.Error;
+    }
+
+    private string GetRelativeTime(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "Just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} min ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours} hr ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays} days ago";
+
+        return dateTime.ToLocalTime().ToString("g");
+    }
+
+    private ToolServerResponse MapToResponse(ToolServer server) => new(
+        Id: server.Id,
+        Name: server.Name,
+        DisplayName: server.DisplayName,
+        Endpoint: server.Endpoint,
+        Domain: server.Domain,
+        Description: server.Description,
+        Version: server.Version,
+        IsEnabled: server.IsEnabled,
+        Status: server.Status.ToString(),
+        LastHeartbeat: server.LastHeartbeat,
+        CreatedAt: server.CreatedAt,
+        UpdatedAt: server.UpdatedAt
+    );
+}

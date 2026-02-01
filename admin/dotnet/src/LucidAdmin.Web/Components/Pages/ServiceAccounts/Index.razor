@@ -1,0 +1,432 @@
+@page "/service-accounts"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Web.Components.Shared
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Services
+@using System.Net.Http.Json
+@inject IServiceAccountService ServiceAccountService
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Service Accounts - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Service Accounts</MudText>
+
+<!-- Toolbar -->
+<MudPaper Elevation="0" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_searchString"
+                          Placeholder="Search accounts..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          DebounceInterval="300"
+                          OnDebounceIntervalElapsed="OnSearch" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterProvider"
+                       Label="Provider"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Providers</MudSelectItem>
+                <MudSelectItem Value="@("windows-ad")">Windows AD</MudSelectItem>
+                <MudSelectItem Value="@("servicenow")">ServiceNow</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterStatus"
+                       Label="Status"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Statuses</MudSelectItem>
+                <MudSelectItem Value="@("enabled")">Enabled</MudSelectItem>
+                <MudSelectItem Value="@("disabled")">Disabled</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialog"
+                       FullWidth="true">
+                Create
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<!-- Table -->
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_accounts != null)
+{
+    <MudTable Items="@FilteredAccounts"
+              Hover="true"
+              Dense="false"
+              Striped="true"
+              Elevation="2">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Provider</MudTh>
+            <MudTh>Account Type</MudTh>
+            <MudTh>Credentials</MudTh>
+            <MudTh>Health Status</MudTh>
+            <MudTh>Last Check</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2"><strong>@context.Name</strong></MudText>
+                @if (!string.IsNullOrWhiteSpace(context.DisplayName))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.DisplayName</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Provider">
+                <MudChip T="string" Size="Size.Small" Color="Color.Default">
+                    @GetProviderDisplayName(context.Provider)
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Account Type">@GetAccountTypeDisplayName(context.Provider, context.AccountType)</MudTd>
+            <MudTd DataLabel="Credentials">
+                @if (context.CredentialStorage == "None")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default" title="No credentials required">N/A</MudChip>
+                }
+                else if (!string.IsNullOrEmpty(context.CredentialReference) && context.CredentialStorage == "Environment")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" title="Using environment variable">Env Var</MudChip>
+                }
+                else if (context.CredentialStorage == "Database")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" title="Stored in database">Database</MudChip>
+                }
+                else if (context.CredentialStorage == "Vault")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" title="Stored in vault">Vault</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.CredentialStorage</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Health Status">
+                <MudChip T="string" Size="Size.Small" Color="@GetHealthColor(context.HealthStatus)">
+                    @context.HealthStatus
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Last Check">
+                @if (context.LastHealthCheck.HasValue)
+                {
+                    <MudText Typo="Typo.body2">@GetRelativeTime(context.LastHealthCheck.Value)</MudText>
+                    @if (!string.IsNullOrWhiteSpace(context.LastHealthMessage))
+                    {
+                        @if (IsNoToolServerMessage(context.LastHealthMessage))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning">
+                                No tool server configured.
+                                <MudLink Href="/tool-servers" Typo="Typo.caption">Configure Tool Server</MudLink>
+                            </MudText>
+                        }
+                        else if (IsNoCapabilityMappingMessage(context.LastHealthMessage))
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning">
+                                No AD capability mapping.
+                                <MudLink Href="/capability-mappings" Typo="Typo.caption">Configure Capability Mappings</MudLink>
+                            </MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.LastHealthMessage</MudText>
+                        }
+                    }
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">Never</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Enabled">
+                @if (context.IsEnabled)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialog(context))"
+                                   title="Edit" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Cable"
+                                   Color="Color.Info"
+                                   Size="Size.Small"
+                                   OnClick="@(() => TestConnectivity(context))"
+                                   title="Test Connectivity" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenDeleteDialog(context))"
+                                   title="Delete" />
+                </MudButtonGroup>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No service accounts found</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load service accounts</MudAlert>
+}
+
+@code {
+    private List<ServiceAccountResponse>? _accounts;
+    private bool _loading = true;
+    private string _searchString = string.Empty;
+    private string? _filterProvider;
+    private string? _filterStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccounts();
+    }
+
+    private async Task LoadAccounts()
+    {
+        _loading = true;
+        try
+        {
+            // Use HTTP API to get fresh data (avoids stale DbContext tracking in Blazor scope)
+            _accounts = await Http.GetFromJsonAsync<List<ServiceAccountResponse>>("/api/v1/service-accounts");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load service accounts: {ex.Message}", Severity.Error);
+            _accounts = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<ServiceAccountResponse> FilteredAccounts
+    {
+        get
+        {
+            if (_accounts == null)
+                return Enumerable.Empty<ServiceAccountResponse>();
+
+            var filtered = _accounts.AsEnumerable();
+
+            // Search filter
+            if (!string.IsNullOrWhiteSpace(_searchString))
+            {
+                filtered = filtered.Where(a =>
+                    a.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ||
+                    (a.DisplayName?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+
+            // Provider filter
+            if (!string.IsNullOrWhiteSpace(_filterProvider))
+            {
+                filtered = filtered.Where(a => a.Provider == _filterProvider);
+            }
+
+            // Status filter
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                filtered = filtered.Where(a =>
+                    _filterStatus == "enabled" ? a.IsEnabled : !a.IsEnabled);
+            }
+
+            return filtered;
+        }
+    }
+
+    private void OnSearch()
+    {
+        StateHasChanged();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<ServiceAccountDialog>();
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<ServiceAccountDialog>("Create Service Account", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadAccounts();
+        }
+    }
+
+    private async Task OpenEditDialog(ServiceAccountResponse account)
+    {
+        var parameters = new DialogParameters<ServiceAccountDialog>
+        {
+            { x => x.ExistingAccount, account }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<ServiceAccountDialog>("Edit Service Account", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadAccounts();
+        }
+    }
+
+    private async Task OpenDeleteDialog(ServiceAccountResponse account)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.ContentText, $"Are you sure you want to delete the service account '{account.Name}'? This action cannot be undone." },
+            { x => x.ConfirmText, "Delete" },
+            { x => x.ConfirmColor, Color.Error }
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirm Delete", parameters);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await DeleteAccount(account.Id);
+        }
+    }
+
+    private async Task DeleteAccount(Guid id)
+    {
+        try
+        {
+            await ServiceAccountService.DeleteAsync(id);
+            Snackbar.Add("Service account deleted successfully", Severity.Success);
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete service account: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task TestConnectivity(ServiceAccountResponse account)
+    {
+        try
+        {
+            Snackbar.Add($"Testing connectivity for {account.Name}...", Severity.Info);
+
+            // Call the API endpoint which handles delegation to Tool Server for AD providers
+            var response = await Http.PostAsync(
+                $"/api/v1/service-accounts/{account.Id}/test-connectivity", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<TestConnectivityApiResponse>();
+                if (result != null)
+                {
+                    var severity = result.Status.ToLower() switch
+                    {
+                        "healthy" => Severity.Success,
+                        "warning" => Severity.Warning,
+                        "unhealthy" => Severity.Error,
+                        _ => Severity.Warning
+                    };
+
+                    Snackbar.Add($"Connectivity test: {result.Message}", severity);
+                }
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Connectivity test failed: {error}", Severity.Error);
+            }
+
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to test connectivity: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private record TestConnectivityApiResponse(string Status, string Message, DateTime CheckedAt);
+
+    private static bool IsNoToolServerMessage(string message) =>
+        message.Contains("No tool server configured", StringComparison.OrdinalIgnoreCase) ||
+        message.Contains("No tool server available", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsNoCapabilityMappingMessage(string message) =>
+        message.Contains("no AD capability mapping", StringComparison.OrdinalIgnoreCase);
+
+    private Color GetHealthColor(string status) => status.ToLower() switch
+    {
+        "healthy" => Color.Success,
+        "degraded" => Color.Warning,
+        "unhealthy" => Color.Error,
+        _ => Color.Default
+    };
+
+    private string GetProviderDisplayName(string provider) => provider switch
+    {
+        "windows-ad" => "Windows AD",
+        "servicenow" => "ServiceNow",
+        _ => provider
+    };
+
+    private string GetAccountTypeDisplayName(string provider, string accountType)
+    {
+        if (provider == "windows-ad")
+        {
+            return accountType switch
+            {
+                "gmsa" => "gMSA",
+                "traditional" => "Traditional",
+                "current-user" => "Current User",
+                _ => accountType
+            };
+        }
+        else if (provider == "servicenow")
+        {
+            return accountType switch
+            {
+                "basic-auth" => "Basic Auth",
+                "oauth" => "OAuth 2.0",
+                _ => accountType
+            };
+        }
+        return accountType;
+    }
+
+    private string GetRelativeTime(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "Just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} min ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours} hr ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays} days ago";
+
+        return dateTime.ToLocalTime().ToString("g");
+    }
+
+}

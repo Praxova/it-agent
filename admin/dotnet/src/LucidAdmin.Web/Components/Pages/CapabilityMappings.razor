@@ -1,0 +1,309 @@
+@page "/capability-mappings"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Web.Components.Shared
+@using LucidAdmin.Web.Services
+@inject ICapabilityMappingService MappingService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject HttpClient Http
+
+<PageTitle>Capability Mappings - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Capability Mappings</MudText>
+
+<!-- Toolbar -->
+<MudPaper Elevation="0" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterToolServerId"
+                       Label="Tool Server"
+                       Clearable="true"
+                       T="Guid?">
+                <MudSelectItem Value="@((Guid?)null)">All Tool Servers</MudSelectItem>
+                @foreach (var server in _toolServers)
+                {
+                    <MudSelectItem Value="@((Guid?)server.Id)">@server.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterCapabilityId"
+                       Label="Capability"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Capabilities</MudSelectItem>
+                @foreach (var cap in _capabilities)
+                {
+                    <MudSelectItem Value="@cap.CapabilityId">@cap.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterStatus"
+                       Label="Status"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Statuses</MudSelectItem>
+                <MudSelectItem Value="@("enabled")">Enabled</MudSelectItem>
+                <MudSelectItem Value="@("disabled")">Disabled</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateDialog"
+                       FullWidth="true">
+                Create
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<!-- Table -->
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_mappings != null)
+{
+    <MudTable Items="@FilteredMappings"
+              Hover="true"
+              Dense="false"
+              Striped="true"
+              Elevation="2">
+        <HeaderContent>
+            <MudTh>Capability</MudTh>
+            <MudTh>Tool Server</MudTh>
+            <MudTh>Service Account</MudTh>
+            <MudTh>Health Status</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Capability">
+                <MudText Typo="Typo.body2"><strong>@context.CapabilityId</strong></MudText>
+                @if (!string.IsNullOrWhiteSpace(context.CapabilityDisplayName))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.CapabilityDisplayName</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(context.CapabilityCategory))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.CapabilityCategory</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Tool Server">
+                <MudText Typo="Typo.body2">@(context.ToolServerName ?? "Unknown")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Service Account">
+                <MudText Typo="Typo.body2">@(context.ServiceAccountName ?? "Unknown")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Health Status">
+                <MudChip T="string" Size="Size.Small" Color="@GetHealthColor(context.HealthStatus)">
+                    @context.HealthStatus
+                </MudChip>
+                @if (context.LastHealthCheck.HasValue)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@GetRelativeTime(context.LastHealthCheck.Value)</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Enabled">
+                @if (context.IsEnabled)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Default" Size="Size.Small" />
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialog(context))"
+                                   title="Edit" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   OnClick="@(() => OpenDeleteDialog(context))"
+                                   title="Delete" />
+                </MudButtonGroup>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No capability mappings found</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load capability mappings</MudAlert>
+}
+
+@code {
+    private List<CapabilityMappingResponse>? _mappings;
+    private List<ToolServerResponse> _toolServers = new();
+    private List<CapabilityResponse> _capabilities = new();
+    private bool _loading = true;
+    private Guid? _filterToolServerId;
+    private string? _filterCapabilityId;
+    private string? _filterStatus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            // Load mappings, tool servers, and capabilities in parallel
+            var mappingsTask = MappingService.GetAllAsync();
+            var toolServersTask = Http.GetFromJsonAsync<List<ToolServerResponse>>("/api/tool-servers");
+            var capabilitiesTask = Http.GetFromJsonAsync<List<CapabilityResponse>>("/api/v1/capabilities");
+
+            await Task.WhenAll(mappingsTask, toolServersTask, capabilitiesTask);
+
+            _mappings = mappingsTask.Result.ToList();
+            _toolServers = toolServersTask.Result ?? new List<ToolServerResponse>();
+            _capabilities = capabilitiesTask.Result ?? new List<CapabilityResponse>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load data: {ex.Message}", Severity.Error);
+            _mappings = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<CapabilityMappingResponse> FilteredMappings
+    {
+        get
+        {
+            if (_mappings == null)
+                return Enumerable.Empty<CapabilityMappingResponse>();
+
+            var filtered = _mappings.AsEnumerable();
+
+            // Tool Server filter
+            if (_filterToolServerId.HasValue)
+            {
+                filtered = filtered.Where(m => m.ToolServerId == _filterToolServerId.Value);
+            }
+
+            // Capability filter
+            if (!string.IsNullOrWhiteSpace(_filterCapabilityId))
+            {
+                filtered = filtered.Where(m => m.CapabilityId == _filterCapabilityId);
+            }
+
+            // Status filter
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                filtered = filtered.Where(m =>
+                    _filterStatus == "enabled" ? m.IsEnabled : !m.IsEnabled);
+            }
+
+            return filtered;
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<CapabilityMappingDialog>();
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<CapabilityMappingDialog>("Create Capability Mapping", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task OpenEditDialog(CapabilityMappingResponse mapping)
+    {
+        var parameters = new DialogParameters<CapabilityMappingDialog>
+        {
+            { x => x.ExistingMapping, mapping }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<CapabilityMappingDialog>("Edit Capability Mapping", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task OpenDeleteDialog(CapabilityMappingResponse mapping)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.ContentText, $"Are you sure you want to delete the capability mapping '{mapping.CapabilityId}' on '{mapping.ToolServerName}'? This action cannot be undone." },
+            { x => x.ConfirmText, "Delete" },
+            { x => x.ConfirmColor, Color.Error }
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Confirm Delete", parameters);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await DeleteMapping(mapping.Id);
+        }
+    }
+
+    private async Task DeleteMapping(Guid id)
+    {
+        try
+        {
+            await MappingService.DeleteAsync(id);
+            Snackbar.Add("Capability mapping deleted successfully", Severity.Success);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete capability mapping: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Color GetHealthColor(string status) => status.ToLower() switch
+    {
+        "healthy" => Color.Success,
+        "degraded" => Color.Warning,
+        "unhealthy" => Color.Error,
+        _ => Color.Default
+    };
+
+    private string GetRelativeTime(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+
+        if (timeSpan.TotalMinutes < 1)
+            return "Just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} min ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours} hr ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays} days ago";
+
+        return dateTime.ToLocalTime().ToString("g");
+    }
+
+    // Response models for dropdown data
+    private record ToolServerResponse(Guid Id, string Name);
+    private record CapabilityResponse(string CapabilityId, string DisplayName, string Category);
+}

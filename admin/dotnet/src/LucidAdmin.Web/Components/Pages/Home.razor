@@ -1,0 +1,199 @@
+@page "/"
+@attribute [Authorize]
+@inject ISnackbar Snackbar
+@inject IDashboardService DashboardService
+@using LucidAdmin.Core.Models
+@using LucidAdmin.Core.Interfaces.Services
+
+<PageTitle>Dashboard - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_stats != null)
+{
+    <MudGrid>
+        <!-- Tool Servers Card -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <div class="d-flex justify-space-between align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Tool Servers</MudText>
+                            <MudText Typo="Typo.h4">@_stats.ToolServers.Total</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Large" Color="Color.Primary" />
+                    </div>
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex gap-2 flex-wrap">
+                        @foreach (var status in _stats.ToolServers.ByStatus)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="@GetHealthColor(status.Key)">
+                                @status.Key: @status.Value
+                            </MudChip>
+                        }
+                    </div>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/tool-servers">View All</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <!-- Agents Card -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <div class="d-flex justify-space-between align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Agents</MudText>
+                            <MudText Typo="Typo.h4">@_stats.Agents.Total</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Large" Color="Color.Secondary" />
+                    </div>
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex gap-2 flex-wrap">
+                        @foreach (var status in _stats.Agents.ByStatus)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="@GetAgentStatusColor(status.Key)">
+                                @status.Key: @status.Value
+                            </MudChip>
+                        }
+                    </div>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/agents">View All</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <!-- Service Accounts Card -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <div class="d-flex justify-space-between align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Service Accounts</MudText>
+                            <MudText Typo="Typo.h4">@_stats.ServiceAccounts.Total</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.Key" Size="Size.Large" Color="Color.Tertiary" />
+                    </div>
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex gap-2">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Enabled: @_stats.ServiceAccounts.Enabled</MudChip>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled: @_stats.ServiceAccounts.Disabled</MudChip>
+                    </div>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/service-accounts">View All</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <!-- Capabilities Card -->
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Elevation="2">
+                <MudCardContent>
+                    <div class="d-flex justify-space-between align-center">
+                        <div>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Capabilities</MudText>
+                            <MudText Typo="Typo.h4">@_stats.Capabilities.Total</MudText>
+                        </div>
+                        <MudIcon Icon="@Icons.Material.Filled.Extension" Size="Size.Large" Color="Color.Info" />
+                    </div>
+                    <MudDivider Class="my-2" />
+                    <div class="d-flex gap-2 flex-wrap">
+                        @foreach (var cat in _stats.Capabilities.ByCategory)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                                @cat.Key: @cat.Value
+                            </MudChip>
+                        }
+                    </div>
+                </MudCardContent>
+                <MudCardActions>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/capability-mappings">View Mappings</MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Recent Activity -->
+    <MudText Typo="Typo.h5" Class="mt-6 mb-3">Recent Activity</MudText>
+    <MudCard Elevation="2">
+        <MudTable Items="@_stats.RecentAuditEvents" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>Action</MudTh>
+                <MudTh>Resource</MudTh>
+                <MudTh>Performed By</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Time</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Action">@context.Action</MudTd>
+                <MudTd DataLabel="Resource">@(context.TargetResource ?? "-")</MudTd>
+                <MudTd DataLabel="Performed By">@(context.PerformedBy ?? "System")</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.Success ? Color.Success : Color.Error)">
+                        @(context.Success ? "Success" : "Failed")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Time">@context.Timestamp.ToLocalTime().ToString("g")</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>No recent activity</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudCard>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load dashboard data</MudAlert>
+}
+
+@code {
+    private DashboardStats? _stats;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStats();
+    }
+
+    private async Task LoadStats()
+    {
+        _loading = true;
+        try
+        {
+            _stats = await DashboardService.GetStatsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load dashboard: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Color GetHealthColor(string status) => status.ToLower() switch
+    {
+        "healthy" => Color.Success,
+        "degraded" => Color.Warning,
+        "unhealthy" => Color.Error,
+        _ => Color.Default
+    };
+
+    private Color GetAgentStatusColor(string status) => status.ToLower() switch
+    {
+        "running" => Color.Success,
+        "stopped" => Color.Default,
+        "error" => Color.Error,
+        "starting" or "stopping" => Color.Warning,
+        _ => Color.Default
+    };
+}

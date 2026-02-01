@@ -1,0 +1,93 @@
+/* Drawflow custom styles for Lucid Admin */
+
+#drawflow-container {
+    width: 100%;
+    height: 600px;
+    background-color: #1a1a2e;
+    background-image:
+        linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.drawflow .drawflow-node {
+    background: #16213e;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    min-width: 160px;
+    padding: 0;
+}
+
+.drawflow .drawflow-node.selected {
+    border-color: #e94560;
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
+
+.drawflow .drawflow-node .inputs,
+.drawflow .drawflow-node .outputs {
+    display: flex;
+    justify-content: space-around;
+}
+
+.drawflow .drawflow-node .input,
+.drawflow .drawflow-node .output {
+    width: 14px;
+    height: 14px;
+    background: #0f3460;
+    border: 2px solid #e94560;
+    border-radius: 50%;
+}
+
+.drawflow .drawflow-node .input:hover,
+.drawflow .drawflow-node .output:hover {
+    background: #e94560;
+}
+
+.drawflow .connection .main-path {
+    stroke: #e94560;
+    stroke-width: 3px;
+}
+
+.drawflow .connection .main-path:hover {
+    stroke: #ff6b6b;
+    stroke-width: 4px;
+}
+
+/* Custom node styles */
+.workflow-node {
+    padding: 10px;
+    color: #eee;
+}
+
+.workflow-node .node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+}
+
+.workflow-node .node-icon {
+    font-size: 1.2em;
+}
+
+.workflow-node .node-title {
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.workflow-node .node-body {
+    font-size: 0.8em;
+    color: #aaa;
+}
+
+/* Node type specific colors */
+.drawflow-node.Trigger { border-left-color: #4CAF50 !important; }
+.drawflow-node.Classify { border-left-color: #2196F3 !important; }
+.drawflow-node.Query { border-left-color: #9C27B0 !important; }
+.drawflow-node.Validate { border-left-color: #FF9800 !important; }
+.drawflow-node.Execute { border-left-color: #F44336 !important; }
+.drawflow-node.UpdateTicket { border-left-color: #00BCD4 !important; }
+.drawflow-node.Notify { border-left-color: #E91E63 !important; }
+.drawflow-node.Escalate { border-left-color: #FF5722 !important; }
+.drawflow-node.Condition { border-left-color: #795548 !important; }
+.drawflow-node.End { border-left-color: #607D8B !important; }

@@ -1,0 +1,268 @@
+@page "/rulesets"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Core.Enums
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Rulesets - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Rulesets</MudText>
+
+<!-- Toolbar -->
+<MudPaper Elevation="0" Class="pa-4 mb-4">
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudTextField @bind-Value="_searchString"
+                          Placeholder="Search rulesets..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterCategory"
+                       Label="Category"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All Categories</MudSelectItem>
+                @foreach (var category in RulesetCategory.All)
+                {
+                    <MudSelectItem Value="@category">@category</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <MudSelect @bind-Value="_filterStatus"
+                       Label="Status"
+                       Clearable="true"
+                       T="string?">
+                <MudSelectItem Value="@((string?)null)">All</MudSelectItem>
+                <MudSelectItem Value="@("active")">Active</MudSelectItem>
+                <MudSelectItem Value="@("inactive")">Inactive</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="2" Class="d-flex align-end">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="CreateRuleset"
+                       FullWidth="true">
+                Create
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<!-- Table -->
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_rulesets != null)
+{
+    <MudTable Items="@FilteredRulesets"
+              Hover="true"
+              Dense="false"
+              Striped="true"
+              Elevation="2">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh>Rules</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2"><strong>@context.Name</strong></MudText>
+                @if (!string.IsNullOrWhiteSpace(context.DisplayName))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.DisplayName</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(context.Description))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Category">
+                <MudChip T="string" Size="Size.Small" Color="@GetCategoryColor(context.Category)">
+                    @context.Category
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Rules">
+                @if (context.Rules != null)
+                {
+                    <MudText Typo="Typo.body2">@context.Rules.Count</MudText>
+                }
+                else
+                {
+                    <MudText Color="Color.Secondary">-</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.IsActive)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Inactive</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Type">
+                @if (context.IsBuiltIn)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" title="Built-in rulesets cannot be modified">Built-in</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">Custom</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="@(() => EditRuleset(context.Id))"
+                                   title="Edit" />
+                    @if (!context.IsBuiltIn)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="@(() => DeleteRuleset(context))"
+                                       title="Delete" />
+                    }
+                </MudButtonGroup>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No rulesets found</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load rulesets</MudAlert>
+}
+
+@code {
+    private List<RulesetResponse>? _rulesets;
+    private bool _loading = true;
+    private string _searchString = string.Empty;
+    private string? _filterCategory;
+    private string? _filterStatus;
+
+    private IEnumerable<RulesetResponse> FilteredRulesets
+    {
+        get
+        {
+            if (_rulesets == null) return Enumerable.Empty<RulesetResponse>();
+
+            var filtered = _rulesets.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_searchString))
+            {
+                var search = _searchString.ToLowerInvariant();
+                filtered = filtered.Where(r =>
+                    r.Name.ToLowerInvariant().Contains(search) ||
+                    (r.DisplayName?.ToLowerInvariant().Contains(search) ?? false) ||
+                    (r.Description?.ToLowerInvariant().Contains(search) ?? false));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterCategory))
+            {
+                filtered = filtered.Where(r => r.Category == _filterCategory);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                filtered = _filterStatus switch
+                {
+                    "active" => filtered.Where(r => r.IsActive),
+                    "inactive" => filtered.Where(r => !r.IsActive),
+                    _ => filtered
+                };
+            }
+
+            return filtered.OrderBy(r => r.Category).ThenBy(r => r.Name);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRulesets();
+    }
+
+    private async Task LoadRulesets()
+    {
+        _loading = true;
+        try
+        {
+            _rulesets = await Http.GetFromJsonAsync<List<RulesetResponse>>("/api/rulesets");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load rulesets: {ex.Message}", Severity.Error);
+            _rulesets = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void CreateRuleset()
+    {
+        Navigation.NavigateTo("/rulesets/create");
+    }
+
+    private void EditRuleset(Guid id)
+    {
+        Navigation.NavigateTo($"/rulesets/edit/{id}");
+    }
+
+    private async Task DeleteRuleset(RulesetResponse ruleset)
+    {
+        var result = await DialogService.ShowMessageBox(
+            "Delete Ruleset",
+            $"Are you sure you want to delete the ruleset '{ruleset.Name}'? This will also delete all associated rules.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (result == true)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"/api/rulesets/{ruleset.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add($"Ruleset '{ruleset.Name}' deleted successfully", Severity.Success);
+                    await LoadRulesets();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to delete ruleset: {error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete ruleset: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private Color GetCategoryColor(string category) => category switch
+    {
+        "Security" => Color.Error,
+        "Validation" => Color.Warning,
+        "Communication" => Color.Info,
+        "Escalation" => Color.Secondary,
+        _ => Color.Default
+    };
+}

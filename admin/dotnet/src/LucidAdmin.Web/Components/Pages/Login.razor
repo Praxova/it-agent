@@ -1,0 +1,89 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout LoginLayout
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Login - Lucid Admin Portal</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center" Style="height: 100vh;">
+    <MudCard Class="pa-4" Elevation="4" Style="width: 100%;">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h4" Align="Align.Center">Lucid Admin Portal</MudText>
+                <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary">Sign in to continue</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-3">@ErrorMessage</MudAlert>
+            }
+
+            <form method="post" action="/account/login">
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+                <MudTextField T="string" Label="Username"
+                              Variant="Variant.Outlined"
+                              name="username"
+                              id="username"
+                              Required="true"
+                              RequiredError="Username is required"
+                              Class="mb-3"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Person" />
+
+                <MudTextField T="string" Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="@_passwordInputType"
+                              name="password"
+                              id="password"
+                              Required="true"
+                              RequiredError="Password is required"
+                              Class="mb-3"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@_passwordIcon"
+                              OnAdornmentClick="TogglePasswordVisibility" />
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           Size="Size.Large">
+                    Sign In
+                </MudButton>
+            </form>
+
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3" Dense="true">
+                <strong>Default credentials:</strong><br/>
+                Username: admin<br/>
+                Password: admin
+            </MudAlert>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? ErrorMessage { get; set; }
+
+    private InputType _passwordInputType = InputType.Password;
+    private string _passwordIcon = Icons.Material.Filled.VisibilityOff;
+
+    private void TogglePasswordVisibility()
+    {
+        if (_passwordInputType == InputType.Password)
+        {
+            _passwordInputType = InputType.Text;
+            _passwordIcon = Icons.Material.Filled.Visibility;
+        }
+        else
+        {
+            _passwordInputType = InputType.Password;
+            _passwordIcon = Icons.Material.Filled.VisibilityOff;
+        }
+    }
+}

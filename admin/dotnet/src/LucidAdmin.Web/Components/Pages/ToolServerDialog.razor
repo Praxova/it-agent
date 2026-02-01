@@ -1,0 +1,183 @@
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Services
+@inject IToolServerService ToolServerService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudGrid>
+                <!-- Name -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Name"
+                                  Label="Name"
+                                  Required="true"
+                                  RequiredError="Name is required"
+                                  Disabled="@(_model.Id.HasValue)"
+                                  HelperText="Unique identifier (e.g., ts-dc01, ts-prod-east-01)" />
+                </MudItem>
+
+                <!-- Display Name -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.DisplayName"
+                                  Label="Display Name"
+                                  HelperText="Optional friendly name for display" />
+                </MudItem>
+
+                <!-- Endpoint -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Endpoint"
+                                  Label="Endpoint URL"
+                                  Required="true"
+                                  RequiredError="Endpoint URL is required"
+                                  Disabled="@(_model.Id.HasValue)"
+                                  HelperText="Full URL including port (e.g., https://dc01.montanifarms.com:5001)" />
+                </MudItem>
+
+                <!-- Domain -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Domain"
+                                  Label="Domain"
+                                  Required="true"
+                                  RequiredError="Domain is required"
+                                  Disabled="@(_model.Id.HasValue)"
+                                  HelperText="Active Directory domain (e.g., montanifarms.com)" />
+                </MudItem>
+
+                <!-- Description -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description"
+                                  Label="Description"
+                                  Lines="2"
+                                  HelperText="Optional description of this server's purpose" />
+                </MudItem>
+
+                <!-- API Key (only for creation) -->
+                @if (!_model.Id.HasValue)
+                {
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_model.ApiKey"
+                                      Label="API Key"
+                                      HelperText="Optional API key for authentication. Leave blank to allow any requests."
+                                      InputType="InputType.Password"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Key" />
+                    </MudItem>
+                }
+
+                <!-- Enabled Toggle (only for editing) -->
+                @if (_model.Id.HasValue)
+                {
+                    <MudItem xs="12">
+                        <MudSwitch @bind-Value="_model.IsEnabled"
+                                   Label="Enabled"
+                                   Color="Color.Primary" />
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Save"
+                   Disabled="@(!_isValid || _saving)">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            }
+            else
+            {
+                @(_model.Id.HasValue ? "Update" : "Create")
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public ToolServerResponse? ExistingServer { get; set; }
+
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _saving;
+    private ToolServerFormModel _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (ExistingServer != null)
+        {
+            _model = ToolServerFormModel.FromResponse(ExistingServer);
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+        if (!_isValid)
+            return;
+
+        _saving = true;
+        try
+        {
+            if (_model.Id.HasValue)
+            {
+                // Update existing
+                var server = await ToolServerService.GetByIdAsync(_model.Id.Value);
+                if (server == null)
+                {
+                    Snackbar.Add("Tool server not found", Severity.Error);
+                    return;
+                }
+
+                // Update fields
+                server.DisplayName = _model.DisplayName;
+                server.Description = _model.Description;
+                server.IsEnabled = _model.IsEnabled;
+
+                await ToolServerService.UpdateAsync(server);
+                Snackbar.Add("Tool server updated successfully", Severity.Success);
+            }
+            else
+            {
+                // Create new
+                var server = new ToolServer
+                {
+                    Name = _model.Name,
+                    DisplayName = _model.DisplayName,
+                    Endpoint = _model.Endpoint,
+                    Domain = _model.Domain,
+                    Description = _model.Description,
+                    ApiKeyHash = null, // Will be handled by service if API key is provided
+                    IsEnabled = _model.IsEnabled,
+                    // Initialize navigation properties to prevent EF tracking issues
+                    CapabilityMappings = new List<CapabilityMapping>(),
+                    AuditEvents = new List<AuditEvent>()
+                };
+
+                await ToolServerService.CreateAsync(server);
+                Snackbar.Add("Tool server created successfully", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving tool server: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

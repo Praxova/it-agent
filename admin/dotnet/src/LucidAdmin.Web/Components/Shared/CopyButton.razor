@@ -1,0 +1,53 @@
+@inject IJSRuntime JSRuntime
+
+<button type="button"
+        class="@($"btn btn-sm btn-outline-secondary {CssClass}")"
+        title="@Title"
+        @onclick="CopyToClipboard"
+        disabled="@(string.IsNullOrEmpty(Text))">
+    @if (_copied)
+    {
+        <span class="text-success">✓ Copied!</span>
+    }
+    else
+    {
+        <span>@ButtonText</span>
+    }
+</button>
+
+@code {
+    [Parameter]
+    public string? Text { get; set; }
+
+    [Parameter]
+    public string Title { get; set; } = "Copy to clipboard";
+
+    [Parameter]
+    public string ButtonText { get; set; } = "Copy";
+
+    [Parameter]
+    public string CssClass { get; set; } = "";
+
+    private bool _copied = false;
+
+    private async Task CopyToClipboard()
+    {
+        if (string.IsNullOrEmpty(Text)) return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", Text);
+            _copied = true;
+            StateHasChanged();
+
+            // Reset after 2 seconds
+            await Task.Delay(2000);
+            _copied = false;
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            // Silently fail if clipboard API is not available
+        }
+    }
+}

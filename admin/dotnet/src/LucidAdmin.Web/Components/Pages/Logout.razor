@@ -1,0 +1,10 @@
+@page "/logout"
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Redirect to the logout endpoint which will handle the sign out
+        Navigation.NavigateTo("/account/logout", forceLoad: true);
+    }
+}

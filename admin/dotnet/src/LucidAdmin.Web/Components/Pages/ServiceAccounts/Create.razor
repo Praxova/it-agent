@@ -1,0 +1,475 @@
+@page "/service-accounts/create"
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Enums
+@using LucidAdmin.Core.Interfaces.Credentials
+@using LucidAdmin.Core.Interfaces.Providers
+@using LucidAdmin.Core.Interfaces.Repositories
+@using LucidAdmin.Core.Interfaces.Services
+@using LucidAdmin.Core.Models
+@using LucidAdmin.Web.Components.Shared
+@inject IServiceAccountRepository Repository
+@inject IProviderRegistry ProviderRegistry
+@inject ICredentialService CredentialService
+@inject NavigationManager Navigation
+@attribute [StreamRendering]
+
+<PageTitle>Create Service Account - Lucid Admin</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-person-plus"></i> Create Service Account</h1>
+    <a href="/service-accounts" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to List
+    </a>
+</div>
+
+@if (_error != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @_error
+        <button type="button" class="btn-close" @onclick="() => _error = null"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Account Details</h5>
+            </div>
+            <div class="card-body">
+                <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                    <div class="mb-3">
+                        <label class="form-label">Name *</label>
+                        <input type="text" class="form-control" @bind="_serviceAccount.Name"
+                               placeholder="e.g., servicenow-prod, ollama-local" required />
+                        <div class="form-text">Unique identifier for this service account.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Display Name</label>
+                        <input type="text" class="form-control" @bind="_serviceAccount.DisplayName"
+                               placeholder="e.g., Production ServiceNow" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" @bind="_serviceAccount.Description" rows="2"
+                                  placeholder="Optional description of this account's purpose"></textarea>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Provider *</label>
+                            <select class="form-select" @bind="_serviceAccount.Provider"
+                                    @bind:after="OnProviderChanged" required>
+                                <option value="">Select provider...</option>
+                                @foreach (var provider in _providers)
+                                {
+                                    <option value="@provider.ProviderId">@provider.DisplayName</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Account Type *</label>
+                            <select class="form-select" @bind="_serviceAccount.AccountType"
+                                    @bind:after="OnAccountTypeChanged"
+                                    disabled="@(string.IsNullOrEmpty(_serviceAccount.Provider))" required>
+                                <option value="">Select type...</option>
+                                @foreach (var type in _accountTypes)
+                                {
+                                    <option value="@type.TypeId">@type.DisplayName</option>
+                                }
+                            </select>
+                            @if (_selectedAccountType != null && !string.IsNullOrEmpty(_selectedAccountType.Description))
+                            {
+                                <div class="form-text">@_selectedAccountType.Description</div>
+                            }
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(_configExample))
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Configuration (JSON)</label>
+                            <textarea class="form-control font-monospace" @bind="_serviceAccount.Configuration" rows="5"></textarea>
+                            <div class="form-text">
+                                Example: <code>@_configExample</code>
+                            </div>
+                        </div>
+                    }
+
+                    <hr class="my-4" />
+
+                    <h5><i class="bi bi-key"></i> Credentials</h5>
+
+                    <div class="mb-3">
+                        <label class="form-label">Credential Storage *</label>
+                        <select class="form-select" @bind="_serviceAccount.CredentialStorage"
+                                @bind:after="OnCredentialStorageChanged"
+                                disabled="@(string.IsNullOrEmpty(_serviceAccount.Provider))" required>
+                            @foreach (var storage in _supportedStorage)
+                            {
+                                <option value="@storage">@storage</option>
+                            }
+                        </select>
+                        <div class="form-text">
+                            @switch (_serviceAccount.CredentialStorage)
+                            {
+                                case CredentialStorageType.Database:
+                                    <span><i class="bi bi-shield-lock text-success"></i> Credentials will be encrypted and stored securely in the database.</span>
+                                    break;
+                                case CredentialStorageType.Environment:
+                                    <span><i class="bi bi-terminal text-info"></i> Credentials will be read from environment variables on the server.</span>
+                                    break;
+                                case CredentialStorageType.None:
+                                    <span><i class="bi bi-shield-check text-secondary"></i> No credentials needed (gMSA or current user authentication).</span>
+                                    break;
+                                case CredentialStorageType.Vault:
+                                    <span><i class="bi bi-safe text-primary"></i> Credentials will be retrieved from HashiCorp Vault.</span>
+                                    break;
+                                default:
+                                    <span>@_serviceAccount.CredentialStorage storage selected.</span>
+                                    break;
+                            }
+                        </div>
+                    </div>
+
+                    @if (_serviceAccount.CredentialStorage == CredentialStorageType.Environment)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Credential Reference *</label>
+                            <input type="text" class="form-control" @bind="_serviceAccount.CredentialReference"
+                                   placeholder="e.g., SERVICENOW_PASSWORD" required />
+                            <div class="form-text">Environment variable name that contains the credential.</div>
+                        </div>
+                    }
+
+                    @if (_serviceAccount.CredentialStorage == CredentialStorageType.Database)
+                    {
+                        <div class="card bg-light mb-3">
+                            <div class="card-header">
+                                <small class="text-muted">Enter credentials to be encrypted and stored</small>
+                            </div>
+                            <div class="card-body">
+                                @if (!_credentialFields.Any())
+                                {
+                                    <div class="text-muted">
+                                        Select a provider and account type to see required credentials.
+                                    </div>
+                                }
+                                else
+                                {
+                                    @foreach (var field in _credentialFields)
+                                    {
+                                        <div class="mb-3">
+                                            <label class="form-label">
+                                                @field.Label
+                                                @if (field.Required)
+                                                {
+                                                    <span class="text-danger">*</span>
+                                                }
+                                            </label>
+                                            @if (field.IsSecret)
+                                            {
+                                                <div class="input-group">
+                                                    <input type="@(_showSecrets.GetValueOrDefault(field.Key) ? "text" : "password")"
+                                                           class="form-control"
+                                                           value="@GetCredentialValue(field.Key)"
+                                                           @onchange="e => SetCredentialValue(field.Key, e.Value?.ToString())"
+                                                           placeholder="@field.Placeholder"
+                                                           required="@field.Required" />
+                                                    <button type="button" class="btn btn-outline-secondary"
+                                                            @onclick="() => ToggleShowSecret(field.Key)">
+                                                        <i class="bi @(_showSecrets.GetValueOrDefault(field.Key) ? "bi-eye-slash" : "bi-eye")"></i>
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <input type="text" class="form-control"
+                                                       value="@GetCredentialValue(field.Key)"
+                                                       @onchange="e => SetCredentialValue(field.Key, e.Value?.ToString())"
+                                                       placeholder="@field.Placeholder"
+                                                       required="@field.Required" />
+                                            }
+                                            @if (!string.IsNullOrEmpty(field.HelpText))
+                                            {
+                                                <div class="form-text">@field.HelpText</div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" @bind="_serviceAccount.IsEnabled" />
+                            <label class="form-check-label">Enabled</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary" disabled="@_saving">
+                            @if (_saving)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            <i class="bi bi-plus-lg"></i> Create Service Account
+                        </button>
+                        <a href="/service-accounts" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        @if (_selectedProvider != null)
+        {
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">@_selectedProvider.DisplayName</h5>
+                </div>
+                <div class="card-body">
+                    <p>@_selectedProvider.Description</p>
+
+                    @if (_accountTypes.Any())
+                    {
+                        <h6>Account Types</h6>
+                        <ul class="small">
+                            @foreach (var type in _accountTypes)
+                            {
+                                <li>
+                                    <strong>@type.DisplayName</strong>
+                                    @if (!string.IsNullOrEmpty(type.Description))
+                                    {
+                                        <br /><span class="text-muted">@type.Description</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private ServiceAccount _serviceAccount = new()
+    {
+        Id = Guid.NewGuid(),
+        Name = "",
+        Provider = "",
+        AccountType = "",
+        CredentialStorage = CredentialStorageType.Database,
+        IsEnabled = true,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    private List<IServiceAccountProvider> _providers = new();
+    private List<AccountTypeInfo> _accountTypes = new();
+    private List<CredentialStorageType> _supportedStorage = new() { CredentialStorageType.Database };
+    private IServiceAccountProvider? _selectedProvider;
+    private AccountTypeInfo? _selectedAccountType;
+    private string? _configExample;
+
+    private Dictionary<string, string> _credentials = new();
+    private Dictionary<string, bool> _showSecrets = new();
+    private List<CredentialField> _credentialFields = new();
+
+    private bool _saving;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _providers = ProviderRegistry.GetAllProviders()
+            .Where(p => p.IsImplemented)
+            .OrderBy(p => p.DisplayName)
+            .ToList();
+    }
+
+    private void OnProviderChanged()
+    {
+        _selectedProvider = _providers.FirstOrDefault(p => p.ProviderId == _serviceAccount.Provider);
+        _accountTypes = _selectedProvider?.SupportedAccountTypes.ToList() ?? new();
+        _supportedStorage = _selectedProvider?.SupportedCredentialStorage.ToList()
+                           ?? new() { CredentialStorageType.Database };
+
+        // Reset dependent fields
+        _serviceAccount.AccountType = "";
+        _selectedAccountType = null;
+        _configExample = null;
+        _credentials.Clear();
+        _credentialFields.Clear();
+
+        // Set default storage if current not supported
+        if (!_supportedStorage.Contains(_serviceAccount.CredentialStorage))
+        {
+            _serviceAccount.CredentialStorage = _supportedStorage.FirstOrDefault();
+        }
+
+        UpdateCredentialFields();
+    }
+
+    private void OnAccountTypeChanged()
+    {
+        _selectedAccountType = _accountTypes.FirstOrDefault(t => t.TypeId == _serviceAccount.AccountType);
+
+        if (_selectedProvider != null && !string.IsNullOrEmpty(_serviceAccount.AccountType))
+        {
+            _configExample = _selectedProvider.GetConfigurationExample(_serviceAccount.AccountType);
+
+            // Pre-populate configuration with example
+            if (string.IsNullOrEmpty(_serviceAccount.Configuration) && !string.IsNullOrEmpty(_configExample))
+            {
+                _serviceAccount.Configuration = _configExample;
+            }
+        }
+
+        UpdateCredentialFields();
+    }
+
+    private void OnCredentialStorageChanged()
+    {
+        _credentials.Clear();
+        UpdateCredentialFields();
+    }
+
+    private void UpdateCredentialFields()
+    {
+        if (_serviceAccount.CredentialStorage != CredentialStorageType.Database ||
+            string.IsNullOrEmpty(_serviceAccount.Provider) ||
+            string.IsNullOrEmpty(_serviceAccount.AccountType))
+        {
+            _credentialFields.Clear();
+            return;
+        }
+
+        _credentialFields = GetCredentialFieldsForProvider();
+    }
+
+    private List<CredentialField> GetCredentialFieldsForProvider()
+    {
+        return _serviceAccount.Provider.ToLowerInvariant() switch
+        {
+            "servicenow" when _serviceAccount.AccountType == "basic-auth" => new()
+            {
+                new("password", "Password", true, true, "ServiceNow password", "Password for the ServiceNow user account")
+            },
+            "servicenow" when _serviceAccount.AccountType == "oauth" => new()
+            {
+                new("client_secret", "Client Secret", true, true, "OAuth client secret", "The OAuth2 client secret"),
+                new("refresh_token", "Refresh Token", true, false, "Refresh token (optional)", "Used for automatic token refresh")
+            },
+            "llm-openai" or "openai" => new()
+            {
+                new("api_key", "API Key", true, true, "sk-...", "Your OpenAI API key starting with 'sk-'")
+            },
+            "llm-anthropic" or "anthropic" => new()
+            {
+                new("api_key", "API Key", true, true, "sk-ant-...", "Your Anthropic API key")
+            },
+            "llm-azure-openai" or "azure-openai" => new()
+            {
+                new("api_key", "API Key", true, true, "Azure key", "Your Azure OpenAI resource key")
+            },
+            "windows-ad" when _serviceAccount.AccountType == "traditional" => new()
+            {
+                new("password", "Password", true, true, "AD password", "Password for the AD service account")
+            },
+            "linux" when _serviceAccount.AccountType == "ssh-key" => new()
+            {
+                new("private_key", "Private Key", true, true, "-----BEGIN OPENSSH PRIVATE KEY-----", "SSH private key in PEM or OpenSSH format"),
+                new("passphrase", "Key Passphrase", true, false, "Optional passphrase", "Passphrase if the key is encrypted")
+            },
+            "linux" when _serviceAccount.AccountType == "password" => new()
+            {
+                new("password", "Password", true, true, "SSH password", "Password for SSH authentication")
+            },
+            "llm-ollama" or "ollama" => new(), // Ollama doesn't need credentials
+            _ => new()
+            {
+                new("password", "Password/Secret", true, false, "Primary credential", "Enter the primary credential for this account"),
+                new("api_key", "API Key", true, false, "API key if applicable", "Enter an API key if required")
+            }
+        };
+    }
+
+    private string GetCredentialValue(string key)
+    {
+        return _credentials.TryGetValue(key, out var value) ? value : "";
+    }
+
+    private void SetCredentialValue(string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            _credentials.Remove(key);
+        }
+        else
+        {
+            _credentials[key] = value;
+        }
+    }
+
+    private void ToggleShowSecret(string key)
+    {
+        _showSecrets[key] = !_showSecrets.GetValueOrDefault(key);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _error = null;
+
+        try
+        {
+            // Validate required credentials
+            if (_serviceAccount.CredentialStorage == CredentialStorageType.Database)
+            {
+                var missingRequired = _credentialFields
+                    .Where(f => f.Required && string.IsNullOrEmpty(GetCredentialValue(f.Key)))
+                    .ToList();
+
+                if (missingRequired.Any())
+                {
+                    _error = $"Required credentials missing: {string.Join(", ", missingRequired.Select(f => f.Label))}";
+                    return;
+                }
+            }
+
+            // Create the service account
+            await Repository.AddAsync(_serviceAccount);
+
+            // Store credentials if using database storage
+            if (_serviceAccount.CredentialStorage == CredentialStorageType.Database && _credentials.Any())
+            {
+                var credSet = new CredentialSet(_credentials);
+                var result = await CredentialService.StoreCredentialsAsync(_serviceAccount.Id, credSet);
+
+                if (!result.Success)
+                {
+                    // Account created but credentials failed - navigate but show warning
+                    _error = $"Account created but credentials failed to store: {result.ErrorMessage}";
+                    // Still navigate since account was created
+                }
+            }
+
+            Navigation.NavigateTo("/service-accounts");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create service account: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private record CredentialField(string Key, string Label, bool IsSecret, bool Required, string? Placeholder, string? HelpText);
+}

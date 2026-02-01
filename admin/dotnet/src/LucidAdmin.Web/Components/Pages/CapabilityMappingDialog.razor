@@ -1,0 +1,381 @@
+@using MudBlazor
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Web.Services
+@using System.Text.Json
+@inject ICapabilityMappingService MappingService
+@inject ISnackbar Snackbar
+@inject HttpClient Http
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudGrid>
+                <!-- Tool Server Selection -->
+                <MudItem xs="12">
+                    @if (_model.Id.HasValue)
+                    {
+                        <!-- Read-only when editing -->
+                        <MudTextField Value="@_selectedToolServer?.Name"
+                                      Label="Tool Server"
+                                      Disabled="true"
+                                      HelperText="Tool Server cannot be changed after creation" />
+                    }
+                    else
+                    {
+                        <MudSelect @bind-Value="_model.ToolServerId"
+                                   Label="Tool Server"
+                                   Required="true"
+                                   RequiredError="Tool Server is required"
+                                   T="Guid?">
+                            @foreach (var server in _toolServers)
+                            {
+                                <MudSelectItem Value="@((Guid?)server.Id)">@server.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
+                <!-- Capability Selection -->
+                <MudItem xs="12">
+                    @if (_model.Id.HasValue)
+                    {
+                        <!-- Read-only when editing -->
+                        <MudTextField Value="@_selectedCapability?.DisplayName"
+                                      Label="Capability"
+                                      Disabled="true"
+                                      HelperText="Capability cannot be changed after creation" />
+                    }
+                    else
+                    {
+                        <MudSelect @bind-Value="_model.CapabilityId"
+                                   Label="Capability"
+                                   Required="true"
+                                   RequiredError="Capability is required"
+                                   T="string">
+                            @foreach (var cap in _availableCapabilities)
+                            {
+                                <MudSelectItem Value="@cap.CapabilityId">
+                                    <MudText Typo="Typo.body2">@cap.DisplayName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@cap.Category | @cap.CapabilityId</MudText>
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
+                <!-- Service Account Selection -->
+                <MudItem xs="12">
+                    <MudSelect @bind-Value="_model.ServiceAccountId"
+                               Label="Service Account"
+                               Required="true"
+                               RequiredError="Service Account is required"
+                               Disabled="@(string.IsNullOrWhiteSpace(_model.CapabilityId))"
+                               T="Guid?"
+                               HelperText="@GetServiceAccountHelperText()">
+                        @foreach (var account in GetFilteredServiceAccounts())
+                        {
+                            <MudSelectItem Value="@((Guid?)account.Id)">
+                                <MudText Typo="Typo.body2">@account.Name</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@account.Provider | @account.DisplayName</MudText>
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Configuration (optional JSON) -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Configuration"
+                                  Label="Configuration (JSON)"
+                                  Lines="5"
+                                  HelperText="Optional capability-specific configuration as JSON"
+                                  Validation="@(new Func<string, string?>(ValidateJson))" />
+                </MudItem>
+
+                <!-- Allowed Scopes (optional JSON array) -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.AllowedScopesJson"
+                                  Label="Allowed Scopes (JSON Array)"
+                                  Lines="3"
+                                  HelperText="Optional JSON array of allowed scopes (OUs, groups, paths, etc.)"
+                                  Validation="@(new Func<string, string?>(ValidateJsonArray))" />
+                </MudItem>
+
+                <!-- Denied Scopes (optional JSON array) -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.DeniedScopesJson"
+                                  Label="Denied Scopes (JSON Array)"
+                                  Lines="3"
+                                  HelperText="Optional JSON array of explicitly denied scopes"
+                                  Validation="@(new Func<string, string?>(ValidateJsonArray))" />
+                </MudItem>
+
+                <!-- Enabled Toggle -->
+                <MudItem xs="12">
+                    <MudSwitch @bind-Value="_model.IsEnabled"
+                               Label="Enabled"
+                               Color="Color.Primary" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Save"
+                   Disabled="@(!_isValid || _saving)">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            }
+            else
+            {
+                @(_model.Id.HasValue ? "Update" : "Create")
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public CapabilityMappingResponse? ExistingMapping { get; set; }
+
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _saving;
+    private CapabilityMappingFormModel _model = new();
+
+    private List<ToolServerDto> _toolServers = new();
+    private List<CapabilityDto> _capabilities = new();
+    private List<ServiceAccountDto> _serviceAccounts = new();
+
+    private ToolServerDto? _selectedToolServer;
+    private CapabilityDto? _selectedCapability;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load dropdowns
+        await LoadToolServers();
+        await LoadCapabilities();
+        await LoadServiceAccounts();
+
+        if (ExistingMapping != null)
+        {
+            _model = CapabilityMappingFormModel.FromResponse(ExistingMapping);
+            _selectedToolServer = _toolServers.FirstOrDefault(s => s.Id == ExistingMapping.ToolServerId);
+            _selectedCapability = _capabilities.FirstOrDefault(c => c.CapabilityId == ExistingMapping.CapabilityId);
+        }
+    }
+
+    private async Task LoadToolServers()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<ToolServerDto>>("/api/tool-servers");
+            _toolServers = response ?? new List<ToolServerDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load tool servers: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadCapabilities()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<CapabilityDto>>("/api/v1/capabilities");
+            _capabilities = response ?? new List<CapabilityDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load capabilities: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadServiceAccounts()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<ServiceAccountDto>>("/api/v1/service-accounts");
+            _serviceAccounts = response ?? new List<ServiceAccountDto>();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load service accounts: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private IEnumerable<CapabilityDto> _availableCapabilities
+    {
+        get
+        {
+            if (!_model.ToolServerId.HasValue)
+                return _capabilities;
+
+            // TODO: Filter out capabilities that are already mapped to this tool server
+            return _capabilities;
+        }
+    }
+
+    private IEnumerable<ServiceAccountDto> GetFilteredServiceAccounts()
+    {
+        if (string.IsNullOrWhiteSpace(_model.CapabilityId))
+            return Enumerable.Empty<ServiceAccountDto>();
+
+        // Find the selected capability
+        var capability = _capabilities.FirstOrDefault(c => c.CapabilityId == _model.CapabilityId);
+        if (capability == null || capability.RequiredProviders == null || !capability.RequiredProviders.Any())
+            return _serviceAccounts;
+
+        // Filter service accounts by required providers
+        return _serviceAccounts.Where(sa =>
+            capability.RequiredProviders.Any(rp => sa.Provider.StartsWith(rp, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private string GetServiceAccountHelperText()
+    {
+        if (string.IsNullOrWhiteSpace(_model.CapabilityId))
+            return "Select a capability first";
+
+        var capability = _capabilities.FirstOrDefault(c => c.CapabilityId == _model.CapabilityId);
+        if (capability?.RequiredProviders != null && capability.RequiredProviders.Any())
+        {
+            return $"Filtered to accounts with compatible providers: {string.Join(", ", capability.RequiredProviders)}";
+        }
+
+        return "Service account to use for this capability";
+    }
+
+    private string? ValidateJson(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        try
+        {
+            JsonDocument.Parse(value);
+            return null;
+        }
+        catch
+        {
+            return "Invalid JSON";
+        }
+    }
+
+    private string? ValidateJsonArray(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        try
+        {
+            var doc = JsonDocument.Parse(value);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return "Must be a JSON array";
+            return null;
+        }
+        catch
+        {
+            return "Invalid JSON array";
+        }
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+        if (!_isValid)
+            return;
+
+        _saving = true;
+        try
+        {
+            if (_model.Id.HasValue)
+            {
+                // Update existing
+                var request = new UpdateCapabilityMappingRequest(
+                    CapabilityVersion: _model.CapabilityVersion,
+                    Configuration: _model.Configuration,
+                    AllowedScopesJson: _model.AllowedScopesJson,
+                    DeniedScopesJson: _model.DeniedScopesJson,
+                    IsEnabled: _model.IsEnabled
+                );
+
+                await MappingService.UpdateAsync(_model.Id.Value, request);
+                Snackbar.Add("Capability mapping updated successfully", Severity.Success);
+            }
+            else
+            {
+                // Create new
+                if (!_model.ToolServerId.HasValue || string.IsNullOrWhiteSpace(_model.CapabilityId) || !_model.ServiceAccountId.HasValue)
+                {
+                    Snackbar.Add("Please fill in all required fields", Severity.Error);
+                    return;
+                }
+
+                var request = new CreateCapabilityMappingRequest(
+                    ServiceAccountId: _model.ServiceAccountId.Value,
+                    ToolServerId: _model.ToolServerId.Value,
+                    CapabilityId: _model.CapabilityId,
+                    CapabilityVersion: _model.CapabilityVersion,
+                    Configuration: _model.Configuration,
+                    AllowedScopesJson: _model.AllowedScopesJson,
+                    DeniedScopesJson: _model.DeniedScopesJson
+                );
+
+                await MappingService.CreateAsync(request);
+                Snackbar.Add("Capability mapping created successfully", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving capability mapping: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    // DTOs for dropdowns
+    private record ToolServerDto(Guid Id, string Name);
+    private record CapabilityDto(string CapabilityId, string DisplayName, string Category, List<string>? RequiredProviders);
+    private record ServiceAccountDto(Guid Id, string Name, string? DisplayName, string Provider);
+
+    // Form model
+    private class CapabilityMappingFormModel
+    {
+        public Guid? Id { get; set; }
+        public Guid? ServiceAccountId { get; set; }
+        public Guid? ToolServerId { get; set; }
+        public string CapabilityId { get; set; } = string.Empty;
+        public string? CapabilityVersion { get; set; }
+        public string? Configuration { get; set; }
+        public string? AllowedScopesJson { get; set; }
+        public string? DeniedScopesJson { get; set; }
+        public bool IsEnabled { get; set; } = true;
+
+        public static CapabilityMappingFormModel FromResponse(CapabilityMappingResponse response) => new()
+        {
+            Id = response.Id,
+            ServiceAccountId = response.ServiceAccountId,
+            ToolServerId = response.ToolServerId,
+            CapabilityId = response.CapabilityId,
+            CapabilityVersion = response.CapabilityVersion,
+            Configuration = response.Configuration,
+            AllowedScopesJson = response.AllowedScopesJson,
+            DeniedScopesJson = response.DeniedScopesJson,
+            IsEnabled = response.IsEnabled
+        };
+    }
+}

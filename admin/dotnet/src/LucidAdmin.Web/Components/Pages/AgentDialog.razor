@@ -1,0 +1,307 @@
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Services
+@inject IAgentService AgentService
+@inject IServiceAccountService ServiceAccountService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudGrid>
+                <!-- IDENTITY -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mb-2">Identity</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Name"
+                                  Label="Name"
+                                  Required="true"
+                                  RequiredError="Name is required"
+                                  Disabled="@(_model.Id.HasValue)"
+                                  HelperText="Unique identifier (e.g., agent-prod-01)" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.DisplayName"
+                                  Label="Display Name"
+                                  HelperText="Optional friendly name for display" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description"
+                                  Label="Description"
+                                  Lines="2"
+                                  HelperText="Optional description of this agent's purpose" />
+                </MudItem>
+
+                <!-- Host Name (optional - populated at runtime) -->
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.HostName"
+                                  Label="Host Name (Optional)"
+                                  HelperText="Hostname where agent runs (auto-populated at runtime if not specified)" />
+                </MudItem>
+
+                <!-- LLM CONFIGURATION -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">LLM Configuration</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    @if (_loadingAccounts)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else if (_llmServiceAccounts.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-2">
+                            No LLM service accounts configured. Create one in Service Accounts first.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudSelect T="Guid?"
+                                   Label="LLM Provider"
+                                   @bind-Value="_model.LlmServiceAccountId"
+                                   Clearable="true"
+                                   HelperText="Select the LLM provider for ticket classification">
+                            @foreach (var account in _llmServiceAccounts)
+                            {
+                                <MudSelectItem Value="@((Guid?)account.Id)">
+                                    @(account.DisplayName ?? account.Name) (@account.Provider)
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
+                <!-- SERVICENOW CONFIGURATION -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">ServiceNow Integration</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    @if (_loadingAccounts)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else if (_serviceNowAccounts.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-2">
+                            No ServiceNow service accounts configured. Create one in Service Accounts first.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudSelect T="Guid?"
+                                   Label="ServiceNow Connection"
+                                   @bind-Value="_model.ServiceNowAccountId"
+                                   Clearable="true"
+                                   HelperText="Select the ServiceNow instance to monitor">
+                            @foreach (var account in _serviceNowAccounts)
+                            {
+                                <MudSelectItem Value="@((Guid?)account.Id)">
+                                    @(account.DisplayName ?? account.Name) (@account.Provider)
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.AssignmentGroup"
+                                  Label="Assignment Group"
+                                  HelperText="ServiceNow queue/group to monitor (e.g., 'Helpdesk')" />
+                </MudItem>
+
+                <!-- STATUS -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Status</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudSwitch @bind-Value="_model.IsEnabled"
+                               Label="Enabled"
+                               Color="Color.Primary" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Disabled agents will not process tickets
+                    </MudText>
+                </MudItem>
+
+                <!-- Configuration Warning -->
+                @if (!_model.LlmServiceAccountId.HasValue && !_model.ServiceNowAccountId.HasValue)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Class="mt-2">
+                            This agent will require both LLM and ServiceNow configuration to process tickets.
+                        </MudAlert>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   OnClick="Save"
+                   Disabled="@(!_isValid || _saving)">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+            }
+            else
+            {
+                @(_model.Id.HasValue ? "Update" : "Create")
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public AgentResponse? ExistingAgent { get; set; }
+
+    private MudForm _form = null!;
+    private bool _isValid;
+    private bool _saving;
+    private bool _loadingAccounts;
+    private AgentFormModel _model = new();
+    private List<ServiceAccountListItem> _llmServiceAccounts = new();
+    private List<ServiceAccountListItem> _serviceNowAccounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServiceAccounts();
+
+        if (ExistingAgent != null)
+        {
+            _model = AgentFormModel.FromResponse(ExistingAgent);
+        }
+    }
+
+    private async Task LoadServiceAccounts()
+    {
+        _loadingAccounts = true;
+        try
+        {
+            var accounts = await ServiceAccountService.GetAllAsync();
+
+            if (accounts != null)
+            {
+                _llmServiceAccounts = accounts
+                    .Where(sa => sa.Provider.StartsWith("llm-") && sa.IsEnabled)
+                    .Select(sa => new ServiceAccountListItem
+                    {
+                        Id = sa.Id,
+                        Name = sa.Name,
+                        DisplayName = sa.DisplayName,
+                        Provider = sa.Provider,
+                        IsEnabled = sa.IsEnabled
+                    })
+                    .OrderBy(sa => sa.DisplayName ?? sa.Name)
+                    .ToList();
+
+                _serviceNowAccounts = accounts
+                    .Where(sa => (sa.Provider == "servicenow" || sa.Provider.StartsWith("servicenow-")) && sa.IsEnabled)
+                    .Select(sa => new ServiceAccountListItem
+                    {
+                        Id = sa.Id,
+                        Name = sa.Name,
+                        DisplayName = sa.DisplayName,
+                        Provider = sa.Provider,
+                        IsEnabled = sa.IsEnabled
+                    })
+                    .OrderBy(sa => sa.DisplayName ?? sa.Name)
+                    .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load service accounts: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingAccounts = false;
+        }
+    }
+
+    private class ServiceAccountListItem
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string Provider { get; set; } = "";
+        public bool IsEnabled { get; set; }
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Save()
+    {
+        await _form.Validate();
+        if (!_isValid)
+            return;
+
+        _saving = true;
+        try
+        {
+            if (_model.Id.HasValue)
+            {
+                // Update existing
+                var agent = await AgentService.GetByIdAsync(_model.Id.Value);
+                if (agent == null)
+                {
+                    Snackbar.Add("Agent not found", Severity.Error);
+                    return;
+                }
+
+                // Update fields
+                agent.DisplayName = _model.DisplayName;
+                agent.Description = _model.Description;
+                agent.LlmServiceAccountId = _model.LlmServiceAccountId;
+                agent.ServiceNowAccountId = _model.ServiceNowAccountId;
+                agent.AssignmentGroup = _model.AssignmentGroup;
+                agent.IsEnabled = _model.IsEnabled;
+
+                await AgentService.UpdateAsync(agent);
+                Snackbar.Add("Agent updated successfully", Severity.Success);
+            }
+            else
+            {
+                // Create new
+                var agent = new Agent
+                {
+                    Name = _model.Name,
+                    DisplayName = _model.DisplayName,
+                    HostName = _model.HostName,
+                    Description = _model.Description,
+                    LlmServiceAccountId = _model.LlmServiceAccountId,
+                    ServiceNowAccountId = _model.ServiceNowAccountId,
+                    AssignmentGroup = _model.AssignmentGroup,
+                    IsEnabled = _model.IsEnabled
+                };
+
+                await AgentService.CreateAsync(agent);
+                Snackbar.Add("Agent created successfully", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving agent: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

@@ -1,0 +1,262 @@
+@page "/examples/edit/{Id:guid}"
+@page "/examples/create"
+@attribute [Authorize]
+@using LucidAdmin.Web.Api.Models.Responses
+@using LucidAdmin.Web.Models
+@using LucidAdmin.Core.Enums
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>@(_isCreate ? "Create Example Set" : $"Edit Example Set: {_model.Name}") - Lucid Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(_isCreate ? "Create Example Set" : "Edit Example Set")</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_model != null)
+{
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-3">Example Set Details</MudText>
+                <MudForm @ref="_form" @bind-IsValid="@_isValid">
+                    <MudTextField @bind-Value="_model.Name"
+                                  Label="Name"
+                                  Required="true"
+                                  Disabled="@(!_isCreate || _model.IsBuiltIn)"
+                                  HelperText="Unique identifier (cannot change after creation)" />
+                    
+                    <MudTextField @bind-Value="_model.DisplayName"
+                                  Label="Display Name"
+                                  Disabled="@_model.IsBuiltIn"
+                                  Class="mt-3" />
+                    
+                    <MudSelect @bind-Value="_model.TargetTicketType"
+                               Label="Target Ticket Type"
+                               Required="true"
+                               Disabled="@_model.IsBuiltIn"
+                               Class="mt-3"
+                               T="TicketType">
+                        @foreach (var type in Enum.GetValues<TicketType>())
+                        {
+                            <MudSelectItem Value="@type">@type.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                    
+                    <MudTextField @bind-Value="_model.Description"
+                                  Label="Description"
+                                  Lines="3"
+                                  Disabled="@_model.IsBuiltIn"
+                                  Class="mt-3" />
+                    
+                    <MudSwitch T="bool"
+                               @bind-Checked="_model.IsActive"
+                               Label="Active"
+                               Color="Color.Success"
+                               Disabled="@_model.IsBuiltIn"
+                               Class="mt-3" />
+                </MudForm>
+
+                <MudDivider Class="my-4" />
+
+                <div class="d-flex justify-content-between">
+                    <MudButton Variant="Variant.Outlined" OnClick="Cancel">Cancel</MudButton>
+                    @if (!_model.IsBuiltIn)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Disabled="@(!_isValid || _saving)"
+                                   OnClick="SaveExampleSet">
+                            @if (_saving)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                <span class="ms-2">Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save</span>
+                            }
+                        </MudButton>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="2" Class="pa-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <MudText Typo="Typo.h6">Examples (@_model.Examples.Count)</MudText>
+                </div>
+
+                @if (_model.Examples.Any())
+                {
+                    <MudStack Spacing="2">
+                        @foreach (var example in _model.Examples.OrderBy(e => e.SortOrder))
+                        {
+                            <MudCard>
+                                <MudCardHeader>
+                                    <CardHeaderContent>
+                                        <MudText Typo="Typo.body1"><strong>@example.Name</strong></MudText>
+                                    </CardHeaderContent>
+                                    <CardHeaderActions>
+                                        <MudChip T="string" Size="Size.Small" Color="@(example.IsActive ? Color.Success : Color.Default)">
+                                            @(example.IsActive ? "Active" : "Inactive")
+                                        </MudChip>
+                                    </CardHeaderActions>
+                                </MudCardHeader>
+                                <MudCardContent>
+                                    <MudText Typo="Typo.subtitle2" Class="mb-2">Input:</MudText>
+                                    <MudText Typo="Typo.body2"><strong>Short:</strong> @example.TicketShortDescription</MudText>
+                                    @if (!string.IsNullOrEmpty(example.TicketDescription))
+                                    {
+                                        <MudText Typo="Typo.body2" Class="mt-1"><strong>Description:</strong> @example.TicketDescription</MudText>
+                                    }
+                                    @if (!string.IsNullOrEmpty(example.CallerName))
+                                    {
+                                        <MudText Typo="Typo.body2" Class="mt-1"><strong>Caller:</strong> @example.CallerName</MudText>
+                                    }
+
+                                    <MudDivider Class="my-2" />
+
+                                    <MudText Typo="Typo.subtitle2" Class="mb-2">Expected Output:</MudText>
+                                    <MudChip T="string" Size="Size.Small" Class="mr-1">@example.ExpectedTicketType.ToString()</MudChip>
+                                    <MudChip T="string" Size="Size.Small" Class="mr-1">Confidence: @example.ExpectedConfidence.ToString("P0")</MudChip>
+                                    @if (!string.IsNullOrEmpty(example.ExpectedAffectedUser))
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Class="mr-1">User: @example.ExpectedAffectedUser</MudChip>
+                                    }
+                                    @if (!string.IsNullOrEmpty(example.ExpectedTargetGroup))
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Class="mr-1">Group: @example.ExpectedTargetGroup</MudChip>
+                                    }
+                                    @if (example.ExpectedShouldEscalate)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Escalate: @example.ExpectedEscalationReason</MudChip>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(example.Notes))
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+                                            <strong>Notes:</strong> @example.Notes
+                                        </MudText>
+                                    }
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    </MudStack>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info">No examples yet. Add some examples to train the classifier.</MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter]
+    public Guid? Id { get; set; }
+
+    private ExampleSetFormModel _model = new();
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _loading = true;
+    private bool _saving = false;
+    private bool _isCreate => !Id.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadExampleSet();
+    }
+
+    private async Task LoadExampleSet()
+    {
+        _loading = true;
+        try
+        {
+            if (_isCreate)
+            {
+                _model = new ExampleSetFormModel();
+            }
+            else
+            {
+                var response = await Http.GetFromJsonAsync<ExampleSetDetailResponse>($"/api/v1/example-sets/{Id}");
+                if (response == null)
+                {
+                    Snackbar.Add("Example set not found", Severity.Error);
+                    Navigation.NavigateTo("/examples");
+                }
+                else
+                {
+                    _model = ExampleSetFormModel.FromResponse(response);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load example set: {ex.Message}", Severity.Error);
+            Navigation.NavigateTo("/examples");
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SaveExampleSet()
+    {
+        if (!_isValid || _saving) return;
+
+        _saving = true;
+        try
+        {
+            if (_isCreate)
+            {
+                var request = _model.ToCreateRequest();
+                var response = await Http.PostAsJsonAsync("/api/v1/example-sets", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Example set created successfully", Severity.Success);
+                    Navigation.NavigateTo("/examples");
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to create: {error}", Severity.Error);
+                }
+            }
+            else
+            {
+                var request = _model.ToUpdateRequest();
+                var response = await Http.PutAsJsonAsync($"/api/v1/example-sets/{Id}", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Example set updated successfully", Severity.Success);
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to update: {error}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/examples");
+    }
+}
