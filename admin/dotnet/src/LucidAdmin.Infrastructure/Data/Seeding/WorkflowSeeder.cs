@@ -22,6 +22,7 @@ public class WorkflowSeeder
     public async Task SeedAsync()
     {
         await SeedPasswordResetWorkflow();
+        await SeedHelpdeskPasswordResetWorkflow();
         await _context.SaveChangesAsync();
     }
 
@@ -263,5 +264,233 @@ public class WorkflowSeeder
         {
             _logger.LogDebug("Built-in workflow already exists: {WorkflowName}", workflowName);
         }
+    }
+
+    private async Task SeedHelpdeskPasswordResetWorkflow()
+    {
+        const string workflowName = "helpdesk-password-reset-workflow";
+
+        var existing = await _context.WorkflowDefinitions
+            .Include(w => w.Steps)
+            .ThenInclude(s => s.OutgoingTransitions)
+            .FirstOrDefaultAsync(w => w.Name == workflowName);
+
+        if (existing != null)
+        {
+            _logger.LogDebug("Built-in workflow already exists: {WorkflowName}", workflowName);
+            return;
+        }
+
+        _logger.LogInformation("Seeding workflow: {WorkflowName}", workflowName);
+
+        // Ensure test-agent exists
+        var agent = await EnsureTestAgentExistsAsync();
+
+        // Get required rulesets
+        var securityDefaults = await _context.Rulesets.FirstOrDefaultAsync(r => r.Name == "security-defaults");
+        var classificationRules = await _context.Rulesets.FirstOrDefaultAsync(r => r.Name == "classification-rules");
+        var securityRules = await _context.Rulesets.FirstOrDefaultAsync(r => r.Name == "security-rules");
+        var communicationRules = await _context.Rulesets.FirstOrDefaultAsync(r => r.Name == "communication-rules");
+        var auditRules = await _context.Rulesets.FirstOrDefaultAsync(r => r.Name == "audit-rules");
+
+        if (securityDefaults == null || classificationRules == null || securityRules == null ||
+            communicationRules == null || auditRules == null)
+        {
+            _logger.LogWarning("Required rulesets not found. Skipping workflow seed.");
+            return;
+        }
+
+        // Get example set
+        var passwordResetExamples = await _context.ExampleSets
+            .FirstOrDefaultAsync(e => e.Name == "password-reset-examples");
+
+        // Create workflow
+        var workflow = new WorkflowDefinition
+        {
+            Name = workflowName,
+            DisplayName = "Helpdesk Password Reset Workflow",
+            Description = "Automated workflow for handling password reset requests from ServiceNow",
+            Version = "1.0.0",
+            TriggerType = "ServiceNow",
+            TriggerConfigJson = """{"pollIntervalSeconds": 30, "assignmentGroup": "Helpdesk"}""",
+            ExampleSetId = passwordResetExamples?.Id,
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        // Create steps
+        var triggerStep = new WorkflowStep
+        {
+            Name = "trigger-start",
+            StepType = StepType.Trigger,
+            ConfigurationJson = """{"source": "servicenow"}""",
+            PositionX = 100,
+            PositionY = 300,
+            SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var classifyStep = new WorkflowStep
+        {
+            Name = "classify-ticket",
+            StepType = StepType.Classify,
+            ConfigurationJson = """{"useExampleSet": "password-reset-examples"}""",
+            PositionX = 300,
+            PositionY = 300,
+            SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var validateStep = new WorkflowStep
+        {
+            Name = "validate-request",
+            StepType = StepType.Validate,
+            ConfigurationJson = """{"checks": ["user_exists", "not_admin", "requester_authorized"]}""",
+            PositionX = 500,
+            PositionY = 200,
+            SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var executeStep = new WorkflowStep
+        {
+            Name = "execute-reset",
+            StepType = StepType.Execute,
+            ConfigurationJson = """{"capability": "ad-password-reset", "generateTempPassword": true}""",
+            PositionX = 700,
+            PositionY = 200,
+            SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var notifyStep = new WorkflowStep
+        {
+            Name = "notify-user",
+            StepType = StepType.Notify,
+            ConfigurationJson = """{"template": "password-reset-success", "channel": "ticket-comment", "includeTempPassword": true}""",
+            PositionX = 900,
+            PositionY = 200,
+            SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalateStep = new WorkflowStep
+        {
+            Name = "escalate-to-human",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
+            PositionX = 500,
+            PositionY = 450,
+            SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var closeStep = new WorkflowStep
+        {
+            Name = "close-ticket",
+            StepType = StepType.UpdateTicket,
+            ConfigurationJson = """{"state": "resolved", "closeCode": "automated", "addResolutionNotes": true}""",
+            PositionX = 900,
+            PositionY = 400,
+            SortOrder = 7,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[] { triggerStep, classifyStep, validateStep, executeStep, notifyStep, escalateStep, closeStep });
+        await _context.SaveChangesAsync();
+
+        // Create transitions
+        var transitions = new List<StepTransition>
+        {
+            // trigger-start → classify-ticket
+            new() { FromStepId = triggerStep.Id, ToStepId = classifyStep.Id, Label = "start", SortOrder = 1 },
+
+            // classify-ticket → validate-request (high confidence)
+            new() { FromStepId = classifyStep.Id, ToStepId = validateStep.Id, Condition = "confidence >= 0.8", Label = "high-confidence", SortOrder = 1 },
+
+            // classify-ticket → escalate-to-human (low confidence)
+            new() { FromStepId = classifyStep.Id, ToStepId = escalateStep.Id, Condition = "confidence < 0.8", Label = "low-confidence", SortOrder = 2 },
+
+            // validate-request → execute-reset (valid)
+            new() { FromStepId = validateStep.Id, ToStepId = executeStep.Id, Condition = "valid == true", Label = "valid", SortOrder = 1 },
+
+            // validate-request → escalate-to-human (invalid)
+            new() { FromStepId = validateStep.Id, ToStepId = escalateStep.Id, Condition = "valid == false", Label = "invalid", SortOrder = 2 },
+
+            // execute-reset → notify-user (success)
+            new() { FromStepId = executeStep.Id, ToStepId = notifyStep.Id, Condition = "success == true", Label = "success", SortOrder = 1 },
+
+            // execute-reset → escalate-to-human (failure)
+            new() { FromStepId = executeStep.Id, ToStepId = escalateStep.Id, Condition = "success == false", Label = "failure", SortOrder = 2 },
+
+            // notify-user → close-ticket
+            new() { FromStepId = notifyStep.Id, ToStepId = closeStep.Id, Label = "done", SortOrder = 1 },
+
+            // escalate-to-human → close-ticket
+            new() { FromStepId = escalateStep.Id, ToStepId = closeStep.Id, Label = "escalated", SortOrder = 1 }
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+        await _context.SaveChangesAsync();
+
+        // Create workflow-level ruleset mappings
+        var workflowRulesetMappings = new List<WorkflowRulesetMapping>
+        {
+            new() { WorkflowDefinitionId = workflow.Id, RulesetId = securityDefaults.Id, Priority = 100, IsEnabled = true },
+            new() { WorkflowDefinitionId = workflow.Id, RulesetId = auditRules.Id, Priority = 200, IsEnabled = true }
+        };
+        _context.WorkflowRulesetMappings.AddRange(workflowRulesetMappings);
+
+        // Create step-level ruleset mappings
+        var stepRulesetMappings = new List<StepRulesetMapping>
+        {
+            new() { WorkflowStepId = classifyStep.Id, RulesetId = classificationRules.Id, Priority = 100, IsEnabled = true },
+            new() { WorkflowStepId = validateStep.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+            new() { WorkflowStepId = executeStep.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+            new() { WorkflowStepId = notifyStep.Id, RulesetId = communicationRules.Id, Priority = 100, IsEnabled = true }
+        };
+        _context.StepRulesetMappings.AddRange(stepRulesetMappings);
+        await _context.SaveChangesAsync();
+
+        // Link workflow to test-agent
+        agent.WorkflowDefinitionId = workflow.Id;
+        agent.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Successfully seeded workflow '{WorkflowName}' with {StepCount} steps and linked to agent '{AgentName}'",
+            workflowName, 7, agent.Name);
+    }
+
+    private async Task<Agent> EnsureTestAgentExistsAsync()
+    {
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+        if (agent != null) return agent;
+
+        // Get service accounts for LLM and ServiceNow (if they exist)
+        var llmAccount = await _context.ServiceAccounts
+            .FirstOrDefaultAsync(s => s.Provider.StartsWith("llm-"));
+        var snowAccount = await _context.ServiceAccounts
+            .FirstOrDefaultAsync(s => s.Provider == "servicenow");
+
+        agent = new Agent
+        {
+            Name = "test-agent",
+            DisplayName = "Test Helpdesk Agent",
+            Description = "Test agent for development and validation",
+            IsEnabled = true,
+            LlmServiceAccountId = llmAccount?.Id,
+            ServiceNowAccountId = snowAccount?.Id,
+            AssignmentGroup = "Helpdesk",
+            Status = AgentStatus.Stopped
+        };
+
+        _context.Agents.Add(agent);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Created test agent: {AgentName}", agent.Name);
+        return agent;
     }
 }
