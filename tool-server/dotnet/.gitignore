@@ -1,0 +1,15 @@
+# Build outputs
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
+# Test results
+TestResults/
+coverage/
+
+# IDE
+.vs/
+.vscode/
+*.swp
