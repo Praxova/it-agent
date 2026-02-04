@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────
+# Lucid IT Agent — Full Stack Development Compose
+# ─────────────────────────────────────────────────────────────────
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d agent-helpdesk-01  # Start just one agent
+#   docker compose logs -f agent-helpdesk-01 # Follow agent logs
+#   docker compose down                     # Stop everything
+#
+# Prerequisites:
+#   - Admin Portal running natively or in container
+#   - Ollama running on host or as container
+#   - .NET Tool Server running on Windows VM
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  # ── Helpdesk Agent Instance 1 ────────────────────────────────
+  agent-helpdesk-01:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: lucid-agent-helpdesk-01
+    environment:
+      ADMIN_PORTAL_URL: http://host.docker.internal:5000
+      AGENT_NAME: test-agent
+      POLL_INTERVAL: "30"
+      HEARTBEAT_INTERVAL: "60"
+      LOG_LEVEL: INFO
+      SERVICENOW_USERNAME: admin
+      SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - lucid-net
+    depends_on:
+      - ollama
+
+  # ── Helpdesk Agent Instance 2 (scale example) ───────────────
+  # Uncomment to run a second agent instance against a different
+  # agent config in the Admin Portal.
+  #
+  # agent-helpdesk-02:
+  #   build:
+  #     context: ./agent
+  #     dockerfile: Dockerfile
+  #   container_name: lucid-agent-helpdesk-02
+  #   environment:
+  #     ADMIN_PORTAL_URL: http://host.docker.internal:5000
+  #     AGENT_NAME: helpdesk-agent-02
+  #     POLL_INTERVAL: "30"
+  #     HEARTBEAT_INTERVAL: "60"
+  #     LOG_LEVEL: INFO
+  #     SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   restart: unless-stopped
+  #   networks:
+  #     - lucid-net
+  #   depends_on:
+  #     - ollama
+
+  # ── Ollama LLM Server ───────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: lucid-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    networks:
+      - lucid-net
+
+volumes:
+  ollama-models:
+    name: lucid-ollama-models
+
+networks:
+  lucid-net:
+    name: lucid-network
+    driver: bridge

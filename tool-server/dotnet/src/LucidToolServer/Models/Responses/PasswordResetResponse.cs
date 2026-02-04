@@ -9,5 +9,6 @@ public record PasswordResetResponse(
     [property: JsonPropertyName("success")] bool Success,
     [property: JsonPropertyName("message")] string Message,
     [property: JsonPropertyName("username")] string Username,
-    [property: JsonPropertyName("user_dn")] string? UserDn
+    [property: JsonPropertyName("user_dn")] string? UserDn = null,
+    [property: JsonPropertyName("temporary_password")] string? TemporaryPassword = null
 );

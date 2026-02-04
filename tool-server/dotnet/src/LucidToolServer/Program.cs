@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using LucidToolServer.Configuration;
 using LucidToolServer.Endpoints;
 using LucidToolServer.Exceptions;
@@ -90,8 +91,15 @@ api.MapPost("/password/reset", async (
     PasswordResetRequest request,
     IActiveDirectoryService adService) =>
 {
-    var result = await adService.ResetPasswordAsync(request.Username, request.NewPassword);
-    return Results.Ok(result);
+    // Generate secure temp password if none provided
+    var password = string.IsNullOrWhiteSpace(request.NewPassword)
+        ? GenerateSecurePassword()
+        : request.NewPassword;
+
+    var result = await adService.ResetPasswordAsync(request.Username, password);
+
+    // Return the password in the response (either generated or provided)
+    return Results.Ok(result with { TemporaryPassword = password });
 });
 
 // Group membership - add user
@@ -233,3 +241,41 @@ api.MapGet("/permissions/{*path}", (
 app.MapHealthEndpoints();
 
 app.Run();
+
+/// <summary>
+/// Generate a secure temporary password meeting AD complexity requirements.
+/// Excludes ambiguous characters (I/l/1/0/O) for easier verbal communication.
+/// </summary>
+static string GenerateSecurePassword(int length = 16)
+{
+    const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // No I, O
+    const string lower = "abcdefghjkmnpqrstuvwxyz";   // No i, l, o
+    const string digits = "23456789";                  // No 0, 1
+    const string special = "!@#$%&*?";
+
+    var allChars = upper + lower + digits + special;
+    var password = new char[length];
+
+    var bytes = new byte[length];
+    RandomNumberGenerator.Fill(bytes);
+
+    // Ensure at least one of each category
+    password[0] = upper[bytes[0] % upper.Length];
+    password[1] = lower[bytes[1] % lower.Length];
+    password[2] = digits[bytes[2] % digits.Length];
+    password[3] = special[bytes[3] % special.Length];
+
+    // Fill rest randomly from all chars
+    for (int i = 4; i < length; i++)
+        password[i] = allChars[bytes[i] % allChars.Length];
+
+    // Shuffle using Fisher-Yates
+    RandomNumberGenerator.Fill(bytes);
+    for (int i = length - 1; i > 0; i--)
+    {
+        int j = bytes[i] % (i + 1);
+        (password[i], password[j]) = (password[j], password[i]);
+    }
+
+    return new string(password);
+}

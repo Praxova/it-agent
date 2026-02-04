@@ -51,7 +51,7 @@ dev = [
 ]
 
 [project.scripts]
-lucid-agent = "agent.main:run"
+lucid-agent = "agent.runtime.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent"]
@@ -74,3 +74,10 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (may require external services)",
+    "manual: marks tests that should only be run manually",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

@@ -86,6 +86,7 @@
                 <MudTh>Host Name</MudTh>
                 <MudTh>LLM Provider</MudTh>
                 <MudTh>ServiceNow</MudTh>
+                <MudTh>Workflow</MudTh>
                 <MudTh>Status</MudTh>
                 <MudTh>Last Heartbeat</MudTh>
                 <MudTh>Tickets</MudTh>
@@ -143,6 +144,25 @@
                     else
                     {
                         <MudText Typo="Typo.caption" Color="Color.Warning">Not configured</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Workflow">
+                    @if (context.WorkflowDefinitionId.HasValue)
+                    {
+                        var wf = _workflows.FirstOrDefault(w => w.Id == context.WorkflowDefinitionId);
+                        if (wf != null)
+                        {
+                            <MudText Typo="Typo.body2">@(wf.DisplayName ?? wf.Name)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">v@(wf.Version)</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Warning">Unknown</MudText>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">Not assigned</MudText>
                     }
                 </MudTd>
                 <MudTd DataLabel="Status">
@@ -207,6 +227,7 @@
 @code {
     private List<AgentResponse> _agents = new();
     private List<ServiceAccountResponse> _serviceAccounts = new();
+    private List<WorkflowListItem> _workflows = new();
     private bool _loading = true;
     private string? _error;
     private string _searchText = "";
@@ -225,7 +246,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadAgents(), LoadServiceAccounts());
+        await Task.WhenAll(LoadAgents(), LoadServiceAccounts(), LoadWorkflows());
     }
 
     private async Task LoadServiceAccounts()
@@ -242,6 +263,31 @@
         {
             Snackbar.Add($"Failed to load service accounts: {ex.Message}", Severity.Warning);
         }
+    }
+
+    private async Task LoadWorkflows()
+    {
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<WorkflowListItem>>("/api/v1/workflows");
+            if (response != null)
+            {
+                _workflows = response;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load workflows: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private class WorkflowListItem
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string Version { get; set; } = "";
+        public bool IsActive { get; set; }
     }
 
     private async Task LoadAgents()
@@ -364,6 +410,8 @@
             Status: agent.Status.ToString(),
             LlmServiceAccountId: agent.LlmServiceAccountId,
             ServiceNowAccountId: agent.ServiceNowAccountId,
+            WorkflowDefinitionId: agent.WorkflowDefinitionId,
+            WorkflowName: agent.WorkflowDefinition?.Name,
             AssignmentGroup: agent.AssignmentGroup,
             LastActivity: agent.LastActivity,
             LastHeartbeat: agent.LastHeartbeat,

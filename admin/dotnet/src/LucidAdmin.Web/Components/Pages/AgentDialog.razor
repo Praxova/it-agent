@@ -3,6 +3,7 @@
 @using LucidAdmin.Core.Interfaces.Services
 @inject IAgentService AgentService
 @inject IServiceAccountService ServiceAccountService
+@inject HttpClient Http
 @inject ISnackbar Snackbar
 
 <MudDialog>
@@ -115,6 +116,39 @@
                                   HelperText="ServiceNow queue/group to monitor (e.g., 'Helpdesk')" />
                 </MudItem>
 
+                <!-- WORKFLOW CONFIGURATION -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Workflow</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    @if (_loadingWorkflows)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else if (_workflows.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-2">
+                            No active workflows available. Create one in the Workflows page first.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudSelect T="Guid?"
+                                   Label="Workflow Definition"
+                                   @bind-Value="_model.WorkflowDefinitionId"
+                                   Clearable="true"
+                                   HelperText="Select the workflow this agent will execute when processing tickets">
+                            @foreach (var wf in _workflows)
+                            {
+                                <MudSelectItem Value="@((Guid?)wf.Id)">
+                                    @(wf.DisplayName ?? wf.Name) (v@(wf.Version))
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
                 <!-- STATUS -->
                 <MudItem xs="12">
                     <MudText Typo="Typo.h6" Class="mt-4 mb-2">Status</MudText>
@@ -170,13 +204,15 @@
     private bool _isValid;
     private bool _saving;
     private bool _loadingAccounts;
+    private bool _loadingWorkflows;
     private AgentFormModel _model = new();
     private List<ServiceAccountListItem> _llmServiceAccounts = new();
     private List<ServiceAccountListItem> _serviceNowAccounts = new();
+    private List<WorkflowListItem> _workflows = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadServiceAccounts();
+        await Task.WhenAll(LoadServiceAccounts(), LoadWorkflows());
 
         if (ExistingAgent != null)
         {
@@ -239,6 +275,39 @@
         public bool IsEnabled { get; set; }
     }
 
+    private class WorkflowListItem
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string Version { get; set; } = "";
+        public bool IsActive { get; set; }
+    }
+
+    private async Task LoadWorkflows()
+    {
+        _loadingWorkflows = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<WorkflowListItem>>("/api/v1/workflows");
+            if (response != null)
+            {
+                _workflows = response
+                    .Where(w => w.IsActive)
+                    .OrderBy(w => w.DisplayName ?? w.Name)
+                    .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load workflows: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loadingWorkflows = false;
+        }
+    }
+
     private void Cancel()
     {
         MudDialog.Cancel();
@@ -268,6 +337,7 @@
                 agent.Description = _model.Description;
                 agent.LlmServiceAccountId = _model.LlmServiceAccountId;
                 agent.ServiceNowAccountId = _model.ServiceNowAccountId;
+                agent.WorkflowDefinitionId = _model.WorkflowDefinitionId;
                 agent.AssignmentGroup = _model.AssignmentGroup;
                 agent.IsEnabled = _model.IsEnabled;
 
@@ -285,6 +355,7 @@
                     Description = _model.Description,
                     LlmServiceAccountId = _model.LlmServiceAccountId,
                     ServiceNowAccountId = _model.ServiceNowAccountId,
+                    WorkflowDefinitionId = _model.WorkflowDefinitionId,
                     AssignmentGroup = _model.AssignmentGroup,
                     IsEnabled = _model.IsEnabled
                 };

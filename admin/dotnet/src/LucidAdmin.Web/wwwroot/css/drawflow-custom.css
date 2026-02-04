@@ -2,7 +2,8 @@
 
 #drawflow-container {
     width: 100%;
-    height: 600px;
+    height: 100% !important;  /* Override any inline styles */
+    min-height: 500px;        /* Ensure minimum usable size */
     background-color: #1a1a2e;
     background-image:
         linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
@@ -43,9 +44,26 @@
     background: #e94560;
 }
 
+/* Ensure connections are visible */
+.drawflow svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+    z-index: 1;
+}
+
+.drawflow svg .connection {
+    pointer-events: auto;
+}
+
 .drawflow .connection .main-path {
     stroke: #e94560;
     stroke-width: 3px;
+    fill: none;
 }
 
 .drawflow .connection .main-path:hover {
@@ -80,14 +98,33 @@
     color: #aaa;
 }
 
-/* Node type specific colors */
-.drawflow-node.Trigger { border-left-color: #4CAF50 !important; }
-.drawflow-node.Classify { border-left-color: #2196F3 !important; }
-.drawflow-node.Query { border-left-color: #9C27B0 !important; }
-.drawflow-node.Validate { border-left-color: #FF9800 !important; }
-.drawflow-node.Execute { border-left-color: #F44336 !important; }
-.drawflow-node.UpdateTicket { border-left-color: #00BCD4 !important; }
-.drawflow-node.Notify { border-left-color: #E91E63 !important; }
-.drawflow-node.Escalate { border-left-color: #FF5722 !important; }
-.drawflow-node.Condition { border-left-color: #795548 !important; }
-.drawflow-node.End { border-left-color: #607D8B !important; }
+/* Node type specific border colors - match both cases */
+.drawflow-node.Trigger,
+.drawflow-node.trigger { border-left-color: #4CAF50 !important; }
+
+.drawflow-node.Classify,
+.drawflow-node.classify { border-left-color: #2196F3 !important; }
+
+.drawflow-node.Query,
+.drawflow-node.query { border-left-color: #9C27B0 !important; }
+
+.drawflow-node.Validate,
+.drawflow-node.validate { border-left-color: #FF9800 !important; }
+
+.drawflow-node.Execute,
+.drawflow-node.execute { border-left-color: #F44336 !important; }
+
+.drawflow-node.UpdateTicket,
+.drawflow-node.updateticket { border-left-color: #00BCD4 !important; }
+
+.drawflow-node.Notify,
+.drawflow-node.notify { border-left-color: #E91E63 !important; }
+
+.drawflow-node.Escalate,
+.drawflow-node.escalate { border-left-color: #FF5722 !important; }
+
+.drawflow-node.Condition,
+.drawflow-node.condition { border-left-color: #795548 !important; }
+
+.drawflow-node.End,
+.drawflow-node.end { border-left-color: #607D8B !important; }

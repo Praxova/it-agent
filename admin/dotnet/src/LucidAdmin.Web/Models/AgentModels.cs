@@ -9,6 +9,7 @@ public record CreateAgentRequest(
     [property: JsonPropertyName("description")] string? Description,
     [property: JsonPropertyName("llm_service_account_id")] Guid? LlmServiceAccountId,
     [property: JsonPropertyName("servicenow_account_id")] Guid? ServiceNowAccountId,
+    [property: JsonPropertyName("workflow_definition_id")] Guid? WorkflowDefinitionId,
     [property: JsonPropertyName("assignment_group")] string? AssignmentGroup
 );
 
@@ -17,6 +18,7 @@ public record UpdateAgentRequest(
     [property: JsonPropertyName("description")] string? Description,
     [property: JsonPropertyName("llm_service_account_id")] Guid? LlmServiceAccountId,
     [property: JsonPropertyName("servicenow_account_id")] Guid? ServiceNowAccountId,
+    [property: JsonPropertyName("workflow_definition_id")] Guid? WorkflowDefinitionId,
     [property: JsonPropertyName("assignment_group")] string? AssignmentGroup,
     [property: JsonPropertyName("is_enabled")] bool? IsEnabled
 );
@@ -30,6 +32,8 @@ public record AgentResponse(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("llm_service_account_id")] Guid? LlmServiceAccountId,
     [property: JsonPropertyName("servicenow_account_id")] Guid? ServiceNowAccountId,
+    [property: JsonPropertyName("workflow_definition_id")] Guid? WorkflowDefinitionId,
+    [property: JsonPropertyName("workflow_name")] string? WorkflowName,
     [property: JsonPropertyName("assignment_group")] string? AssignmentGroup,
     [property: JsonPropertyName("last_activity")] DateTime? LastActivity,
     [property: JsonPropertyName("last_heartbeat")] DateTime? LastHeartbeat,
@@ -56,6 +60,7 @@ public class AgentFormModel
     public string? Description { get; set; }
     public Guid? LlmServiceAccountId { get; set; }
     public Guid? ServiceNowAccountId { get; set; }
+    public Guid? WorkflowDefinitionId { get; set; }
     public string? AssignmentGroup { get; set; }
     public bool IsEnabled { get; set; } = true;
 
@@ -66,6 +71,7 @@ public class AgentFormModel
         Description: Description,
         LlmServiceAccountId: LlmServiceAccountId,
         ServiceNowAccountId: ServiceNowAccountId,
+        WorkflowDefinitionId: WorkflowDefinitionId,
         AssignmentGroup: AssignmentGroup
     );
 
@@ -74,6 +80,7 @@ public class AgentFormModel
         Description: Description,
         LlmServiceAccountId: LlmServiceAccountId,
         ServiceNowAccountId: ServiceNowAccountId,
+        WorkflowDefinitionId: WorkflowDefinitionId,
         AssignmentGroup: AssignmentGroup,
         IsEnabled: IsEnabled
     );
@@ -87,6 +94,7 @@ public class AgentFormModel
         Description = response.Description,
         LlmServiceAccountId = response.LlmServiceAccountId,
         ServiceNowAccountId = response.ServiceNowAccountId,
+        WorkflowDefinitionId = response.WorkflowDefinitionId,
         AssignmentGroup = response.AssignmentGroup,
         IsEnabled = response.IsEnabled
     };

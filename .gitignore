@@ -189,3 +189,4 @@ test-results/
 
 # Docker
 docker-compose.override.yml
+.env

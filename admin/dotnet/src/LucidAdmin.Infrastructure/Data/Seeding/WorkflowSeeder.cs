@@ -24,8 +24,54 @@ public class WorkflowSeeder
     {
         await SeedPasswordResetWorkflow();
         await SeedHelpdeskPasswordResetWorkflow();
-        await RegenerateLayoutsAsync();
+        await FixTransitionOutputIndexes();
+        await ForceRegenerateAllLayouts();
         await _context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Fixes OutputIndex on branching transitions that should use output_2 (index 1).
+    /// This is a one-time migration for existing data.
+    /// </summary>
+    private async Task FixTransitionOutputIndexes()
+    {
+        // Fix branching transitions that should use output_2 (OutputIndex = 1)
+        var branchingTransitions = await _context.StepTransitions
+            .Include(t => t.FromStep)
+            .Where(t => t.OutputIndex == 0 && t.FromStep != null && (
+                // Classify → Escalate (low confidence)
+                (t.FromStep.StepType == StepType.Classify && t.Condition != null && t.Condition.Contains("< 0.8")) ||
+                // Validate → Escalate (invalid)
+                (t.FromStep.StepType == StepType.Validate && t.Condition != null && t.Condition.Contains("false")) ||
+                // Execute → Escalate (failure)
+                (t.FromStep.StepType == StepType.Execute && t.Condition != null && t.Condition.Contains("false"))
+            ))
+            .ToListAsync();
+
+        if (branchingTransitions.Any())
+        {
+            foreach (var t in branchingTransitions)
+            {
+                t.OutputIndex = 1;
+                _logger.LogInformation("Fixed OutputIndex for transition: {From} -> (condition: {Cond})",
+                    t.FromStep?.Name, t.Condition);
+            }
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Force regenerate all workflow layouts by nulling them first.
+    /// </summary>
+    private async Task ForceRegenerateAllLayouts()
+    {
+        var workflows = await _context.WorkflowDefinitions.ToListAsync();
+        foreach (var w in workflows)
+        {
+            w.LayoutJson = null;
+        }
+        await _context.SaveChangesAsync();
+        await RegenerateLayoutsAsync();
     }
 
     private async Task SeedPasswordResetWorkflow()
@@ -414,31 +460,31 @@ public class WorkflowSeeder
         var transitions = new List<StepTransition>
         {
             // trigger-start → classify-ticket
-            new() { FromStepId = triggerStep.Id, ToStepId = classifyStep.Id, Label = "start", SortOrder = 1 },
+            new() { FromStepId = triggerStep.Id, ToStepId = classifyStep.Id, Label = "start", OutputIndex = 0, SortOrder = 1 },
 
-            // classify-ticket → validate-request (high confidence)
-            new() { FromStepId = classifyStep.Id, ToStepId = validateStep.Id, Condition = "confidence >= 0.8", Label = "high-confidence", SortOrder = 1 },
+            // classify-ticket → validate-request (high confidence) - output_1
+            new() { FromStepId = classifyStep.Id, ToStepId = validateStep.Id, Condition = "confidence >= 0.8", Label = "high-confidence", OutputIndex = 0, SortOrder = 1 },
 
-            // classify-ticket → escalate-to-human (low confidence)
-            new() { FromStepId = classifyStep.Id, ToStepId = escalateStep.Id, Condition = "confidence < 0.8", Label = "low-confidence", SortOrder = 2 },
+            // classify-ticket → escalate-to-human (low confidence) - output_2
+            new() { FromStepId = classifyStep.Id, ToStepId = escalateStep.Id, Condition = "confidence < 0.8", Label = "low-confidence", OutputIndex = 1, SortOrder = 2 },
 
-            // validate-request → execute-reset (valid)
-            new() { FromStepId = validateStep.Id, ToStepId = executeStep.Id, Condition = "valid == true", Label = "valid", SortOrder = 1 },
+            // validate-request → execute-reset (valid) - output_1
+            new() { FromStepId = validateStep.Id, ToStepId = executeStep.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0, SortOrder = 1 },
 
-            // validate-request → escalate-to-human (invalid)
-            new() { FromStepId = validateStep.Id, ToStepId = escalateStep.Id, Condition = "valid == false", Label = "invalid", SortOrder = 2 },
+            // validate-request → escalate-to-human (invalid) - output_2
+            new() { FromStepId = validateStep.Id, ToStepId = escalateStep.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1, SortOrder = 2 },
 
-            // execute-reset → notify-user (success)
-            new() { FromStepId = executeStep.Id, ToStepId = notifyStep.Id, Condition = "success == true", Label = "success", SortOrder = 1 },
+            // execute-reset → notify-user (success) - output_1
+            new() { FromStepId = executeStep.Id, ToStepId = notifyStep.Id, Condition = "success == true", Label = "success", OutputIndex = 0, SortOrder = 1 },
 
-            // execute-reset → escalate-to-human (failure)
-            new() { FromStepId = executeStep.Id, ToStepId = escalateStep.Id, Condition = "success == false", Label = "failure", SortOrder = 2 },
+            // execute-reset → escalate-to-human (failure) - output_2
+            new() { FromStepId = executeStep.Id, ToStepId = escalateStep.Id, Condition = "success == false", Label = "failure", OutputIndex = 1, SortOrder = 2 },
 
             // notify-user → close-ticket
-            new() { FromStepId = notifyStep.Id, ToStepId = closeStep.Id, Label = "done", SortOrder = 1 },
+            new() { FromStepId = notifyStep.Id, ToStepId = closeStep.Id, Label = "done", OutputIndex = 0, SortOrder = 1 },
 
             // escalate-to-human → close-ticket
-            new() { FromStepId = escalateStep.Id, ToStepId = closeStep.Id, Label = "escalated", SortOrder = 1 }
+            new() { FromStepId = escalateStep.Id, ToStepId = closeStep.Id, Label = "escalated", OutputIndex = 0, SortOrder = 1 }
         };
 
         _context.StepTransitions.AddRange(transitions);

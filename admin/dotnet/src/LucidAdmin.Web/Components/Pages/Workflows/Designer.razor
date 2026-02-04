@@ -197,12 +197,78 @@
             _dotNetRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("drawflowInterop.initialize", "drawflow-container", _dotNetRef);
 
-            // If editing, restore layout
-            if (!_isNew && !string.IsNullOrEmpty(_layoutJson))
+            // If editing existing workflow, load nodes and connections
+            if (!_isNew && _steps.Any())
             {
-                await JS.InvokeVoidAsync("drawflowInterop.import", _layoutJson);
+                await LoadWorkflowIntoCanvas();
             }
         }
+    }
+
+    private async Task LoadWorkflowIntoCanvas()
+    {
+        // Build step data for JS - must use PascalCase stepType
+        var jsSteps = _steps.Select(s => new
+        {
+            name = s.Name,
+            displayName = s.DisplayName,
+            stepType = s.StepType.ToString(),  // PascalCase: "Trigger", "Classify" etc.
+            positionX = s.PositionX,
+            positionY = s.PositionY,
+            inputs = s.StepType == StepType.Trigger ? 0 : 1,
+            outputs = GetOutputCount(s),
+            configurationJson = s.ConfigurationJson
+        }).ToList();
+
+        var jsTransitions = _transitions.Select(t => new
+        {
+            fromStepName = t.FromStepName,
+            toStepName = t.ToStepName,
+            outputIndex = t.OutputIndex,
+            inputIndex = t.InputIndex
+        }).ToList();
+
+        // Call JS to create nodes and connections
+        var mapping = await JS.InvokeAsync<Dictionary<string, int>>(
+            "drawflowInterop.loadWorkflow", jsSteps, jsTransitions);
+
+        // Update node ID mapping from JS result
+        _nodeIdToStepName.Clear();
+        if (mapping != null)
+        {
+            foreach (var kvp in mapping)
+            {
+                _nodeIdToStepName[kvp.Value] = kvp.Key;
+            }
+        }
+
+        // Update step records with Drawflow node IDs
+        for (int i = 0; i < _steps.Count; i++)
+        {
+            if (mapping != null && mapping.TryGetValue(_steps[i].Name, out var nodeId))
+            {
+                _steps[i] = _steps[i] with { DrawflowNodeId = nodeId };
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private int GetOutputCount(WorkflowStepDto step)
+    {
+        // Count how many transitions originate from this step
+        var outgoing = _transitions.Count(t => t.FromStepName == step.Name);
+        // At least 1 output, or 2 for branching types
+        if (outgoing > 1) return outgoing;
+        return step.StepType switch
+        {
+            StepType.Classify => 2,   // high confidence + low confidence
+            StepType.Validate => 2,   // valid + invalid
+            StepType.Execute => 2,    // success + failure
+            StepType.Condition => 2,  // true + false
+            StepType.End => 0,        // no outputs
+            _ => 1
+        };
     }
 
     private async Task LoadWorkflow()

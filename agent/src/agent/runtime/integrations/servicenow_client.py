@@ -1,0 +1,214 @@
+"""ServiceNow client for workflow runtime."""
+from __future__ import annotations
+import logging
+from typing import Any
+from dataclasses import dataclass
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ServiceNowCredentials:
+    """ServiceNow connection credentials."""
+    instance_url: str
+    username: str
+    password: str
+
+
+@dataclass
+class Ticket:
+    """ServiceNow incident ticket."""
+    sys_id: str
+    number: str
+    short_description: str
+    description: str
+    caller_id: str
+    state: str
+    assignment_group: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Ticket":
+        """Create Ticket from ServiceNow API response."""
+        return cls(
+            sys_id=data.get("sys_id", ""),
+            number=data.get("number", ""),
+            short_description=data.get("short_description", ""),
+            description=data.get("description", ""),
+            caller_id=data.get("caller_id", {}).get("value", "") if isinstance(data.get("caller_id"), dict) else data.get("caller_id", ""),
+            state=data.get("state", ""),
+            assignment_group=data.get("assignment_group", {}).get("value", "") if isinstance(data.get("assignment_group"), dict) else data.get("assignment_group", ""),
+        )
+
+    def to_ticket_data(self) -> dict[str, Any]:
+        """Convert to ticket_data format for ExecutionContext."""
+        return {
+            "sys_id": self.sys_id,
+            "number": self.number,
+            "short_description": self.short_description,
+            "description": self.description,
+            "caller_id": self.caller_id,
+            "state": self.state,
+            "assignment_group": self.assignment_group,
+        }
+
+
+class ServiceNowClient:
+    """
+    Client for ServiceNow REST API.
+
+    Handles:
+    - Polling for new tickets
+    - Updating ticket state
+    - Adding work notes and comments
+    """
+
+    def __init__(self, credentials: ServiceNowCredentials):
+        self.credentials = credentials
+        self.base_url = credentials.instance_url.rstrip("/")
+        self._auth = (credentials.username, credentials.password)
+
+    async def poll_queue(
+        self,
+        assignment_group: str,
+        state: str = "1",  # New
+        limit: int = 10,
+    ) -> list[Ticket]:
+        """
+        Poll for new tickets assigned to a group.
+
+        Args:
+            assignment_group: ServiceNow assignment group sys_id or name
+            state: Ticket state to filter (1=New, 2=In Progress)
+            limit: Maximum tickets to return
+
+        Returns:
+            List of Ticket objects
+        """
+        url = f"{self.base_url}/api/now/table/incident"
+        params = {
+            "sysparm_query": f"assignment_group.name={assignment_group}^state={state}",
+            "sysparm_limit": str(limit),
+            "sysparm_display_value": "false",
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    params=params,
+                    auth=self._auth,
+                    headers={"Accept": "application/json"},
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                tickets = [Ticket.from_dict(t) for t in data.get("result", [])]
+
+                logger.info(f"Polled {len(tickets)} tickets from queue")
+                return tickets
+
+        except Exception as e:
+            logger.error(f"Failed to poll ServiceNow: {e}")
+            return []
+
+    async def get_ticket(self, sys_id: str) -> Ticket | None:
+        """Get a single ticket by sys_id."""
+        url = f"{self.base_url}/api/now/table/incident/{sys_id}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    auth=self._auth,
+                    headers={"Accept": "application/json"},
+                    timeout=30.0,
+                )
+
+                if response.status_code == 404:
+                    return None
+
+                response.raise_for_status()
+                data = response.json()
+                return Ticket.from_dict(data.get("result", {}))
+
+        except Exception as e:
+            logger.error(f"Failed to get ticket {sys_id}: {e}")
+            return None
+
+    async def update_ticket(
+        self,
+        sys_id: str,
+        updates: dict[str, Any],
+    ) -> bool:
+        """
+        Update a ticket.
+
+        Args:
+            sys_id: Ticket sys_id
+            updates: Fields to update
+
+        Returns:
+            True if successful
+        """
+        url = f"{self.base_url}/api/now/table/incident/{sys_id}"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.patch(
+                    url,
+                    json=updates,
+                    auth=self._auth,
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+
+                logger.info(f"Updated ticket {sys_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to update ticket {sys_id}: {e}")
+            return False
+
+    async def add_work_note(self, sys_id: str, note: str) -> bool:
+        """Add a work note to a ticket."""
+        return await self.update_ticket(sys_id, {"work_notes": note})
+
+    async def add_comment(self, sys_id: str, comment: str) -> bool:
+        """Add a customer-visible comment to a ticket."""
+        return await self.update_ticket(sys_id, {"comments": comment})
+
+    async def set_state(
+        self,
+        sys_id: str,
+        state: str,
+        close_code: str | None = None,
+        close_notes: str | None = None,
+    ) -> bool:
+        """
+        Set ticket state.
+
+        Args:
+            sys_id: Ticket sys_id
+            state: New state (1=New, 2=In Progress, 6=Resolved, 7=Closed)
+            close_code: Resolution code (for resolved/closed)
+            close_notes: Resolution notes
+        """
+        updates = {"state": state}
+
+        if close_code:
+            updates["close_code"] = close_code
+        if close_notes:
+            updates["close_notes"] = close_notes
+
+        return await self.update_ticket(sys_id, updates)
+
+    async def assign_to_group(self, sys_id: str, group: str) -> bool:
+        """Assign ticket to a different group."""
+        return await self.update_ticket(sys_id, {"assignment_group": group})

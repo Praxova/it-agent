@@ -1,0 +1,9 @@
+# Auto-generated from pyproject.toml [project.dependencies]
+# Keep in sync with pyproject.toml when updating dependencies.
+griptape[drivers-prompt-ollama]>=1.8.0
+pydantic>=2.0
+pydantic-settings>=2.0
+pyyaml>=6.0
+httpx>=0.27.0
+tenacity>=8.2.0
+python-dotenv>=1.0.0

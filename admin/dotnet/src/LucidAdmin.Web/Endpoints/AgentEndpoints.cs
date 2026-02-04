@@ -83,6 +83,7 @@ public static class AgentEndpoints
                 Description = request.Description,
                 LlmServiceAccountId = request.LlmServiceAccountId,
                 ServiceNowAccountId = request.ServiceNowAccountId,
+                WorkflowDefinitionId = request.WorkflowDefinitionId,
                 AssignmentGroup = request.AssignmentGroup,
                 IsEnabled = true,
                 Status = AgentStatus.Unknown
@@ -118,6 +119,7 @@ public static class AgentEndpoints
             if (request.Description != null) agent.Description = request.Description;
             if (request.LlmServiceAccountId.HasValue) agent.LlmServiceAccountId = request.LlmServiceAccountId;
             if (request.ServiceNowAccountId.HasValue) agent.ServiceNowAccountId = request.ServiceNowAccountId;
+            agent.WorkflowDefinitionId = request.WorkflowDefinitionId;
             if (request.AssignmentGroup != null) agent.AssignmentGroup = request.AssignmentGroup;
             if (request.IsEnabled.HasValue) agent.IsEnabled = request.IsEnabled.Value;
 
@@ -265,6 +267,8 @@ public static class AgentEndpoints
         Status: agent.Status.ToString(),
         LlmServiceAccountId: agent.LlmServiceAccountId,
         ServiceNowAccountId: agent.ServiceNowAccountId,
+        WorkflowDefinitionId: agent.WorkflowDefinitionId,
+        WorkflowName: agent.WorkflowDefinition?.Name,
         AssignmentGroup: agent.AssignmentGroup,
         LastActivity: agent.LastActivity,
         LastHeartbeat: agent.LastHeartbeat,
