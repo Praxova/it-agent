@@ -178,6 +178,10 @@
     // Node tracking
     private int _nextStepNumber = 1;
 
+    // Lifecycle flags for async data loading
+    private bool _dataLoaded = false;
+    private bool _diagramPopulated = false;
+
     protected override void OnInitialized()
     {
         var options = new BlazorDiagramOptions
@@ -221,13 +225,15 @@
         if (!_isNew)
         {
             await LoadWorkflow();
+            _dataLoaded = true;
         }
     }
 
     protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender && !_isNew && _steps.Any())
+        if (!_diagramPopulated && !_isNew && _dataLoaded && _steps.Any())
         {
+            _diagramPopulated = true;
             LoadWorkflowIntoDiagram();
             StateHasChanged();
         }

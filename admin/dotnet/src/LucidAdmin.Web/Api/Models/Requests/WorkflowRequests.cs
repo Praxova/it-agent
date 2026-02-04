@@ -19,7 +19,7 @@ public record UpdateWorkflowRequest(
 );
 
 public record SaveWorkflowLayoutRequest(
-    string LayoutJson,
+    string? LayoutJson,
     List<WorkflowStepDto> Steps,
     List<StepTransitionDto> Transitions
 );
