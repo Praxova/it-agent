@@ -1,0 +1,92 @@
+@using Blazor.Diagrams.Components.Renderers
+@using LucidAdmin.Web.Components.WorkflowDesigner.Models
+@using LucidAdmin.Core.Enums
+
+<div class="workflow-node @(Node.Selected ? "selected" : "")"
+     style="--node-color: @GetColor();">
+
+    @* Title Bar *@
+    <div class="workflow-node-header">
+        <span class="workflow-node-icon">@GetIcon()</span>
+        <span class="workflow-node-title">@Node.DisplayName</span>
+    </div>
+
+    @* Body with ports *@
+    <div class="workflow-node-body">
+        <div class="workflow-node-type">@Node.StepType</div>
+
+        @* Port rows *@
+        <div class="workflow-node-ports">
+            @* Input port *@
+            <div class="port-column port-inputs">
+                @if (Node.ExecIn != null)
+                {
+                    <div class="port-row">
+                        <PortRenderer Port="@Node.ExecIn" Class="workflow-port input-port" />
+                        <span class="port-label">Exec In</span>
+                    </div>
+                }
+            </div>
+
+            @* Output ports *@
+            <div class="port-column port-outputs">
+                @foreach (var kvp in Node.OutputPorts)
+                {
+                    <div class="port-row output">
+                        <span class="port-label">@GetPortLabel(kvp.Key)</span>
+                        <PortRenderer Port="@kvp.Value" Class="workflow-port output-port" />
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public WorkflowNodeModel Node { get; set; } = null!;
+
+    private string GetColor() => Node.StepType switch
+    {
+        StepType.Trigger => "#4CAF50",
+        StepType.Classify => "#2196F3",
+        StepType.Query => "#9C27B0",
+        StepType.Validate => "#FF9800",
+        StepType.Execute => "#F44336",
+        StepType.UpdateTicket => "#00BCD4",
+        StepType.Notify => "#E91E63",
+        StepType.Escalate => "#FF5722",
+        StepType.Condition => "#795548",
+        StepType.End => "#607D8B",
+        _ => "#666"
+    };
+
+    private string GetIcon() => Node.StepType switch
+    {
+        StepType.Trigger => "🎯",
+        StepType.Classify => "🏷️",
+        StepType.Query => "🔍",
+        StepType.Validate => "✓",
+        StepType.Execute => "⚡",
+        StepType.UpdateTicket => "📝",
+        StepType.Notify => "📧",
+        StepType.Escalate => "🚨",
+        StepType.Condition => "❓",
+        StepType.End => "🏁",
+        _ => "📦"
+    };
+
+    private string GetPortLabel(string portKey) => portKey switch
+    {
+        "exec_out" => "Exec Out",
+        "high_confidence" => "High Confidence",
+        "low_confidence" => "Low Confidence",
+        "valid" => "Valid",
+        "invalid" => "Invalid",
+        "success" => "Success",
+        "failure" => "Failure",
+        "true" => "True",
+        "false" => "False",
+        "done" => "Done",
+        _ => portKey
+    };
+}

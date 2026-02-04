@@ -4,13 +4,23 @@
 @using LucidAdmin.Web.Api.Models.Requests
 @using LucidAdmin.Web.Api.Models.Responses
 @using LucidAdmin.Core.Enums
+@using LucidAdmin.Web.Components.WorkflowDesigner.Models
+@using LucidAdmin.Web.Components.WorkflowDesigner.Widgets
 @using System.Text.Json
-@using Microsoft.JSInterop
-@implements IAsyncDisposable
+@using Blazor.Diagrams
+@using Blazor.Diagrams.Core
+@using Blazor.Diagrams.Core.Anchors
+@using Blazor.Diagrams.Core.Geometry
+@using Blazor.Diagrams.Core.Models
+@using Blazor.Diagrams.Core.Models.Base
+@using Blazor.Diagrams.Core.PathGenerators
+@using Blazor.Diagrams.Core.Routers
+@using Blazor.Diagrams.Components
+@using Blazor.Diagrams.Options
+@implements IDisposable
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 
 <PageTitle>@(_isNew ? "Create Workflow" : "Edit Workflow") - Lucid Admin</PageTitle>
 
@@ -38,13 +48,12 @@
 
                     @* Step Palette *@
                     <MudExpansionPanel Text="Step Palette" IsInitiallyExpanded="true">
-                        <MudText Typo="Typo.caption" Class="mb-2">Drag steps onto the canvas</MudText>
+                        <MudText Typo="Typo.caption" Class="mb-2">Click to add steps to the canvas</MudText>
                         @foreach (var stepType in _stepTypes)
                         {
                             <MudPaper Class="pa-2 mb-2 step-palette-item" Elevation="1"
-                                      Style="@($"border-left: 4px solid {stepType.Color}; cursor: grab;")"
-                                      @ondragstart="@(() => OnDragStart(stepType))"
-                                      draggable="true">
+                                      Style="@($"border-left: 4px solid {stepType.Color}; cursor: pointer;")"
+                                      @onclick="@(() => AddStepFromPalette(stepType))">
                                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                                     <MudText>@stepType.Icon</MudText>
                                     <MudStack Spacing="0">
@@ -90,7 +99,7 @@
                                     break;
                             }
 
-                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="MudBlazor.Size.Small"
                                        OnClick="DeleteSelectedStep" Class="mt-2">
                                 Delete Step
                             </MudButton>
@@ -117,18 +126,15 @@
             <MudPaper Style="height: 100%; position: relative;">
                 @* Toolbar *@
                 <MudStack Row="true" Class="pa-2" Style="position: absolute; top: 0; right: 0; z-index: 10;">
-                    <MudIconButton Icon="@Icons.Material.Filled.ZoomIn" OnClick="ZoomIn" Size="Size.Small" />
-                    <MudIconButton Icon="@Icons.Material.Filled.ZoomOut" OnClick="ZoomOut" Size="Size.Small" />
-                    <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" OnClick="ZoomReset" Size="Size.Small" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomIn" OnClick="ZoomIn" Size="MudBlazor.Size.Small" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ZoomOut" OnClick="ZoomOut" Size="MudBlazor.Size.Small" />
+                    <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" OnClick="ZoomReset" Size="MudBlazor.Size.Small" />
                 </MudStack>
 
-                @* Drawflow Container *@
-                <div id="drawflow-container"
-                     @ondrop="OnDrop"
-                     @ondragover="OnDragOver"
-                     @ondragover:preventDefault="true"
-                     style="width: 100%; height: 100%;">
-                </div>
+                @* Blazor Diagrams Canvas *@
+                <CascadingValue Value="_diagram">
+                    <DiagramCanvas Class="workflow-canvas" />
+                </CascadingValue>
             </MudPaper>
         </MudItem>
     </MudGrid>
@@ -140,7 +146,7 @@
 
     private bool _isNew => !Id.HasValue;
     private bool _saving = false;
-    private DotNetObjectReference<Designer>? _dotNetRef;
+    private BlazorDiagram _diagram = null!;
 
     // Workflow details
     private string _name = "";
@@ -151,9 +157,8 @@
 
     // Step types palette
     private List<StepTypeInfo> _stepTypes = new();
-    private StepTypeInfo? _draggedStepType;
 
-    // Canvas state (synced with Drawflow)
+    // Canvas state
     private List<WorkflowStepDto> _steps = new();
     private List<StepTransitionDto> _transitions = new();
     private WorkflowStepDto? _selectedStep;
@@ -170,11 +175,40 @@
     // Example sets
     private List<ExampleSetResponse> _exampleSets = new();
 
-    // Node ID mapping (Drawflow ID -> step name)
-    private Dictionary<int, string> _nodeIdToStepName = new();
+    // Node tracking
     private int _nextStepNumber = 1;
 
-    private string? _layoutJson;
+    protected override void OnInitialized()
+    {
+        var options = new BlazorDiagramOptions
+        {
+            AllowMultiSelection = true,
+            AllowPanning = true,
+            Zoom =
+            {
+                Enabled = true,
+                Minimum = 0.25,
+                Maximum = 3.0
+            },
+            Links =
+            {
+                DefaultRouter = new NormalRouter(),
+                DefaultPathGenerator = new SmoothPathGenerator()
+            },
+            GridSize = 20
+        };
+
+        _diagram = new BlazorDiagram(options);
+
+        // Register our custom node widget
+        _diagram.RegisterComponent<WorkflowNodeModel, WorkflowNodeWidget>();
+
+        // Event handlers
+        _diagram.SelectionChanged += OnSelectionChanged;
+        _diagram.Links.Added += OnLinkAdded;
+        _diagram.Links.Removed += OnLinkRemoved;
+        _diagram.Nodes.Removed += OnNodeRemoved;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -190,85 +224,13 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override void OnAfterRender(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && !_isNew && _steps.Any())
         {
-            _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("drawflowInterop.initialize", "drawflow-container", _dotNetRef);
-
-            // If editing existing workflow, load nodes and connections
-            if (!_isNew && _steps.Any())
-            {
-                await LoadWorkflowIntoCanvas();
-            }
+            LoadWorkflowIntoDiagram();
+            StateHasChanged();
         }
-    }
-
-    private async Task LoadWorkflowIntoCanvas()
-    {
-        // Build step data for JS - must use PascalCase stepType
-        var jsSteps = _steps.Select(s => new
-        {
-            name = s.Name,
-            displayName = s.DisplayName,
-            stepType = s.StepType.ToString(),  // PascalCase: "Trigger", "Classify" etc.
-            positionX = s.PositionX,
-            positionY = s.PositionY,
-            inputs = s.StepType == StepType.Trigger ? 0 : 1,
-            outputs = GetOutputCount(s),
-            configurationJson = s.ConfigurationJson
-        }).ToList();
-
-        var jsTransitions = _transitions.Select(t => new
-        {
-            fromStepName = t.FromStepName,
-            toStepName = t.ToStepName,
-            outputIndex = t.OutputIndex,
-            inputIndex = t.InputIndex
-        }).ToList();
-
-        // Call JS to create nodes and connections
-        var mapping = await JS.InvokeAsync<Dictionary<string, int>>(
-            "drawflowInterop.loadWorkflow", jsSteps, jsTransitions);
-
-        // Update node ID mapping from JS result
-        _nodeIdToStepName.Clear();
-        if (mapping != null)
-        {
-            foreach (var kvp in mapping)
-            {
-                _nodeIdToStepName[kvp.Value] = kvp.Key;
-            }
-        }
-
-        // Update step records with Drawflow node IDs
-        for (int i = 0; i < _steps.Count; i++)
-        {
-            if (mapping != null && mapping.TryGetValue(_steps[i].Name, out var nodeId))
-            {
-                _steps[i] = _steps[i] with { DrawflowNodeId = nodeId };
-            }
-        }
-
-        StateHasChanged();
-    }
-
-    private int GetOutputCount(WorkflowStepDto step)
-    {
-        // Count how many transitions originate from this step
-        var outgoing = _transitions.Count(t => t.FromStepName == step.Name);
-        // At least 1 output, or 2 for branching types
-        if (outgoing > 1) return outgoing;
-        return step.StepType switch
-        {
-            StepType.Classify => 2,   // high confidence + low confidence
-            StepType.Validate => 2,   // valid + invalid
-            StepType.Execute => 2,    // success + failure
-            StepType.Condition => 2,  // true + false
-            StepType.End => 0,        // no outputs
-            _ => 1
-        };
     }
 
     private async Task LoadWorkflow()
@@ -283,7 +245,6 @@
                 _description = response.Description;
                 _exampleSetId = response.ExampleSetId;
                 _isActive = response.IsActive;
-                _layoutJson = response.LayoutJson;
 
                 // Convert steps to DTOs
                 foreach (var step in response.Steps)
@@ -291,13 +252,8 @@
                     _steps.Add(new WorkflowStepDto(
                         step.Id, step.Name, step.DisplayName, step.StepType,
                         step.ConfigurationJson, step.PositionX, step.PositionY,
-                        step.DrawflowNodeId, step.SortOrder
+                        null, step.SortOrder
                     ));
-
-                    if (step.DrawflowNodeId.HasValue)
-                    {
-                        _nodeIdToStepName[step.DrawflowNodeId.Value] = step.Name;
-                    }
                 }
 
                 // Convert transitions
@@ -309,6 +265,9 @@
                         trans.OutputIndex, trans.InputIndex
                     ));
                 }
+
+                // Update next step number based on existing steps
+                _nextStepNumber = _steps.Count + 1;
             }
         }
         catch (Exception ex)
@@ -317,115 +276,124 @@
         }
     }
 
-    // Drag and drop handlers
-    private void OnDragStart(StepTypeInfo stepType)
+    private void LoadWorkflowIntoDiagram()
     {
-        _draggedStepType = stepType;
-    }
+        var nodeMap = new Dictionary<string, WorkflowNodeModel>();
 
-    private void OnDragOver(DragEventArgs e)
-    {
-        // Allow drop
-    }
-
-    private async Task OnDrop(DragEventArgs e)
-    {
-        if (_draggedStepType is null) return;
-
-        // Calculate drop coordinates (account for sidebar and toolbar offset)
-        var posX = (int)e.ClientX - 300; // Approximate sidebar width
-        var posY = (int)e.ClientY - 100; // Approximate toolbar height
-
-        var stepName = $"{_draggedStepType.Value.ToString().ToLower()}-{_nextStepNumber++}";
-
-        var nodeId = await JS.InvokeAsync<int>("drawflowInterop.addNode",
-            _draggedStepType.Value.ToString(),
-            posX, posY,
-            _draggedStepType.DefaultInputs,
-            _draggedStepType.DefaultOutputs,
-            new { name = stepName, stepType = _draggedStepType.Value.ToString() }
-        );
-
-        _nodeIdToStepName[nodeId] = stepName;
-        _steps.Add(new WorkflowStepDto(
-            null, stepName, _draggedStepType.Name, _draggedStepType.Value,
-            null, posX, posY, nodeId, _steps.Count
-        ));
-
-        _draggedStepType = null;
-        StateHasChanged();
-    }
-
-    // JS Interop callbacks
-    [JSInvokable]
-    public void OnNodeCreated(int nodeId, string name, double posX, double posY)
-    {
-        // Already handled in OnDrop for drag-created nodes
-    }
-
-    [JSInvokable]
-    public void OnNodeRemoved(int nodeId)
-    {
-        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        // Create nodes
+        foreach (var step in _steps.OrderBy(s => s.SortOrder))
         {
-            _steps.RemoveAll(s => s.Name == stepName);
-            _transitions.RemoveAll(t => t.FromStepName == stepName || t.ToStepName == stepName);
-            _nodeIdToStepName.Remove(nodeId);
+            var node = new WorkflowNodeModel(
+                new Point(step.PositionX, step.PositionY),
+                step.StepType,
+                step.Name,
+                step.DisplayName
+            );
+            node.StepId = step.Id;
+            node.ConfigurationJson = step.ConfigurationJson;
+            node.SortOrder = step.SortOrder;
 
-            if (_selectedStep?.Name == stepName)
-                _selectedStep = null;
-
-            InvokeAsync(StateHasChanged);
+            _diagram.Nodes.Add(node);
+            nodeMap[step.Name] = node;
         }
-    }
 
-    [JSInvokable]
-    public void OnNodeMoved(int nodeId, double posX, double posY)
-    {
-        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        // Create links from transitions
+        foreach (var trans in _transitions)
         {
-            var step = _steps.FirstOrDefault(s => s.Name == stepName);
-            if (step != null)
+            if (nodeMap.TryGetValue(trans.FromStepName, out var fromNode) &&
+                nodeMap.TryGetValue(trans.ToStepName, out var toNode))
             {
-                var index = _steps.IndexOf(step);
-                _steps[index] = step with { PositionX = (int)posX, PositionY = (int)posY };
+                var sourcePort = fromNode.GetOutputByIndex(trans.OutputIndex);
+                var targetPort = toNode.ExecIn;
+
+                if (sourcePort != null && targetPort != null)
+                {
+                    var link = new LinkModel(
+                        new SinglePortAnchor(sourcePort),
+                        new SinglePortAnchor(targetPort)
+                    );
+                    _diagram.Links.Add(link);
+                }
             }
         }
     }
 
-    [JSInvokable]
-    public void OnNodeSelected(int nodeId)
+    private void AddStepFromPalette(StepTypeInfo stepType)
     {
-        if (_nodeIdToStepName.TryGetValue(nodeId, out var stepName))
+        var stepName = $"{stepType.Value.ToString().ToLower()}-{_nextStepNumber++}";
+
+        // Position nodes in a cascading pattern
+        var xOffset = 300 + ((_nextStepNumber - 1) % 5) * 50;
+        var yOffset = 100 + ((_nextStepNumber - 1) / 5) * 150;
+
+        var node = new WorkflowNodeModel(
+            new Point(xOffset, yOffset),
+            stepType.Value,
+            stepName,
+            stepType.Name
+        );
+        node.SortOrder = _steps.Count;
+
+        _diagram.Nodes.Add(node);
+
+        _steps.Add(new WorkflowStepDto(
+            null, stepName, stepType.Name, stepType.Value,
+            null, xOffset, yOffset, null, _steps.Count
+        ));
+
+        StateHasChanged();
+    }
+
+    private void OnSelectionChanged(SelectableModel? model)
+    {
+        if (model is WorkflowNodeModel node && node.Selected)
         {
-            _selectedStep = _steps.FirstOrDefault(s => s.Name == stepName);
+            _selectedStep = _steps.FirstOrDefault(s => s.Name == node.StepName);
             LoadStepConfig();
-            InvokeAsync(StateHasChanged);
         }
+        else
+        {
+            _selectedStep = null;
+        }
+        InvokeAsync(StateHasChanged);
     }
 
-    [JSInvokable]
-    public void OnConnectionCreated(int outputNodeId, int inputNodeId, int outputIndex, int inputIndex)
+    private void OnLinkAdded(BaseLinkModel link)
     {
-        if (_nodeIdToStepName.TryGetValue(outputNodeId, out var fromName) &&
-            _nodeIdToStepName.TryGetValue(inputNodeId, out var toName))
-        {
-            _transitions.Add(new StepTransitionDto(
-                null, fromName, toName, null, null, outputIndex, inputIndex
-            ));
-            InvokeAsync(StateHasChanged);
-        }
+        // Link is being created, will be handled when complete
     }
 
-    [JSInvokable]
-    public void OnConnectionRemoved(int outputNodeId, int inputNodeId)
+    private void OnLinkRemoved(BaseLinkModel link)
     {
-        if (_nodeIdToStepName.TryGetValue(outputNodeId, out var fromName) &&
-            _nodeIdToStepName.TryGetValue(inputNodeId, out var toName))
+        if (link is LinkModel linkModel)
         {
-            _transitions.RemoveAll(t => t.FromStepName == fromName && t.ToStepName == toName);
-            InvokeAsync(StateHasChanged);
+            var sourcePort = (linkModel.Source as SinglePortAnchor)?.Port;
+            var targetPort = (linkModel.Target as SinglePortAnchor)?.Port;
+
+            if (sourcePort?.Parent is WorkflowNodeModel fromNode &&
+                targetPort?.Parent is WorkflowNodeModel toNode)
+            {
+                _transitions.RemoveAll(t =>
+                    t.FromStepName == fromNode.StepName &&
+                    t.ToStepName == toNode.StepName);
+            }
         }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnNodeRemoved(NodeModel nodeModel)
+    {
+        if (nodeModel is WorkflowNodeModel node)
+        {
+            _steps.RemoveAll(s => s.Name == node.StepName);
+            _transitions.RemoveAll(t =>
+                t.FromStepName == node.StepName ||
+                t.ToStepName == node.StepName);
+
+            if (_selectedStep?.Name == node.StepName)
+                _selectedStep = null;
+        }
+        InvokeAsync(StateHasChanged);
     }
 
     private void LoadStepConfig()
@@ -457,6 +425,14 @@
         var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
         if (index >= 0)
         {
+            // Also update the node model
+            var node = _diagram.Nodes.OfType<WorkflowNodeModel>()
+                .FirstOrDefault(n => n.StepName == _selectedStep.Name);
+            if (node != null)
+            {
+                node.StepName = newName;
+            }
+
             _steps[index] = _steps[index] with { Name = newName };
             _selectedStep = _steps[index];
         }
@@ -470,23 +446,49 @@
         var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
         if (index >= 0)
         {
+            // Also update the node model
+            var node = _diagram.Nodes.OfType<WorkflowNodeModel>()
+                .FirstOrDefault(n => n.StepName == _selectedStep.Name);
+            if (node != null)
+            {
+                node.DisplayName = newDisplayName;
+                node.Refresh();
+            }
+
             _steps[index] = _steps[index] with { DisplayName = newDisplayName };
             _selectedStep = _steps[index];
         }
     }
 
-    private async Task DeleteSelectedStep()
+    private void DeleteSelectedStep()
     {
-        if (_selectedStep?.DrawflowNodeId is not null)
+        if (_selectedStep is null) return;
+
+        var node = _diagram.Nodes.OfType<WorkflowNodeModel>()
+            .FirstOrDefault(n => n.StepName == _selectedStep.Name);
+
+        if (node != null)
         {
-            await JS.InvokeVoidAsync("drawflowInterop.removeNode", _selectedStep.DrawflowNodeId);
+            _diagram.Nodes.Remove(node);
         }
     }
 
     // Zoom controls
-    private async Task ZoomIn() => await JS.InvokeVoidAsync("drawflowInterop.zoomIn");
-    private async Task ZoomOut() => await JS.InvokeVoidAsync("drawflowInterop.zoomOut");
-    private async Task ZoomReset() => await JS.InvokeVoidAsync("drawflowInterop.zoomReset");
+    private void ZoomIn()
+    {
+        _diagram.SetZoom(_diagram.Zoom + 0.1);
+    }
+
+    private void ZoomOut()
+    {
+        _diagram.SetZoom(_diagram.Zoom - 0.1);
+    }
+
+    private void ZoomReset()
+    {
+        _diagram.SetZoom(1.0);
+        _diagram.SetPan(0, 0);
+    }
 
     // Save workflow
     private async Task SaveWorkflow()
@@ -500,7 +502,8 @@
                 UpdateSelectedStepConfig();
             }
 
-            var layoutJson = await JS.InvokeAsync<string>("drawflowInterop.export");
+            // Build steps and transitions from diagram state
+            BuildStepsAndTransitionsFromDiagram();
 
             if (_isNew)
             {
@@ -525,8 +528,8 @@
                 await Http.PutAsJsonAsync($"/api/v1/workflows/{Id}", updateRequest);
             }
 
-            // Save layout (steps and transitions)
-            var layoutRequest = new SaveWorkflowLayoutRequest(layoutJson, _steps.ToList(), _transitions.ToList());
+            // Save layout (steps and transitions) - pass null for layoutJson since we no longer use it
+            var layoutRequest = new SaveWorkflowLayoutRequest(null, _steps.ToList(), _transitions.ToList());
             var layoutResponse = await Http.PutAsJsonAsync($"/api/v1/workflows/{Id}/layout", layoutRequest);
 
             if (layoutResponse.IsSuccessStatusCode)
@@ -553,6 +556,48 @@
         }
     }
 
+    private void BuildStepsAndTransitionsFromDiagram()
+    {
+        _steps.Clear();
+        _transitions.Clear();
+        int sortOrder = 0;
+
+        foreach (var node in _diagram.Nodes.OfType<WorkflowNodeModel>())
+        {
+            _steps.Add(new WorkflowStepDto(
+                node.StepId,
+                node.StepName,
+                node.DisplayName,
+                node.StepType,
+                node.ConfigurationJson,
+                (int)node.Position.X,
+                (int)node.Position.Y,
+                null, // no more DrawflowNodeId
+                sortOrder++
+            ));
+        }
+
+        foreach (var link in _diagram.Links.OfType<LinkModel>())
+        {
+            var sourcePort = (link.Source as SinglePortAnchor)?.Port;
+            var targetPort = (link.Target as SinglePortAnchor)?.Port;
+
+            if (sourcePort?.Parent is WorkflowNodeModel fromNode &&
+                targetPort?.Parent is WorkflowNodeModel toNode)
+            {
+                _transitions.Add(new StepTransitionDto(
+                    null,
+                    fromNode.StepName,
+                    toNode.StepName,
+                    null, // label
+                    null, // condition
+                    fromNode.GetOutputIndex(sourcePort),
+                    0     // input index (always 0, single ExecIn)
+                ));
+            }
+        }
+    }
+
     private void UpdateSelectedStepConfig()
     {
         if (_selectedStep is null) return;
@@ -575,23 +620,24 @@
         var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
         if (index >= 0 && config.Count > 0)
         {
-            _steps[index] = _steps[index] with { ConfigurationJson = JsonSerializer.Serialize(config) };
+            var configJson = JsonSerializer.Serialize(config);
+            _steps[index] = _steps[index] with { ConfigurationJson = configJson };
+
+            // Also update the node model
+            var node = _diagram.Nodes.OfType<WorkflowNodeModel>()
+                .FirstOrDefault(n => n.StepName == _selectedStep.Name);
+            if (node != null)
+            {
+                node.ConfigurationJson = configJson;
+            }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
-        if (_dotNetRef != null)
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("drawflowInterop.destroy");
-            }
-            catch (JSDisconnectedException)
-            {
-                // Circuit already disconnected, ignore
-            }
-            _dotNetRef.Dispose();
-        }
+        _diagram.SelectionChanged -= OnSelectionChanged;
+        _diagram.Links.Added -= OnLinkAdded;
+        _diagram.Links.Removed -= OnLinkRemoved;
+        _diagram.Nodes.Removed -= OnNodeRemoved;
     }
 }

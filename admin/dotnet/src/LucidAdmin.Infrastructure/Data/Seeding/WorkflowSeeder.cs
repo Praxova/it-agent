@@ -1,6 +1,5 @@
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
-using LucidAdmin.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -25,7 +24,6 @@ public class WorkflowSeeder
         await SeedPasswordResetWorkflow();
         await SeedHelpdeskPasswordResetWorkflow();
         await FixTransitionOutputIndexes();
-        await ForceRegenerateAllLayouts();
         await _context.SaveChangesAsync();
     }
 
@@ -58,20 +56,6 @@ public class WorkflowSeeder
             }
             await _context.SaveChangesAsync();
         }
-    }
-
-    /// <summary>
-    /// Force regenerate all workflow layouts by nulling them first.
-    /// </summary>
-    private async Task ForceRegenerateAllLayouts()
-    {
-        var workflows = await _context.WorkflowDefinitions.ToListAsync();
-        foreach (var w in workflows)
-        {
-            w.LayoutJson = null;
-        }
-        await _context.SaveChangesAsync();
-        await RegenerateLayoutsAsync();
     }
 
     private async Task SeedPasswordResetWorkflow()
@@ -305,12 +289,6 @@ public class WorkflowSeeder
             _context.StepTransitions.AddRange(transitions);
             await _context.SaveChangesAsync();
 
-            // Generate and save Drawflow layout
-            var layoutGenerator = new DrawflowLayoutGenerator();
-            var allSteps = new[] { triggerStep, classifyStep, validateStep, escalateStep, executeStep, notifyStep, endSuccessStep, endEscalatedStep };
-            workflow.LayoutJson = layoutGenerator.GenerateLayout(allSteps, transitions);
-            await _context.SaveChangesAsync();
-
             _logger.LogInformation("Seeded built-in workflow: {WorkflowName} with {StepCount} steps and {TransitionCount} transitions",
                 workflowName, workflow.Steps.Count, transitions.Count);
         }
@@ -490,12 +468,6 @@ public class WorkflowSeeder
         _context.StepTransitions.AddRange(transitions);
         await _context.SaveChangesAsync();
 
-        // Generate and save Drawflow layout
-        var layoutGenerator = new DrawflowLayoutGenerator();
-        var allSteps = new[] { triggerStep, classifyStep, validateStep, executeStep, notifyStep, escalateStep, closeStep };
-        workflow.LayoutJson = layoutGenerator.GenerateLayout(allSteps, transitions);
-        await _context.SaveChangesAsync();
-
         // Create workflow-level ruleset mappings
         var workflowRulesetMappings = new List<WorkflowRulesetMapping>
         {
@@ -522,40 +494,6 @@ public class WorkflowSeeder
 
         _logger.LogInformation("Successfully seeded workflow '{WorkflowName}' with {StepCount} steps and linked to agent '{AgentName}'",
             workflowName, 7, agent.Name);
-    }
-
-    /// <summary>
-    /// Regenerates LayoutJson for existing workflows that have null LayoutJson.
-    /// </summary>
-    private async Task RegenerateLayoutsAsync()
-    {
-        var workflowsWithoutLayout = await _context.WorkflowDefinitions
-            .Include(w => w.Steps)
-            .Where(w => w.LayoutJson == null)
-            .ToListAsync();
-
-        if (!workflowsWithoutLayout.Any())
-        {
-            _logger.LogDebug("All workflows have LayoutJson populated");
-            return;
-        }
-
-        _logger.LogInformation("Regenerating LayoutJson for {Count} workflows", workflowsWithoutLayout.Count);
-
-        var layoutGenerator = new DrawflowLayoutGenerator();
-
-        foreach (var workflow in workflowsWithoutLayout)
-        {
-            // Load transitions for this workflow
-            var transitions = await _context.StepTransitions
-                .Where(t => workflow.Steps.Select(s => s.Id).Contains(t.FromStepId))
-                .ToListAsync();
-
-            workflow.LayoutJson = layoutGenerator.GenerateLayout(workflow.Steps, transitions);
-            _logger.LogInformation("Regenerated LayoutJson for workflow: {WorkflowName}", workflow.Name);
-        }
-
-        await _context.SaveChangesAsync();
     }
 
     private async Task<Agent> EnsureTestAgentExistsAsync()

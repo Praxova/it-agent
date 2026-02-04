@@ -1,0 +1,130 @@
+/* Canvas background */
+.diagram-canvas {
+    background-color: #1a1a2e;
+    background-image:
+        radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+/* Node container */
+.workflow-node {
+    background: #16213e;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    min-width: 200px;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #eee;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.workflow-node.selected {
+    border-color: #e94560;
+    box-shadow: 0 0 15px rgba(233, 69, 96, 0.4);
+}
+
+/* Header bar — full width, colored by step type */
+.workflow-node-header {
+    background: var(--node-color, #666);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workflow-node-icon {
+    font-size: 1.1em;
+}
+
+.workflow-node-title {
+    font-weight: 600;
+    font-size: 0.85em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Body */
+.workflow-node-body {
+    padding: 8px 12px 12px;
+}
+
+.workflow-node-type {
+    font-size: 0.7em;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+/* Port layout */
+.workflow-node-ports {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.port-column {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.port-inputs { align-items: flex-start; }
+.port-outputs { align-items: flex-end; }
+
+.port-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.port-row.output {
+    flex-direction: row;  /* label then port dot */
+}
+
+.port-label {
+    font-size: 0.75em;
+    color: #bbb;
+    white-space: nowrap;
+}
+
+/* Port circles */
+.workflow-port {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #0f3460;
+    border: 2px solid #e94560;
+    cursor: crosshair;
+    transition: background 0.15s;
+}
+
+.workflow-port:hover {
+    background: #e94560;
+}
+
+/* Links/connections */
+.diagram-link path {
+    stroke: #e94560;
+    stroke-width: 2.5px;
+    fill: none;
+}
+
+.diagram-link path:hover {
+    stroke: #ff6b6b;
+    stroke-width: 3.5px;
+}
+
+/* Workflow canvas container styling */
+.workflow-canvas {
+    width: 100%;
+    height: 100%;
+    min-height: 600px;
+}
+
+/* Ensure proper sizing for the diagram container */
+.diagram-container {
+    width: 100%;
+    height: 100%;
+}
