@@ -15,6 +15,20 @@
     <div class="workflow-node-body">
         <div class="workflow-node-type">@Node.StepType</div>
 
+        @if (Node.StepType == StepType.SubWorkflow)
+        {
+            <div class="workflow-node-subref">
+                @if (!string.IsNullOrEmpty(Node.ReferencedWorkflowName))
+                {
+                    <span class="subref-label">▸ @Node.ReferencedWorkflowName</span>
+                }
+                else
+                {
+                    <span class="subref-empty">No workflow selected</span>
+                }
+            </div>
+        }
+
         @* Port rows *@
         <div class="workflow-node-ports">
             @* Input port *@
@@ -57,6 +71,7 @@
         StepType.Escalate => "#FF5722",
         StepType.Condition => "#795548",
         StepType.End => "#607D8B",
+        StepType.SubWorkflow => "#009688",
         _ => "#666"
     };
 
@@ -72,6 +87,7 @@
         StepType.Escalate => "🚨",
         StepType.Condition => "❓",
         StepType.End => "🏁",
+        StepType.SubWorkflow => "📋",
         _ => "📦"
     };
 
@@ -87,6 +103,8 @@
         "true" => "True",
         "false" => "False",
         "done" => "Done",
+        "completed" => "Completed",
+        "escalated" => "Escalated",
         _ => portKey
     };
 }

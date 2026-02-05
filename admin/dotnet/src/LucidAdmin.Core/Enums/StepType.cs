@@ -33,5 +33,8 @@ public enum StepType
     Condition,
 
     /// <summary>End of workflow path.</summary>
-    End
+    End,
+
+    /// <summary>Execute another workflow as a sub-step.</summary>
+    SubWorkflow
 }

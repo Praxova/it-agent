@@ -128,3 +128,22 @@
     width: 100%;
     height: 100%;
 }
+
+/* Sub-workflow reference indicator */
+.workflow-node-subref {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.subref-label {
+    font-size: 0.75em;
+    color: #4DB6AC;
+    font-style: italic;
+}
+
+.subref-empty {
+    font-size: 0.7em;
+    color: #666;
+    font-style: italic;
+}

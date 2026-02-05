@@ -16,6 +16,8 @@ public class WorkflowNodeModel : NodeModel
     public string? ConfigurationJson { get; set; }
     public Guid? StepId { get; set; }
     public int SortOrder { get; set; }
+    public Guid? ReferencedWorkflowId { get; set; }
+    public string? ReferencedWorkflowName { get; set; }
 
     // Named port references for easy connection building
     public PortModel? ExecIn { get; private set; }
@@ -67,6 +69,11 @@ public class WorkflowNodeModel : NodeModel
                 OutputPorts["false"] = AddPort(PortAlignment.Right);
                 break;
 
+            case StepType.SubWorkflow:
+                OutputPorts["completed"] = AddPort(PortAlignment.Right);
+                OutputPorts["escalated"] = AddPort(PortAlignment.Right);
+                break;
+
             case StepType.End:
                 // No outputs — terminal node
                 break;
@@ -76,6 +83,29 @@ public class WorkflowNodeModel : NodeModel
                 OutputPorts["done"] = AddPort(PortAlignment.Right);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Load sub-workflow reference from configuration JSON.
+    /// Called after setting ConfigurationJson when loading saved workflows.
+    /// </summary>
+    public void LoadSubWorkflowConfig()
+    {
+        if (StepType != StepType.SubWorkflow || string.IsNullOrEmpty(ConfigurationJson))
+            return;
+
+        try
+        {
+            var config = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(ConfigurationJson);
+            if (config != null)
+            {
+                if (config.TryGetValue("workflow_id", out var wfId) && Guid.TryParse(wfId.GetString(), out var guid))
+                    ReferencedWorkflowId = guid;
+                if (config.TryGetValue("workflow_name", out var wfName))
+                    ReferencedWorkflowName = wfName.GetString();
+            }
+        }
+        catch { /* ignore malformed config */ }
     }
 
     /// <summary>

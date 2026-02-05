@@ -63,6 +63,27 @@
                                 </MudStack>
                             </MudPaper>
                         }
+
+                        @* Divider and sub-workflow shortcuts *@
+                        @if (_availableWorkflows.Any(w => w.IsActive && w.Id != Id))
+                        {
+                            <MudDivider Class="my-2" />
+                            <MudText Typo="Typo.overline" Class="mb-1">Sub-Workflows</MudText>
+                            @foreach (var wf in _availableWorkflows.Where(w => w.IsActive && w.Id != Id))
+                            {
+                                <MudPaper Class="pa-2 mb-2 step-palette-item" Elevation="1"
+                                          Style="border-left: 4px solid #009688; cursor: pointer;"
+                                          @onclick="@(() => AddSubWorkflowFromPalette(wf))">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudText>📋</MudText>
+                                        <MudStack Spacing="0">
+                                            <MudText Typo="Typo.body2">@(wf.DisplayName ?? wf.Name)</MudText>
+                                            <MudText Typo="Typo.caption" Style="font-size: 0.7em;">Sub-workflow</MudText>
+                                        </MudStack>
+                                    </MudStack>
+                                </MudPaper>
+                            }
+                        }
                     </MudExpansionPanel>
 
                     @* Selected Node Properties *@
@@ -96,6 +117,33 @@
                                         <MudSelectItem Value="@("teams")">Teams</MudSelectItem>
                                         <MudSelectItem Value="@("ticket")">Ticket Comment</MudSelectItem>
                                     </MudSelect>
+                                    break;
+                                case StepType.SubWorkflow:
+                                    <MudSelect Value="_stepConfig_SubWorkflowId"
+                                               ValueChanged="@((Guid? val) => OnSubWorkflowChanged(val))"
+                                               Label="Target Workflow" Class="mb-2"
+                                               T="Guid?" Clearable="true"
+                                               HelperText="Select the workflow to execute as a sub-step">
+                                        @foreach (var wf in _availableWorkflows.Where(w => w.IsActive && w.Id != Id))
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@((Guid?)wf.Id)">
+                                                @(wf.DisplayName ?? wf.Name)
+                                            </MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                    @if (_stepConfig_SubWorkflowId.HasValue)
+                                    {
+                                        var selectedWf = _availableWorkflows.FirstOrDefault(w => w.Id == _stepConfig_SubWorkflowId);
+                                        if (selectedWf != null)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="mb-1" Style="color: #888;">
+                                                @(selectedWf.Description ?? "No description")
+                                            </MudText>
+                                            <MudText Typo="Typo.caption" Style="color: #666;">
+                                                Steps: @selectedWf.StepCount | Version: @selectedWf.Version
+                                            </MudText>
+                                        }
+                                    }
                                     break;
                             }
 
@@ -175,6 +223,13 @@
     // Example sets
     private List<ExampleSetResponse> _exampleSets = new();
 
+    // Available workflows for sub-workflow picker (loaded on init)
+    private List<WorkflowListResponse> _availableWorkflows = new();
+
+    // Sub-workflow config fields
+    private Guid? _stepConfig_SubWorkflowId;
+    private string? _stepConfig_SubWorkflowName;
+
     // Node tracking
     private int _nextStepNumber = 1;
 
@@ -221,6 +276,9 @@
 
         // Load example sets
         _exampleSets = await Http.GetFromJsonAsync<List<ExampleSetResponse>>("/api/v1/example-sets") ?? new();
+
+        // Load available workflows (for sub-workflow picker)
+        _availableWorkflows = await Http.GetFromJsonAsync<List<WorkflowListResponse>>("/api/v1/workflows") ?? new();
 
         if (!_isNew)
         {
@@ -298,6 +356,9 @@
             node.StepId = step.Id;
             node.ConfigurationJson = step.ConfigurationJson;
             node.SortOrder = step.SortOrder;
+
+            // Load sub-workflow reference if applicable
+            node.LoadSubWorkflowConfig();
 
             _diagram.Nodes.Add(node);
             nodeMap[step.Name] = node;
@@ -404,6 +465,13 @@
 
     private void LoadStepConfig()
     {
+        // Reset all config fields
+        _stepConfig_Capability = null;
+        _stepConfig_Condition = null;
+        _stepConfig_NotifyType = null;
+        _stepConfig_SubWorkflowId = null;
+        _stepConfig_SubWorkflowName = null;
+
         if (_selectedStep is not null)
         {
             _stepEdit_Name = _selectedStep.Name;
@@ -413,10 +481,20 @@
             {
                 try
                 {
-                    var config = JsonSerializer.Deserialize<Dictionary<string, string>>(_selectedStep.ConfigurationJson);
-                    _stepConfig_Capability = config?.GetValueOrDefault("capability");
-                    _stepConfig_Condition = config?.GetValueOrDefault("condition");
-                    _stepConfig_NotifyType = config?.GetValueOrDefault("notifyType");
+                    var config = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(_selectedStep.ConfigurationJson);
+                    if (config != null)
+                    {
+                        if (config.TryGetValue("capability", out var cap))
+                            _stepConfig_Capability = cap.GetString();
+                        if (config.TryGetValue("condition", out var cond))
+                            _stepConfig_Condition = cond.GetString();
+                        if (config.TryGetValue("notifyType", out var nt))
+                            _stepConfig_NotifyType = nt.GetString();
+                        if (config.TryGetValue("workflow_id", out var wfId) && Guid.TryParse(wfId.GetString(), out var guid))
+                            _stepConfig_SubWorkflowId = guid;
+                        if (config.TryGetValue("workflow_name", out var wfName))
+                            _stepConfig_SubWorkflowName = wfName.GetString();
+                    }
                 }
                 catch { }
             }
@@ -621,6 +699,14 @@
             case StepType.Notify when !string.IsNullOrEmpty(_stepConfig_NotifyType):
                 config["notifyType"] = _stepConfig_NotifyType;
                 break;
+            case StepType.SubWorkflow when _stepConfig_SubWorkflowId.HasValue:
+                var subWf = _availableWorkflows.FirstOrDefault(w => w.Id == _stepConfig_SubWorkflowId);
+                if (subWf != null)
+                {
+                    config["workflow_id"] = subWf.Id.ToString();
+                    config["workflow_name"] = subWf.Name;
+                }
+                break;
         }
 
         var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
@@ -635,8 +721,89 @@
             if (node != null)
             {
                 node.ConfigurationJson = configJson;
+
+                // Update sub-workflow visual on the node
+                if (_selectedStep.StepType == StepType.SubWorkflow)
+                {
+                    var wf = _availableWorkflows.FirstOrDefault(w => w.Id == _stepConfig_SubWorkflowId);
+                    node.ReferencedWorkflowId = _stepConfig_SubWorkflowId;
+                    node.ReferencedWorkflowName = wf?.Name;
+                    node.Refresh();
+                }
             }
         }
+    }
+
+    private void OnSubWorkflowChanged(Guid? newValue)
+    {
+        _stepConfig_SubWorkflowId = newValue;
+
+        // Update node visual immediately
+        if (_selectedStep != null)
+        {
+            var node = _diagram.Nodes.OfType<WorkflowNodeModel>()
+                .FirstOrDefault(n => n.StepName == _selectedStep.Name);
+            if (node != null)
+            {
+                var wf = _availableWorkflows.FirstOrDefault(w => w.Id == newValue);
+                node.ReferencedWorkflowId = newValue;
+                node.ReferencedWorkflowName = wf?.Name;
+                node.Refresh();
+            }
+        }
+    }
+
+    private void AddSubWorkflowFromPalette(WorkflowListResponse targetWorkflow)
+    {
+        var stepName = $"sub-{targetWorkflow.Name}-{_nextStepNumber++}";
+
+        // Position nodes in a cascading pattern
+        var xOffset = 300 + ((_nextStepNumber - 1) % 5) * 50;
+        var yOffset = 100 + ((_nextStepNumber - 1) / 5) * 150;
+
+        var node = new WorkflowNodeModel(
+            new Point(xOffset, yOffset),
+            StepType.SubWorkflow,
+            stepName,
+            targetWorkflow.DisplayName ?? targetWorkflow.Name
+        );
+        node.SortOrder = _steps.Count;
+        node.ReferencedWorkflowId = targetWorkflow.Id;
+        node.ReferencedWorkflowName = targetWorkflow.Name;
+
+        // Pre-populate config
+        var config = new Dictionary<string, string>
+        {
+            ["workflow_id"] = targetWorkflow.Id.ToString(),
+            ["workflow_name"] = targetWorkflow.Name
+        };
+        node.ConfigurationJson = JsonSerializer.Serialize(config);
+
+        _diagram.Nodes.Add(node);
+
+        _steps.Add(new WorkflowStepDto(
+            null, stepName, targetWorkflow.DisplayName ?? targetWorkflow.Name,
+            StepType.SubWorkflow,
+            node.ConfigurationJson, xOffset, yOffset, null, _steps.Count
+        ));
+
+        StateHasChanged();
+    }
+
+    private string? DetermineTriggerType()
+    {
+        var triggerStep = _steps.FirstOrDefault(s => s.StepType == StepType.Trigger);
+        if (triggerStep?.ConfigurationJson != null)
+        {
+            try
+            {
+                var config = JsonSerializer.Deserialize<Dictionary<string, string>>(triggerStep.ConfigurationJson);
+                if (config?.TryGetValue("source", out var source) == true)
+                    return source;
+            }
+            catch { }
+        }
+        return triggerStep != null ? "servicenow" : null;
     }
 
     public void Dispose()
