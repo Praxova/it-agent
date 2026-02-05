@@ -23,6 +23,18 @@ public class WorkflowSeeder
     {
         await SeedPasswordResetWorkflow();
         await SeedHelpdeskPasswordResetWorkflow();
+
+        // Sub-workflows (no Trigger/Classify — used by dispatcher)
+        var pwResetSub = await SeedPasswordResetSubWorkflow();
+        var groupMembershipSub = await SeedGroupMembershipSubWorkflow();
+        var filePermissionsSub = await SeedFilePermissionsSubWorkflow();
+
+        // Dispatcher workflow (routes to sub-workflows)
+        if (pwResetSub != null && groupMembershipSub != null && filePermissionsSub != null)
+        {
+            await SeedDispatcherWorkflow(pwResetSub, groupMembershipSub, filePermissionsSub);
+        }
+
         await FixTransitionOutputIndexes();
         await _context.SaveChangesAsync();
     }
@@ -494,6 +506,601 @@ public class WorkflowSeeder
 
         _logger.LogInformation("Successfully seeded workflow '{WorkflowName}' with {StepCount} steps and linked to agent '{AgentName}'",
             workflowName, 7, agent.Name);
+    }
+
+    private async Task SeedDispatcherWorkflow(
+        WorkflowDefinition pwResetSub,
+        WorkflowDefinition groupMembershipSub,
+        WorkflowDefinition filePermissionsSub)
+    {
+        const string name = "it-dispatch";
+
+        var existing = await _context.WorkflowDefinitions
+            .FirstOrDefaultAsync(w => w.Name == name);
+        if (existing != null) return;
+
+        var classificationRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "classification-rules");
+        var securityDefaults = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "security-defaults");
+
+        // Get example set for classification
+        var exampleSet = await _context.ExampleSets
+            .FirstOrDefaultAsync(e => e.Name == "it-dispatch-classification");
+
+        var workflow = new WorkflowDefinition
+        {
+            Name = name,
+            DisplayName = "IT Helpdesk Dispatcher",
+            Description = "Central dispatcher that classifies incoming tickets and routes to specialized sub-workflows. Single classification pass, dynamic routing.",
+            Version = "1.0.0",
+            TriggerType = "ServiceNow",
+            TriggerConfigJson = """{"pollIntervalSeconds": 30}""",
+            ExampleSetId = exampleSet?.Id,
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        // === Steps ===
+
+        var trigger = new WorkflowStep
+        {
+            Name = "trigger",
+            DisplayName = "Ticket Received",
+            StepType = StepType.Trigger,
+            ConfigurationJson = """{"source": "servicenow"}""",
+            PositionX = 100, PositionY = 300, SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var classify = new WorkflowStep
+        {
+            Name = "classify",
+            DisplayName = "Classify Ticket",
+            StepType = StepType.Classify,
+            ConfigurationJson = """{"extract_fields": ["ticket_type", "affected_user", "caller_name", "confidence", "should_escalate", "escalation_reason"]}""",
+            PositionX = 350, PositionY = 300, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        // SubWorkflow steps — each references a sub-workflow by name and ID
+        var subPwReset = new WorkflowStep
+        {
+            Name = "sub-password-reset",
+            DisplayName = "Password Reset",
+            StepType = StepType.SubWorkflow,
+            ConfigurationJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                workflow_id = pwResetSub.Id.ToString(),
+                workflow_name = pwResetSub.Name
+            }),
+            PositionX = 650, PositionY = 150, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var subGroupMembership = new WorkflowStep
+        {
+            Name = "sub-group-membership",
+            DisplayName = "Group Membership",
+            StepType = StepType.SubWorkflow,
+            ConfigurationJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                workflow_id = groupMembershipSub.Id.ToString(),
+                workflow_name = groupMembershipSub.Name
+            }),
+            PositionX = 650, PositionY = 300, SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var subFilePermissions = new WorkflowStep
+        {
+            Name = "sub-file-permissions",
+            DisplayName = "File Permissions",
+            StepType = StepType.SubWorkflow,
+            ConfigurationJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                workflow_id = filePermissionsSub.Id.ToString(),
+                workflow_name = filePermissionsSub.Name
+            }),
+            PositionX = 650, PositionY = 450, SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalate = new WorkflowStep
+        {
+            Name = "escalate-unknown",
+            DisplayName = "Escalate Unknown",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "reason": "Unrecognized ticket type"}""",
+            PositionX = 650, PositionY = 600, SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endSuccess = new WorkflowStep
+        {
+            Name = "end-success",
+            DisplayName = "Resolved",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "resolved"}""",
+            PositionX = 950, PositionY = 300, SortOrder = 7,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endEscalated = new WorkflowStep
+        {
+            Name = "end-escalated",
+            DisplayName = "Escalated",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "pending"}""",
+            PositionX = 950, PositionY = 600, SortOrder = 8,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[]
+        {
+            trigger, classify,
+            subPwReset, subGroupMembership, subFilePermissions,
+            escalate, endSuccess, endEscalated
+        });
+        await _context.SaveChangesAsync();
+
+        // === Transitions ===
+        var transitions = new List<StepTransition>
+        {
+            // Trigger → Classify
+            new() { FromStepId = trigger.Id, ToStepId = classify.Id,
+                    Label = "start", OutputIndex = 0 },
+
+            // Classify → SubWorkflows (based on ticket_type from classification)
+            new() { FromStepId = classify.Id, ToStepId = subPwReset.Id,
+                    Condition = "ticket_type == 'password-reset'",
+                    Label = "password-reset", OutputIndex = 0 },
+
+            new() { FromStepId = classify.Id, ToStepId = subGroupMembership.Id,
+                    Condition = "ticket_type == 'group-membership'",
+                    Label = "group-membership", OutputIndex = 1 },
+
+            new() { FromStepId = classify.Id, ToStepId = subFilePermissions.Id,
+                    Condition = "ticket_type == 'file-permissions'",
+                    Label = "file-permissions", OutputIndex = 2 },
+
+            // Classify → Escalate (unknown type or low confidence)
+            new() { FromStepId = classify.Id, ToStepId = escalate.Id,
+                    Condition = "ticket_type == 'unknown' or confidence < 0.7",
+                    Label = "unknown", OutputIndex = 3 },
+
+            // SubWorkflow completed → End-Success
+            new() { FromStepId = subPwReset.Id, ToStepId = endSuccess.Id,
+                    Condition = "outcome == 'completed'",
+                    Label = "completed", OutputIndex = 0 },
+            new() { FromStepId = subGroupMembership.Id, ToStepId = endSuccess.Id,
+                    Condition = "outcome == 'completed'",
+                    Label = "completed", OutputIndex = 0 },
+            new() { FromStepId = subFilePermissions.Id, ToStepId = endSuccess.Id,
+                    Condition = "outcome == 'completed'",
+                    Label = "completed", OutputIndex = 0 },
+
+            // SubWorkflow escalated → End-Escalated
+            new() { FromStepId = subPwReset.Id, ToStepId = endEscalated.Id,
+                    Condition = "outcome == 'escalated'",
+                    Label = "escalated", OutputIndex = 1 },
+            new() { FromStepId = subGroupMembership.Id, ToStepId = endEscalated.Id,
+                    Condition = "outcome == 'escalated'",
+                    Label = "escalated", OutputIndex = 1 },
+            new() { FromStepId = subFilePermissions.Id, ToStepId = endEscalated.Id,
+                    Condition = "outcome == 'escalated'",
+                    Label = "escalated", OutputIndex = 1 },
+
+            // Escalate → End-Escalated
+            new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id,
+                    Label = "escalated", OutputIndex = 0 },
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+
+        // Workflow-level rulesets
+        if (securityDefaults != null)
+        {
+            _context.WorkflowRulesetMappings.Add(new WorkflowRulesetMapping
+            {
+                WorkflowDefinitionId = workflow.Id,
+                RulesetId = securityDefaults.Id,
+                Priority = 100, IsEnabled = true
+            });
+        }
+        // Step-level rulesets
+        if (classificationRules != null)
+        {
+            _context.StepRulesetMappings.Add(new StepRulesetMapping
+            {
+                WorkflowStepId = classify.Id,
+                RulesetId = classificationRules.Id,
+                Priority = 100, IsEnabled = true
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        // Link dispatcher to test-agent
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+        if (agent != null)
+        {
+            agent.WorkflowDefinitionId = workflow.Id;
+            agent.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Linked dispatcher workflow to test-agent");
+        }
+
+        _logger.LogInformation("Seeded dispatcher workflow: {Name} with 8 steps, 13 transitions", name);
+    }
+
+    private async Task<WorkflowDefinition?> SeedPasswordResetSubWorkflow()
+    {
+        const string name = "pw-reset-sub";
+
+        var existing = await _context.WorkflowDefinitions
+            .FirstOrDefaultAsync(w => w.Name == name);
+        if (existing != null) return existing;
+
+        var securityRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "security-rules");
+        var communicationRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "communication-rules");
+
+        var workflow = new WorkflowDefinition
+        {
+            Name = name,
+            DisplayName = "Password Reset (Sub-Workflow)",
+            Description = "Specialized password reset logic. Used as sub-workflow in dispatcher — no Trigger or Classify steps.",
+            Version = "1.0.0",
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        // Steps: Validate → Execute → Notify → End-Success
+        //                                    ↘ Escalate → End-Escalated
+        var validate = new WorkflowStep
+        {
+            Name = "validate-request",
+            DisplayName = "Validate Password Reset",
+            StepType = StepType.Validate,
+            ConfigurationJson = """{"checks": ["user_exists", "not_admin", "requester_authorized"]}""",
+            PositionX = 100, PositionY = 200, SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var execute = new WorkflowStep
+        {
+            Name = "execute-reset",
+            DisplayName = "Reset Password",
+            StepType = StepType.Execute,
+            ConfigurationJson = """{"capability": "ad-password-reset", "generateTempPassword": true}""",
+            PositionX = 350, PositionY = 200, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var notify = new WorkflowStep
+        {
+            Name = "notify-user",
+            DisplayName = "Notify User",
+            StepType = StepType.Notify,
+            ConfigurationJson = """{"template": "password-reset-success", "channel": "ticket-comment", "includeTempPassword": true}""",
+            PositionX = 600, PositionY = 200, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalate = new WorkflowStep
+        {
+            Name = "escalate",
+            DisplayName = "Escalate",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
+            PositionX = 350, PositionY = 400, SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endSuccess = new WorkflowStep
+        {
+            Name = "end-success",
+            DisplayName = "Completed",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "resolved", "resolution_code": "Automated - Password Reset"}""",
+            PositionX = 850, PositionY = 200, SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endEscalated = new WorkflowStep
+        {
+            Name = "end-escalated",
+            DisplayName = "Escalated",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "pending", "resolution_code": "Escalated"}""",
+            PositionX = 600, PositionY = 400, SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[] { validate, execute, notify, escalate, endSuccess, endEscalated });
+        await _context.SaveChangesAsync();
+
+        var transitions = new List<StepTransition>
+        {
+            new() { FromStepId = validate.Id, ToStepId = execute.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
+            new() { FromStepId = validate.Id, ToStepId = escalate.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
+            new() { FromStepId = execute.Id, ToStepId = notify.Id, Condition = "success == true", Label = "success", OutputIndex = 0 },
+            new() { FromStepId = execute.Id, ToStepId = escalate.Id, Condition = "success == false", Label = "failed", OutputIndex = 1 },
+            new() { FromStepId = notify.Id, ToStepId = endSuccess.Id, Label = "done", OutputIndex = 0 },
+            new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id, Label = "escalated", OutputIndex = 0 },
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+
+        // Step-level ruleset mappings
+        if (securityRules != null)
+        {
+            _context.StepRulesetMappings.AddRange(new[]
+            {
+                new StepRulesetMapping { WorkflowStepId = validate.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = execute.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+            });
+        }
+        if (communicationRules != null)
+        {
+            _context.StepRulesetMappings.Add(
+                new StepRulesetMapping { WorkflowStepId = notify.Id, RulesetId = communicationRules.Id, Priority = 100, IsEnabled = true }
+            );
+        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 6 steps", name);
+        return workflow;
+    }
+
+    private async Task<WorkflowDefinition?> SeedGroupMembershipSubWorkflow()
+    {
+        const string name = "group-membership-sub";
+
+        var existing = await _context.WorkflowDefinitions
+            .FirstOrDefaultAsync(w => w.Name == name);
+        if (existing != null) return existing;
+
+        var securityRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "security-rules");
+        var communicationRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "communication-rules");
+
+        var workflow = new WorkflowDefinition
+        {
+            Name = name,
+            DisplayName = "Group Membership (Sub-Workflow)",
+            Description = "Specialized group membership logic. Used as sub-workflow in dispatcher — no Trigger or Classify steps.",
+            Version = "1.0.0",
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        var validate = new WorkflowStep
+        {
+            Name = "validate-request",
+            DisplayName = "Validate Group Request",
+            StepType = StepType.Validate,
+            ConfigurationJson = """{"checks": ["user_exists", "group_exists", "requester_authorized"]}""",
+            PositionX = 100, PositionY = 200, SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var execute = new WorkflowStep
+        {
+            Name = "execute-group-change",
+            DisplayName = "Modify Group Membership",
+            StepType = StepType.Execute,
+            ConfigurationJson = """{"capability": "ad-group-membership", "action": "add"}""",
+            PositionX = 350, PositionY = 200, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var notify = new WorkflowStep
+        {
+            Name = "notify-user",
+            DisplayName = "Notify User",
+            StepType = StepType.Notify,
+            ConfigurationJson = """{"template": "group-membership-success", "channel": "ticket-comment"}""",
+            PositionX = 600, PositionY = 200, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalate = new WorkflowStep
+        {
+            Name = "escalate",
+            DisplayName = "Escalate",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
+            PositionX = 350, PositionY = 400, SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endSuccess = new WorkflowStep
+        {
+            Name = "end-success",
+            DisplayName = "Completed",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "resolved", "resolution_code": "Automated - Group Membership Change"}""",
+            PositionX = 850, PositionY = 200, SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endEscalated = new WorkflowStep
+        {
+            Name = "end-escalated",
+            DisplayName = "Escalated",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "pending", "resolution_code": "Escalated"}""",
+            PositionX = 600, PositionY = 400, SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[] { validate, execute, notify, escalate, endSuccess, endEscalated });
+        await _context.SaveChangesAsync();
+
+        var transitions = new List<StepTransition>
+        {
+            new() { FromStepId = validate.Id, ToStepId = execute.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
+            new() { FromStepId = validate.Id, ToStepId = escalate.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
+            new() { FromStepId = execute.Id, ToStepId = notify.Id, Condition = "success == true", Label = "success", OutputIndex = 0 },
+            new() { FromStepId = execute.Id, ToStepId = escalate.Id, Condition = "success == false", Label = "failed", OutputIndex = 1 },
+            new() { FromStepId = notify.Id, ToStepId = endSuccess.Id, Label = "done", OutputIndex = 0 },
+            new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id, Label = "escalated", OutputIndex = 0 },
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+
+        if (securityRules != null)
+        {
+            _context.StepRulesetMappings.AddRange(new[]
+            {
+                new StepRulesetMapping { WorkflowStepId = validate.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = execute.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+            });
+        }
+        if (communicationRules != null)
+        {
+            _context.StepRulesetMappings.Add(
+                new StepRulesetMapping { WorkflowStepId = notify.Id, RulesetId = communicationRules.Id, Priority = 100, IsEnabled = true }
+            );
+        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 6 steps", name);
+        return workflow;
+    }
+
+    private async Task<WorkflowDefinition?> SeedFilePermissionsSubWorkflow()
+    {
+        const string name = "file-permissions-sub";
+
+        var existing = await _context.WorkflowDefinitions
+            .FirstOrDefaultAsync(w => w.Name == name);
+        if (existing != null) return existing;
+
+        var securityRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "security-rules");
+        var communicationRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "communication-rules");
+
+        var workflow = new WorkflowDefinition
+        {
+            Name = name,
+            DisplayName = "File Permissions (Sub-Workflow)",
+            Description = "Specialized file permissions logic. Used as sub-workflow in dispatcher — no Trigger or Classify steps.",
+            Version = "1.0.0",
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        var validate = new WorkflowStep
+        {
+            Name = "validate-request",
+            DisplayName = "Validate Permissions Request",
+            StepType = StepType.Validate,
+            ConfigurationJson = """{"checks": ["user_exists", "path_exists", "requester_authorized"]}""",
+            PositionX = 100, PositionY = 200, SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var execute = new WorkflowStep
+        {
+            Name = "execute-permissions",
+            DisplayName = "Set File Permissions",
+            StepType = StepType.Execute,
+            ConfigurationJson = """{"capability": "file-permissions", "permission": "read"}""",
+            PositionX = 350, PositionY = 200, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var notify = new WorkflowStep
+        {
+            Name = "notify-user",
+            DisplayName = "Notify User",
+            StepType = StepType.Notify,
+            ConfigurationJson = """{"template": "file-permissions-success", "channel": "ticket-comment"}""",
+            PositionX = 600, PositionY = 200, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalate = new WorkflowStep
+        {
+            Name = "escalate",
+            DisplayName = "Escalate",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
+            PositionX = 350, PositionY = 400, SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endSuccess = new WorkflowStep
+        {
+            Name = "end-success",
+            DisplayName = "Completed",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "resolved", "resolution_code": "Automated - File Permissions Change"}""",
+            PositionX = 850, PositionY = 200, SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endEscalated = new WorkflowStep
+        {
+            Name = "end-escalated",
+            DisplayName = "Escalated",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "pending", "resolution_code": "Escalated"}""",
+            PositionX = 600, PositionY = 400, SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[] { validate, execute, notify, escalate, endSuccess, endEscalated });
+        await _context.SaveChangesAsync();
+
+        var transitions = new List<StepTransition>
+        {
+            new() { FromStepId = validate.Id, ToStepId = execute.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
+            new() { FromStepId = validate.Id, ToStepId = escalate.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
+            new() { FromStepId = execute.Id, ToStepId = notify.Id, Condition = "success == true", Label = "success", OutputIndex = 0 },
+            new() { FromStepId = execute.Id, ToStepId = escalate.Id, Condition = "success == false", Label = "failed", OutputIndex = 1 },
+            new() { FromStepId = notify.Id, ToStepId = endSuccess.Id, Label = "done", OutputIndex = 0 },
+            new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id, Label = "escalated", OutputIndex = 0 },
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+
+        if (securityRules != null)
+        {
+            _context.StepRulesetMappings.AddRange(new[]
+            {
+                new StepRulesetMapping { WorkflowStepId = validate.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = execute.Id, RulesetId = securityRules.Id, Priority = 100, IsEnabled = true },
+            });
+        }
+        if (communicationRules != null)
+        {
+            _context.StepRulesetMappings.Add(
+                new StepRulesetMapping { WorkflowStepId = notify.Id, RulesetId = communicationRules.Id, Priority = 100, IsEnabled = true }
+            );
+        }
+
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 6 steps", name);
+        return workflow;
     }
 
     private async Task<Agent> EnsureTestAgentExistsAsync()

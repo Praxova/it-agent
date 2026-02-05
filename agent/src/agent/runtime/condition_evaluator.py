@@ -21,9 +21,12 @@ class ConditionEvaluator:
     - confidence >= 0.8
     - valid == true
     - success == false
-    - ticket_type == "password_reset"
+    - ticket_type == 'password-reset'
 
-    Does NOT support complex expressions (no AND/OR/NOT) for security.
+    Supports 'or' compound conditions:
+    - ticket_type == 'unknown' or confidence < 0.7
+
+    Does NOT support AND/NOT for security.
     """
 
     # Supported operators
@@ -47,7 +50,8 @@ class ConditionEvaluator:
         Evaluate a condition against the given context.
 
         Args:
-            condition: Condition string (e.g., "confidence >= 0.8") or None
+            condition: Condition string (e.g., "confidence >= 0.8") or None.
+                       Supports 'or' compound: "ticket_type == 'unknown' or confidence < 0.7"
             context: Dict of available variables
 
         Returns:
@@ -60,6 +64,18 @@ class ConditionEvaluator:
         if not condition or condition.strip() == "":
             return True
 
+        # Support 'or' compound conditions — split and evaluate each sub-condition
+        if " or " in condition:
+            sub_conditions = [c.strip() for c in condition.split(" or ")]
+            for sub in sub_conditions:
+                if self._evaluate_single(sub, context):
+                    return True
+            return False
+
+        return self._evaluate_single(condition, context)
+
+    def _evaluate_single(self, condition: str, context: dict[str, Any]) -> bool:
+        """Evaluate a single (non-compound) condition."""
         match = self.CONDITION_PATTERN.match(condition)
         if not match:
             raise ConditionEvaluationError(

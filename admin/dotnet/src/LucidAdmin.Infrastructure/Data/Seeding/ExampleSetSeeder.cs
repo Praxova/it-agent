@@ -23,6 +23,7 @@ public class ExampleSetSeeder
     {
         await SeedPasswordResetExamples();
         await SeedGroupAccessExamples();
+        await SeedDispatcherClassificationExamples();
         await _context.SaveChangesAsync();
     }
 
@@ -188,6 +189,126 @@ public class ExampleSetSeeder
                     ExpectedTargetGroup = "Finance-Readonly",
                     Notes = "Self-service removal from specific group",
                     SortOrder = 3,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                }
+            };
+
+            exampleSet.Examples = examples;
+            _context.ExampleSets.Add(exampleSet);
+            _logger.LogInformation("Seeded built-in example set: {ExampleSetName} with {ExampleCount} examples",
+                setName, examples.Count);
+        }
+        else
+        {
+            _logger.LogDebug("Built-in example set already exists: {ExampleSetName}", setName);
+        }
+    }
+
+    private async Task SeedDispatcherClassificationExamples()
+    {
+        const string setName = "it-dispatch-classification";
+
+        var existing = await _context.ExampleSets
+            .Include(e => e.Examples)
+            .FirstOrDefaultAsync(e => e.Name == setName);
+
+        if (existing == null)
+        {
+            var exampleSet = new ExampleSet
+            {
+                Name = setName,
+                DisplayName = "IT Dispatch Classification",
+                Description = "Multi-type classification examples for the IT dispatcher workflow. Teaches LLM to classify tickets as password-reset, group-membership, file-permissions, or unknown.",
+                TargetTicketType = TicketType.Unknown,
+                IsBuiltIn = true,
+                IsActive = true
+            };
+
+            var examples = new List<Example>
+            {
+                new Example
+                {
+                    Name = "password-reset-standard",
+                    TicketShortDescription = "Password reset needed",
+                    TicketDescription = "User John Smith needs his password reset. He forgot it over the weekend.",
+                    ExpectedTicketType = TicketType.PasswordReset,
+                    ExpectedConfidence = 0.95m,
+                    ExpectedAffectedUser = "jsmith",
+                    Notes = "Standard password reset request",
+                    SortOrder = 0,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "group-membership-add",
+                    TicketShortDescription = "Add user to security group",
+                    TicketDescription = "Please add user jane.doe to the Finance-Reports security group in Active Directory.",
+                    CallerName = "Mike Manager",
+                    ExpectedTicketType = TicketType.GroupAccessAdd,
+                    ExpectedConfidence = 0.92m,
+                    ExpectedAffectedUser = "jane.doe",
+                    ExpectedTargetGroup = "Finance-Reports",
+                    Notes = "Group membership addition",
+                    SortOrder = 1,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "file-permissions-read",
+                    TicketShortDescription = "Need folder access",
+                    TicketDescription = "Sarah Connor needs read access to \\\\fileserver\\shared\\marketing folder.",
+                    ExpectedTicketType = TicketType.FilePermissionGrant,
+                    ExpectedConfidence = 0.88m,
+                    ExpectedAffectedUser = "sconnor",
+                    ExpectedTargetResource = "\\\\fileserver\\shared\\marketing",
+                    ExpectedPermissionLevel = "read",
+                    Notes = "File permissions request",
+                    SortOrder = 2,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "unknown-printer-jam",
+                    TicketShortDescription = "Printer jammed",
+                    TicketDescription = "The printer on the 3rd floor is jammed again.",
+                    ExpectedTicketType = TicketType.OutOfScope,
+                    ExpectedConfidence = 0.15m,
+                    ExpectedShouldEscalate = true,
+                    ExpectedEscalationReason = "Hardware issue - not in agent capabilities",
+                    Notes = "Unknown type - should escalate",
+                    SortOrder = 3,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "unknown-vpn-issue",
+                    TicketShortDescription = "VPN not working",
+                    TicketDescription = "I can't connect to the VPN from home.",
+                    ExpectedTicketType = TicketType.OutOfScope,
+                    ExpectedConfidence = 0.20m,
+                    ExpectedShouldEscalate = true,
+                    ExpectedEscalationReason = "VPN connectivity - not in agent capabilities",
+                    Notes = "Unknown type - should escalate",
+                    SortOrder = 4,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "group-membership-urgent-removal",
+                    TicketShortDescription = "Remove terminated employee from IT-Admins",
+                    TicketDescription = "Remove user mike.jones from the IT-Admins group immediately - he's been terminated.",
+                    ExpectedTicketType = TicketType.GroupAccessRemove,
+                    ExpectedConfidence = 0.94m,
+                    ExpectedAffectedUser = "mike.jones",
+                    ExpectedTargetGroup = "IT-Admins",
+                    Notes = "Urgent group membership removal",
+                    SortOrder = 5,
                     IsActive = true,
                     ExampleSet = exampleSet
                 }
