@@ -12,6 +12,7 @@ from .update_ticket import UpdateTicketExecutor
 from .notify import NotifyExecutor
 from .escalate import EscalateExecutor
 from .end import EndExecutor
+from .sub_workflow import SubWorkflowExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class ExecutorRegistry:
             NotifyExecutor(),
             EscalateExecutor(),
             EndExecutor(),
+            SubWorkflowExecutor(),
         ]
 
         for executor in builtins:

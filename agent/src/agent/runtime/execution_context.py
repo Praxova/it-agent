@@ -83,6 +83,12 @@ class ExecutionContext:
     # Escalation info (if escalated)
     escalation_reason: str | None = None
 
+    # Sub-workflow recursion tracking
+    workflow_stack: list[str] = field(default_factory=list)
+
+    # Maximum nesting depth for sub-workflows
+    MAX_WORKFLOW_DEPTH: int = 10
+
     def get_step_result(self, step_name: str) -> StepResult | None:
         """Get result from a previously executed step."""
         return self.step_results.get(step_name)

@@ -34,7 +34,7 @@ public class AgentExportService : IAgentExportService
             return null;
         }
 
-        return BuildExportResponse(agent);
+        return await BuildExportResponseAsync(agent, ct);
     }
 
     public async Task<AgentExportResponse?> ExportAgentByNameAsync(string agentName, CancellationToken ct = default)
@@ -80,11 +80,20 @@ public class AgentExportService : IAgentExportService
             .FirstOrDefaultAsync(a => a.Id == agentId, ct);
     }
 
-    private AgentExportResponse BuildExportResponse(Agent agent)
+    private async Task<AgentExportResponse> BuildExportResponseAsync(Agent agent, CancellationToken ct)
     {
         var rulesets = CollectAllRulesets(agent);
         var exampleSets = CollectExampleSets(agent);
         var requiredCapabilities = CollectRequiredCapabilities(agent);
+
+        // Collect sub-workflow definitions referenced by SubWorkflow steps
+        var subWorkflows = new Dictionary<string, WorkflowExportInfo>();
+        if (agent.WorkflowDefinition != null)
+        {
+            var visited = new HashSet<Guid>();
+            await CollectSubWorkflowsRecursiveAsync(
+                agent.WorkflowDefinition, subWorkflows, visited, rulesets, ct);
+        }
 
         return new AgentExportResponse
         {
@@ -96,7 +105,8 @@ public class AgentExportService : IAgentExportService
             Workflow = MapWorkflowInfo(agent.WorkflowDefinition),
             Rulesets = rulesets,
             ExampleSets = exampleSets,
-            RequiredCapabilities = requiredCapabilities
+            RequiredCapabilities = requiredCapabilities,
+            SubWorkflows = subWorkflows
         };
     }
 
@@ -324,6 +334,103 @@ public class AgentExportService : IAgentExportService
         }
 
         return capabilities.OrderBy(c => c).ToList();
+    }
+
+    private async Task CollectSubWorkflowsRecursiveAsync(
+        WorkflowDefinition workflow,
+        Dictionary<string, WorkflowExportInfo> collected,
+        HashSet<Guid> visited,
+        Dictionary<string, RulesetExportInfo> rulesets,
+        CancellationToken ct)
+    {
+        if (visited.Contains(workflow.Id)) return;
+        visited.Add(workflow.Id);
+
+        foreach (var step in workflow.Steps.Where(s => s.StepType == StepType.SubWorkflow))
+        {
+            if (string.IsNullOrEmpty(step.ConfigurationJson)) continue;
+
+            var config = ParseConfigJsonAsObject(step.ConfigurationJson);
+            if (config == null) continue;
+
+            // Get referenced workflow ID from step config
+            Guid? workflowId = null;
+            if (config.TryGetValue("workflow_id", out var idObj) && idObj != null)
+            {
+                var idStr = idObj.ToString();
+                if (Guid.TryParse(idStr, out var parsed))
+                    workflowId = parsed;
+            }
+
+            if (!workflowId.HasValue) continue;
+
+            // Load the referenced workflow with full includes
+            var subWorkflow = await LoadWorkflowWithRelationsAsync(workflowId.Value, ct);
+            if (subWorkflow == null)
+            {
+                _logger.LogWarning("Sub-workflow {WorkflowId} referenced by step '{StepName}' not found",
+                    workflowId.Value, step.Name);
+                continue;
+            }
+
+            // Skip if already collected (by name)
+            if (collected.ContainsKey(subWorkflow.Name)) continue;
+
+            var mapped = MapWorkflowInfo(subWorkflow);
+            if (mapped != null)
+            {
+                collected[subWorkflow.Name] = mapped;
+
+                // Include sub-workflow rulesets in the main rulesets dict
+                CollectWorkflowRulesets(subWorkflow, rulesets);
+
+                // Recursively collect nested sub-workflows
+                await CollectSubWorkflowsRecursiveAsync(subWorkflow, collected, visited, rulesets, ct);
+            }
+        }
+    }
+
+    private async Task<WorkflowDefinition?> LoadWorkflowWithRelationsAsync(Guid workflowId, CancellationToken ct)
+    {
+        return await _db.WorkflowDefinitions
+            .Include(w => w.Steps.OrderBy(s => s.SortOrder))
+                .ThenInclude(s => s.OutgoingTransitions.OrderBy(t => t.SortOrder))
+                    .ThenInclude(t => t.ToStep)
+            .Include(w => w.Steps)
+                .ThenInclude(s => s.RulesetMappings)
+                    .ThenInclude(m => m.Ruleset)
+                        .ThenInclude(r => r!.Rules.OrderBy(rule => rule.Priority))
+            .Include(w => w.RulesetMappings)
+                .ThenInclude(m => m.Ruleset)
+                    .ThenInclude(r => r!.Rules.OrderBy(rule => rule.Priority))
+            .Include(w => w.ExampleSet)
+                .ThenInclude(e => e!.Examples.OrderBy(ex => ex.SortOrder))
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(w => w.Id == workflowId, ct);
+    }
+
+    private void CollectWorkflowRulesets(WorkflowDefinition workflow, Dictionary<string, RulesetExportInfo> rulesets)
+    {
+        // Collect workflow-level rulesets
+        foreach (var mapping in workflow.RulesetMappings)
+        {
+            if (mapping.Ruleset != null && !rulesets.ContainsKey(mapping.Ruleset.Name))
+            {
+                rulesets[mapping.Ruleset.Name] = MapRulesetInfo(mapping.Ruleset);
+            }
+        }
+
+        // Collect step-level rulesets
+        foreach (var step in workflow.Steps)
+        {
+            foreach (var mapping in step.RulesetMappings)
+            {
+                if (mapping.Ruleset != null && !rulesets.ContainsKey(mapping.Ruleset.Name))
+                {
+                    rulesets[mapping.Ruleset.Name] = MapRulesetInfo(mapping.Ruleset);
+                }
+            }
+        }
     }
 
     private Dictionary<string, object?> ParseConfigJson(string? json)

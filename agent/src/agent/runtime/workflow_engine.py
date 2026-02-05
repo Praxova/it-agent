@@ -102,6 +102,7 @@ class WorkflowEngine:
         self,
         ticket_id: str,
         ticket_data: dict[str, Any],
+        context: ExecutionContext | None = None,
     ) -> ExecutionContext:
         """
         Execute workflow for a ticket.
@@ -109,6 +110,8 @@ class WorkflowEngine:
         Args:
             ticket_id: ID of the ticket being processed
             ticket_data: Ticket fields (short_description, description, etc.)
+            context: Optional existing context (for sub-workflow shared context).
+                     If None, creates a new context.
 
         Returns:
             ExecutionContext with results from all steps
@@ -116,26 +119,36 @@ class WorkflowEngine:
         if not self.export.workflow:
             raise WorkflowExecutionError("No workflow defined in agent export")
 
-        # Create execution context
-        context = ExecutionContext(
-            ticket_id=ticket_id,
-            ticket_data=ticket_data,
-            llm_driver=self.llm_driver,
-            admin_portal_url=self.admin_portal_url,
-        )
+        # Detect sub-workflow mode
+        is_sub_workflow = context is not None
 
-        # Inject integrations
-        context.servicenow_client = self.servicenow_client
-        context.capability_router = self.capability_router
+        # Create or reuse execution context
+        if context is None:
+            context = ExecutionContext(
+                ticket_id=ticket_id,
+                ticket_data=ticket_data,
+                llm_driver=self.llm_driver,
+                admin_portal_url=self.admin_portal_url,
+            )
+            context.servicenow_client = self.servicenow_client
+            context.capability_router = self.capability_router
+            context.status = ExecutionStatus.RUNNING
 
-        context.status = ExecutionStatus.RUNNING
+            # Initialize workflow stack for top-level workflow
+            if self.export.workflow:
+                context.workflow_stack.append(self.export.workflow.name)
+
+        # Store export for sub-workflow resolution
+        context._agent_export = self.export
 
         # Find start step
         current_step = self.get_start_step()
         if not current_step:
             raise WorkflowExecutionError("No start step found in workflow")
 
-        logger.info(f"Starting workflow execution for ticket {ticket_id}")
+        wf_name = self.export.workflow.name if self.export.workflow else "unknown"
+        logger.info(f"Starting workflow execution for ticket {ticket_id} "
+                     f"(workflow: {wf_name}, sub={is_sub_workflow})")
 
         # Execute steps until we reach an end state
         max_steps = 100  # Prevent infinite loops
@@ -153,15 +166,26 @@ class WorkflowEngine:
 
             # Check for terminal states
             if result.status == ExecutionStatus.FAILED:
-                context.fail(result.error or "Step failed")
+                if is_sub_workflow:
+                    context._sub_workflow_status = ExecutionStatus.FAILED
+                    context._sub_workflow_escalation = result.error or "Step failed"
+                else:
+                    context.fail(result.error or "Step failed")
                 break
 
             if current_step.step_type == StepType.END:
-                context.complete()
+                if is_sub_workflow:
+                    context._sub_workflow_status = ExecutionStatus.COMPLETED
+                else:
+                    context.complete()
                 break
 
             if current_step.step_type == StepType.ESCALATE:
-                context.escalate(result.output.get("reason", "Escalated by workflow"))
+                if is_sub_workflow:
+                    context._sub_workflow_status = ExecutionStatus.ESCALATED
+                    context._sub_workflow_escalation = result.output.get("reason", "Escalated")
+                else:
+                    context.escalate(result.output.get("reason", "Escalated by workflow"))
                 break
 
             # Find next step based on transitions
@@ -170,15 +194,23 @@ class WorkflowEngine:
             if next_step is None:
                 # No valid transition - workflow complete
                 logger.info(f"No outgoing transition from {current_step.name}, completing")
-                context.complete()
+                if is_sub_workflow:
+                    context._sub_workflow_status = ExecutionStatus.COMPLETED
+                else:
+                    context.complete()
                 break
 
             current_step = next_step
 
         if step_count >= max_steps:
-            context.fail("Maximum step count exceeded - possible infinite loop")
+            if is_sub_workflow:
+                context._sub_workflow_status = ExecutionStatus.FAILED
+                context._sub_workflow_escalation = "Maximum step count exceeded - possible infinite loop"
+            else:
+                context.fail("Maximum step count exceeded - possible infinite loop")
 
-        logger.info(f"Workflow execution complete: {context.status}")
+        logger.info(f"Workflow execution complete: {context.status} "
+                     f"(workflow: {wf_name}, sub={is_sub_workflow})")
         return context
 
     async def _execute_step(

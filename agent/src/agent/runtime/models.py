@@ -87,6 +87,7 @@ class WorkflowExportInfo(BaseModel):
     """Complete workflow definition."""
     model_config = ConfigDict(populate_by_name=True)
 
+    id: str | None = None  # Workflow GUID from portal
     name: str
     display_name: str | None = Field(None, alias="displayName")
     description: str | None = None
@@ -157,3 +158,9 @@ class AgentExport(BaseModel):
     rulesets: dict[str, RulesetExportInfo] = {}
     example_sets: dict[str, ExampleSetExportInfo] = Field(default_factory=dict, alias="exampleSets")
     required_capabilities: list[str] = Field(default_factory=list, alias="requiredCapabilities")
+
+    # Sub-workflow definitions referenced by SubWorkflow steps
+    # Key: workflow name, Value: workflow definition
+    sub_workflows: dict[str, WorkflowExportInfo] = Field(
+        default_factory=dict, alias="subWorkflows"
+    )

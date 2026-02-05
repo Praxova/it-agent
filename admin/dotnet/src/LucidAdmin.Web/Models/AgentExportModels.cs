@@ -14,6 +14,12 @@ public record AgentExportResponse
     public required Dictionary<string, RulesetExportInfo> Rulesets { get; init; }
     public required Dictionary<string, ExampleSetExportInfo> ExampleSets { get; init; }
     public required List<string> RequiredCapabilities { get; init; }
+
+    /// <summary>
+    /// Sub-workflow definitions referenced by SubWorkflow steps.
+    /// Key: workflow name, Value: complete workflow definition.
+    /// </summary>
+    public Dictionary<string, WorkflowExportInfo> SubWorkflows { get; init; } = new();
 }
 
 public record AgentExportInfo
