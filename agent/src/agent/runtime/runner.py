@@ -16,6 +16,7 @@ from .execution_context import ExecutionContext, ExecutionStatus
 from .integrations.servicenow_client import ServiceNowClient, ServiceNowCredentials
 from .integrations.driver_factory import create_prompt_driver
 from .integrations.capability_router import CapabilityRouter
+from .triggers import TriggerProvider, TriggerProviderFactory, WorkItem
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class AgentRunner:
         self._engine: WorkflowEngine | None = None
         self._snow_client: ServiceNowClient | None = None
         self._capability_router: CapabilityRouter | None = None
+        self._trigger: TriggerProvider | None = None
 
         # Stats
         self._tickets_processed = 0
@@ -138,6 +140,25 @@ class AgentRunner:
         # Create capability router
         self._capability_router = CapabilityRouter(self.admin_portal_url)
 
+        # Determine trigger type and assignment group from workflow config
+        trigger_type = "servicenow"  # default for backward compatibility
+        assignment_group = ""
+        if export.workflow and export.workflow.trigger_type:
+            trigger_type = export.workflow.trigger_type
+        if export.service_now:
+            assignment_group = export.service_now.assignment_group or ""
+
+        # Create trigger provider
+        self._trigger = TriggerProviderFactory.create(
+            trigger_type=trigger_type,
+            snow_client=self._snow_client,
+            assignment_group=assignment_group,
+        )
+        logger.info(f"Created trigger provider: {self._trigger.display_name}")
+
+        # Call trigger startup
+        await self._trigger.startup()
+
         # Create workflow engine
         self._engine = WorkflowEngine(
             export=export,
@@ -202,6 +223,10 @@ class AgentRunner:
             if self._running:
                 logger.debug(f"Sleeping {self.poll_interval}s before next poll...")
                 await asyncio.sleep(self.poll_interval)
+
+        # Shutdown trigger provider
+        if self._trigger:
+            await self._trigger.shutdown()
 
         # Send final shutdown heartbeat
         await self._send_shutdown_heartbeat()
@@ -344,58 +369,37 @@ class AgentRunner:
             pass  # Best effort on shutdown
 
     async def _poll_and_process(self):
-        """Poll for tickets and process them."""
-        if not self._snow_client or not self._engine:
+        """Poll for work items and process them."""
+        if not self._trigger or not self._engine:
             logger.warning("Agent not fully initialized, skipping poll")
             return
 
         self._last_poll_time = datetime.utcnow()
 
-        # Get assignment group from ServiceNow config
-        export = self._config_loader._export
-        assignment_group = ""
-        if export.service_now:
-            assignment_group = export.service_now.assignment_group or ""
-            if not assignment_group:
-                logger.debug(f"ServiceNow config keys: {list(export.service_now.config.keys())}")
+        # Poll for new work items (trigger-agnostic)
+        items = await self._trigger.poll()
 
-        if not assignment_group:
-            logger.warning("No assignment group configured on ServiceNow provider")
+        if not items:
+            logger.debug("No new work items")
             return
 
-        # Poll for new tickets
-        tickets = await self._snow_client.poll_queue(
-            assignment_group=assignment_group,
-            state="1",  # New
-            limit=5,
-        )
+        logger.info(f"Found {len(items)} new work items")
 
-        if not tickets:
-            logger.debug("No new tickets")
-            return
+        for item in items:
+            await self._process_work_item(item)
 
-        logger.info(f"Found {len(tickets)} new tickets")
-
-        # Process each ticket
-        for ticket in tickets:
-            await self._process_ticket(ticket)
-
-    async def _process_ticket(self, ticket):
-        """Process a single ticket through the workflow."""
-        logger.info(f"Processing ticket {ticket.number}: {ticket.short_description[:50]}...")
+    async def _process_work_item(self, item: WorkItem):
+        """Process a single work item through the workflow."""
+        logger.info(f"Processing {item.display_id}: {item.title[:50]}...")
 
         try:
-            # Set ticket to In Progress
-            await self._snow_client.set_state(ticket.sys_id, "2")
-            await self._snow_client.add_work_note(
-                ticket.sys_id,
-                "Ticket picked up by Lucid IT Agent for automated processing."
-            )
+            # Acknowledge pickup
+            await self._trigger.acknowledge(item)
 
             # Execute workflow
             context = await self._engine.execute(
-                ticket_id=ticket.number,
-                ticket_data=ticket.to_ticket_data(),
+                ticket_id=item.display_id or item.id,
+                ticket_data=item.data,
             )
 
             # Handle result
@@ -403,87 +407,35 @@ class AgentRunner:
 
             if context.status == ExecutionStatus.COMPLETED:
                 self._tickets_succeeded += 1
-                logger.info(f"Ticket {ticket.number} completed successfully")
-
-                # Post-workflow ServiceNow updates for successful completion
-                try:
-                    if not context.get_variable("ticket_updated"):
-                        # Write success work note and resolve
-                        success_note = self._build_completion_note(context)
-                        await self._snow_client.add_work_note(ticket.sys_id, success_note)
-                        await self._snow_client.set_state(
-                            ticket.sys_id, "6",  # Resolved
-                            close_notes=f"Resolved by Lucid IT Agent - {context.get_variable('ticket_type', 'automated')}"
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to write completion notes: {e}")
+                logger.info(f"{item.display_id} completed successfully")
+                await self._trigger.complete(item, context)
 
             elif context.status == ExecutionStatus.ESCALATED:
                 self._tickets_escalated += 1
-                logger.info(f"Ticket {ticket.number} escalated: {context.escalation_reason}")
-
-                # Ensure escalation reason is captured if executor was skipped
-                try:
-                    escalation_notes = context.get_variable("escalation_work_notes")
-                    if not escalation_notes:
-                        escalation_notes = (
-                            f"Lucid IT Agent escalation:\n"
-                            f"Reason: {context.escalation_reason}\n"
-                            f"Ticket Type: {context.get_variable('ticket_type', 'Unknown')}\n"
-                            f"Confidence: {context.get_variable('confidence', 'N/A')}"
-                        )
-                        await self._snow_client.add_work_note(ticket.sys_id, escalation_notes)
-                except Exception as e:
-                    logger.error(f"Failed to write escalation notes: {e}")
-                # Leave ticket in "In Progress" state for human pickup
+                logger.info(f"{item.display_id} escalated: {context.escalation_reason}")
+                await self._trigger.escalate(item, context)
 
             else:
                 self._tickets_failed += 1
-                logger.warning(f"Ticket {ticket.number} ended with status: {context.status}")
-
-                # Write failure details
-                try:
-                    completed_steps = len([r for r in context.step_results.values() if r.status == ExecutionStatus.COMPLETED])
-                    failure_note = (
-                        f"Lucid IT Agent processing failed:\n"
-                        f"Error: {context.escalation_reason}\n"
-                        f"Steps completed: {completed_steps}"
-                    )
-                    await self._snow_client.add_work_note(ticket.sys_id, failure_note)
-                except Exception as e:
-                    logger.error(f"Failed to write failure notes: {e}")
+                logger.warning(f"{item.display_id} ended with status: {context.status}")
+                # Build a meaningful error from context
+                completed_steps = len([
+                    r for r in context.step_results.values()
+                    if r.status == ExecutionStatus.COMPLETED
+                ])
+                error_msg = (
+                    f"Processing ended with status {context.status}. "
+                    f"Error: {context.escalation_reason}. "
+                    f"Steps completed: {completed_steps}"
+                )
+                await self._trigger.fail(item, error_msg)
 
         except Exception as e:
             self._tickets_processed += 1
             self._tickets_failed += 1
             self._last_error = str(e)
-            logger.error(f"Failed to process ticket {ticket.number}: {e}", exc_info=True)
-
-            # Add error work note
-            await self._snow_client.add_work_note(
-                ticket.sys_id,
-                f"Automated processing failed: {e}\nEscalating to human operator."
-            )
-
-    def _build_completion_note(self, context) -> str:
-        """Build work note summarizing successful completion."""
-        lines = [
-            "=== Lucid IT Agent - Automated Resolution ===",
-            "",
-            f"Ticket Type: {context.get_variable('ticket_type', 'request')}",
-            f"Affected User: {context.get_variable('affected_user', 'N/A')}",
-            "",
-            "Steps Completed:",
-        ]
-        for step_name, step_result in context.step_results.items():
-            lines.append(f"  [PASS] {step_name}")
-
-        # Include execution result if available
-        exec_msg = context.get_step_output("execute-reset", "message")
-        if exec_msg:
-            lines.extend(["", f"Result: {exec_msg}"])
-
-        return "\n".join(lines)
+            logger.error(f"Failed to process {item.display_id}: {e}", exc_info=True)
+            await self._trigger.fail(item, str(e))
 
     def stop(self):
         """Stop the agent."""

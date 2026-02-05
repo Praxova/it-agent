@@ -18,6 +18,7 @@ from .execution_context import ExecutionContext, StepResult, ExecutionStatus
 from .condition_evaluator import ConditionEvaluator
 from .workflow_engine import WorkflowEngine
 from .runner import AgentRunner, run_agent
+from .triggers import TriggerProvider, TriggerType, WorkItem, TriggerProviderFactory
 from .integrations import (
     ServiceNowClient,
     ServiceNowCredentials,
@@ -51,6 +52,11 @@ __all__ = [
     # Runner
     "AgentRunner",
     "run_agent",
+    # Triggers
+    "TriggerProvider",
+    "TriggerType",
+    "WorkItem",
+    "TriggerProviderFactory",
     # Integrations
     "ServiceNowClient",
     "ServiceNowCredentials",
