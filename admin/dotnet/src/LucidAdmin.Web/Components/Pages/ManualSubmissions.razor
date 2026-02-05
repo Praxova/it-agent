@@ -1,0 +1,295 @@
+@page "/manual-submissions"
+@attribute [Authorize]
+@using LucidAdmin.Web.Models
+@using System.Text.Json
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Test Workflows - Lucid Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Test Workflows</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        Submit manual work items to test agent workflows without ServiceNow.
+    </MudText>
+
+    @* Submit Form *@
+    <MudExpansionPanels Class="mb-4">
+        <MudExpansionPanel Text="Submit New Work Item" IsInitiallyExpanded="true">
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSelect @bind-Value="_selectedAgentId" Label="Agent" T="Guid?" Required="true" Class="mb-2">
+                        @foreach (var agent in _agents.Where(a => a.IsEnabled))
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)agent.Id)">
+                                @(agent.DisplayName ?? agent.Name)
+                            </MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_requester" Label="Requester" Class="mb-2"
+                                  HelperText="e.g., luke.skywalker" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_title" Label="Title" Required="true" Class="mb-2"
+                                  HelperText="Short description of the request" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description" Label="Description" Lines="3" Class="mb-2"
+                                  HelperText="Full description of the work item" />
+                </MudItem>
+                <MudItem xs="12" Class="d-flex justify-end">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="SubmitWorkItem" Disabled="_submitting"
+                               StartIcon="@Icons.Material.Filled.Send">
+                        @(_submitting ? "Submitting..." : "Submit")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+    @* Results Table *@
+    <MudText Typo="Typo.h6" Class="mb-2">Recent Submissions</MudText>
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudTable Items="_submissions" Hover="true" Breakpoint="Breakpoint.Sm"
+                  Loading="_refreshing" Dense="true">
+            <HeaderContent>
+                <MudTh>ID</MudTh>
+                <MudTh>Title</MudTh>
+                <MudTh>Agent</MudTh>
+                <MudTh>Requester</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Submitted</MudTh>
+                <MudTh>Duration</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudLink OnClick="@(() => ShowDetails(context))">
+                        @context.Id.ToString()[..8]...
+                    </MudLink>
+                </MudTd>
+                <MudTd>@context.Title</MudTd>
+                <MudTd>@context.AgentName</MudTd>
+                <MudTd>@(context.Requester ?? "-")</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="MudBlazor.Size.Small"
+                             Color="@GetStatusColor(context.Status)">
+                        @context.Status
+                    </MudChip>
+                </MudTd>
+                <MudTd>@FormatTime(context.SubmittedAt)</MudTd>
+                <MudTd>@FormatDuration(context)</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2">No submissions yet. Submit a work item above to get started.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    }
+
+    @* Detail Panel *@
+    @if (_selectedSubmission != null)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                <MudText Typo="Typo.h6">Submission Details</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _selectedSubmission = null)" />
+            </MudStack>
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption">ID</MudText>
+                    <MudText>@_selectedSubmission.Id</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption">Status</MudText>
+                    <MudChip T="string" Color="@GetStatusColor(_selectedSubmission.Status)">@_selectedSubmission.Status</MudChip>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption">Submitted</MudText>
+                    <MudText>@_selectedSubmission.SubmittedAt.ToString("g")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption">Picked Up</MudText>
+                    <MudText>@(_selectedSubmission.PickedUpAt?.ToString("g") ?? "-")</MudText>
+                </MudItem>
+                @if (_selectedSubmission.ResultStatus != null)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption">Result</MudText>
+                        <MudText>@_selectedSubmission.ResultMessage</MudText>
+                    </MudItem>
+                }
+                @if (_selectedSubmission.ResultDetailsJson != null)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption">Details</MudText>
+                        <MudTextField Value="@_selectedSubmission.ResultDetailsJson" Lines="5" ReadOnly="true"
+                                      Variant="Variant.Outlined" Class="mt-1" />
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<AgentListItem> _agents = new();
+    private List<SubmissionListItem> _submissions = new();
+    private SubmissionListItem? _selectedSubmission;
+
+    // Form fields
+    private Guid? _selectedAgentId;
+    private string _title = "";
+    private string? _description;
+    private string? _requester;
+
+    // State
+    private bool _loading = true;
+    private bool _submitting = false;
+    private bool _refreshing = false;
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAgents();
+        await LoadSubmissions();
+        _loading = false;
+
+        // Auto-refresh every 5 seconds
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                _refreshing = true;
+                StateHasChanged();
+                await LoadSubmissions();
+                _refreshing = false;
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadAgents()
+    {
+        try
+        {
+            _agents = await Http.GetFromJsonAsync<List<AgentListItem>>("/api/agents") ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load agents: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadSubmissions()
+    {
+        try
+        {
+            _submissions = await Http.GetFromJsonAsync<List<SubmissionListItem>>("/api/manual-submissions?limit=50") ?? new();
+        }
+        catch { }
+    }
+
+    private async Task SubmitWorkItem()
+    {
+        if (!_selectedAgentId.HasValue || string.IsNullOrWhiteSpace(_title))
+        {
+            Snackbar.Add("Please select an agent and provide a title", Severity.Warning);
+            return;
+        }
+
+        _submitting = true;
+        try
+        {
+            var request = new
+            {
+                agentId = _selectedAgentId,
+                title = _title,
+                description = _description,
+                requester = _requester
+            };
+
+            var response = await Http.PostAsJsonAsync("/api/manual-submissions", request);
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Work item submitted successfully", Severity.Success);
+                _title = "";
+                _description = null;
+                _requester = null;
+                await LoadSubmissions();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Submit failed: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private void ShowDetails(SubmissionListItem item)
+    {
+        _selectedSubmission = item;
+    }
+
+    private Color GetStatusColor(string status) => status switch
+    {
+        "Pending" => Color.Warning,
+        "InProgress" => Color.Info,
+        "Completed" => Color.Success,
+        "Escalated" => Color.Warning,
+        "Failed" => Color.Error,
+        _ => Color.Default
+    };
+
+    private string FormatTime(DateTime dt)
+    {
+        var elapsed = DateTime.UtcNow - dt;
+        if (elapsed.TotalMinutes < 1) return "just now";
+        if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
+        return dt.ToString("g");
+    }
+
+    private string FormatDuration(SubmissionListItem item)
+    {
+        if (item.CompletedAt.HasValue)
+        {
+            var duration = item.CompletedAt.Value - item.SubmittedAt;
+            if (duration.TotalSeconds < 60) return $"{duration.TotalSeconds:F1}s";
+            return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+        }
+        if (item.Status is "InProgress" or "Pending")
+            return "...";
+        return "-";
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    // Local DTOs for this page
+    private record AgentListItem(Guid Id, string Name, string? DisplayName, bool IsEnabled);
+
+    private record SubmissionListItem(
+        Guid Id, Guid AgentId, string AgentName,
+        string Title, string Description, string? Requester,
+        string Status, DateTime SubmittedAt, DateTime? PickedUpAt, DateTime? CompletedAt,
+        string? ResultStatus, string? ResultMessage, string? ResultDetailsJson
+    );
+}

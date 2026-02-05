@@ -61,7 +61,14 @@ class TriggerProviderFactory:
             )
 
         elif trigger_type == TriggerType.MANUAL:
-            return ManualTriggerProvider()
+            admin_portal_url = kwargs.get("admin_portal_url", "")
+            agent_name = kwargs.get("agent_name", "")
+            if not admin_portal_url or not agent_name:
+                raise ValueError("Manual trigger requires admin_portal_url and agent_name")
+            return ManualTriggerProvider(
+                admin_portal_url=admin_portal_url,
+                agent_name=agent_name,
+            )
 
         else:
             raise ValueError(

@@ -153,6 +153,8 @@ class AgentRunner:
             trigger_type=trigger_type,
             snow_client=self._snow_client,
             assignment_group=assignment_group,
+            admin_portal_url=self.admin_portal_url,
+            agent_name=self.agent_name,
         )
         logger.info(f"Created trigger provider: {self._trigger.display_name}")
 

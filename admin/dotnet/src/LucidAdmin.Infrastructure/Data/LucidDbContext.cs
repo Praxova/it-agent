@@ -22,6 +22,7 @@ public class LucidDbContext : DbContext
     public DbSet<StepTransition> StepTransitions { get; set; } = null!;
     public DbSet<WorkflowRulesetMapping> WorkflowRulesetMappings { get; set; } = null!;
     public DbSet<StepRulesetMapping> StepRulesetMappings { get; set; } = null!;
+    public DbSet<ManualSubmission> ManualSubmissions { get; set; } = null!;
 
     public LucidDbContext(DbContextOptions<LucidDbContext> options) : base(options) { }
 

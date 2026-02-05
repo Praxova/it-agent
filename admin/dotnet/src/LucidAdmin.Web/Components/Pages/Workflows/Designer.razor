@@ -101,6 +101,12 @@
                             @* Type-specific configuration *@
                             @switch (_selectedStep.StepType)
                             {
+                                case StepType.Trigger:
+                                    <MudSelect @bind-Value="_stepConfig_TriggerSource" Label="Trigger Source" Class="mb-2" T="string">
+                                        <MudSelectItem Value="@("servicenow")">ServiceNow</MudSelectItem>
+                                        <MudSelectItem Value="@("manual")">Manual</MudSelectItem>
+                                    </MudSelect>
+                                    break;
                                 case StepType.Execute:
                                     <MudTextField @bind-Value="_stepConfig_Capability"
                                                   Label="Capability" Class="mb-2"
@@ -219,6 +225,7 @@
     private string? _stepConfig_Capability;
     private string? _stepConfig_Condition;
     private string? _stepConfig_NotifyType;
+    private string? _stepConfig_TriggerSource;
 
     // Example sets
     private List<ExampleSetResponse> _exampleSets = new();
@@ -469,6 +476,7 @@
         _stepConfig_Capability = null;
         _stepConfig_Condition = null;
         _stepConfig_NotifyType = null;
+        _stepConfig_TriggerSource = null;
         _stepConfig_SubWorkflowId = null;
         _stepConfig_SubWorkflowName = null;
 
@@ -490,6 +498,8 @@
                             _stepConfig_Condition = cond.GetString();
                         if (config.TryGetValue("notifyType", out var nt))
                             _stepConfig_NotifyType = nt.GetString();
+                        if (config.TryGetValue("source", out var src))
+                            _stepConfig_TriggerSource = src.GetString();
                         if (config.TryGetValue("workflow_id", out var wfId) && Guid.TryParse(wfId.GetString(), out var guid))
                             _stepConfig_SubWorkflowId = guid;
                         if (config.TryGetValue("workflow_name", out var wfName))
@@ -690,6 +700,9 @@
 
         switch (_selectedStep.StepType)
         {
+            case StepType.Trigger when !string.IsNullOrEmpty(_stepConfig_TriggerSource):
+                config["source"] = _stepConfig_TriggerSource;
+                break;
             case StepType.Execute when !string.IsNullOrEmpty(_stepConfig_Capability):
                 config["capability"] = _stepConfig_Capability;
                 break;
