@@ -4,6 +4,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Web.Api.Models.Requests;
 using LucidAdmin.Web.Api.Models.Responses;
+using LucidAdmin.Web.Services;
 using LucidAdmin.Infrastructure.Data;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -33,6 +34,20 @@ public static class WorkflowEndpoints
                 new(StepType.SubWorkflow, "Sub-Workflow", "Execute another workflow as a sub-step", "📋", "#009688", 1, 2)
             };
             return Results.Ok(stepTypes);
+        });
+
+        // Get workflow requirements (what service accounts does this workflow need?)
+        group.MapGet("/{id:guid}/requirements", async (
+            Guid id,
+            IWorkflowDefinitionRepository repo,
+            WorkflowRequirementsService requirementsService) =>
+        {
+            var workflow = await repo.GetFullWorkflowAsync(id);
+            if (workflow == null)
+                return Results.NotFound();
+
+            var requirements = requirementsService.ComputeRequirements(workflow);
+            return Results.Ok(requirements);
         });
 
         // List all workflows

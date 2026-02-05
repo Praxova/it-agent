@@ -60,6 +60,8 @@ public class AgentExportService : IAgentExportService
         return await _db.Agents
             .Include(a => a.LlmServiceAccount)
             .Include(a => a.ServiceNowAccount)
+            .Include(a => a.ServiceAccountBindings)
+                .ThenInclude(b => b.ServiceAccount)
             .Include(a => a.WorkflowDefinition)
                 .ThenInclude(w => w!.Steps.OrderBy(s => s.SortOrder))
                     .ThenInclude(s => s.OutgoingTransitions.OrderBy(t => t.SortOrder))
@@ -112,13 +114,24 @@ public class AgentExportService : IAgentExportService
 
     private AgentExportInfo MapAgentInfo(Agent agent)
     {
+        var bindings = agent.ServiceAccountBindings?
+            .Select(b => new ServiceAccountBindingExportInfo
+            {
+                Role = b.Role,
+                Qualifier = b.Qualifier,
+                ServiceAccountName = b.ServiceAccount?.Name ?? "",
+                ProviderType = b.ServiceAccount?.Provider ?? ""
+            })
+            .ToList();
+
         return new AgentExportInfo
         {
             Id = agent.Id,
             Name = agent.Name,
             DisplayName = agent.DisplayName,
             Description = agent.Description,
-            IsEnabled = agent.IsEnabled
+            IsEnabled = agent.IsEnabled,
+            ServiceAccountBindings = bindings?.Any() == true ? bindings : null
         };
     }
 

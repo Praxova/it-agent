@@ -134,6 +134,16 @@ class ServiceNowExportInfo(ProviderExportInfo):
     assignment_group: str | None = Field(None, alias="assignmentGroup")
 
 
+class ServiceAccountBindingInfo(BaseModel):
+    """Dynamic service account binding for an agent."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    role: str
+    qualifier: str | None = None
+    service_account_name: str = Field(alias="serviceAccountName")
+    provider_type: str = Field(alias="providerType")
+
+
 class AgentBasicInfo(BaseModel):
     """Basic agent information."""
     model_config = ConfigDict(populate_by_name=True)
@@ -143,6 +153,9 @@ class AgentBasicInfo(BaseModel):
     display_name: str | None = Field(None, alias="displayName")
     description: str | None = None
     is_enabled: bool = Field(alias="isEnabled")
+    service_account_bindings: list[ServiceAccountBindingInfo] = Field(
+        default_factory=list, alias="serviceAccountBindings"
+    )
 
 
 class AgentExport(BaseModel):

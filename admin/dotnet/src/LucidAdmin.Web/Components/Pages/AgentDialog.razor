@@ -1,4 +1,5 @@
 @using LucidAdmin.Web.Models
+@using LucidAdmin.Web.Services
 @using LucidAdmin.Core.Entities
 @using LucidAdmin.Core.Interfaces.Services
 @inject IAgentService AgentService
@@ -10,9 +11,258 @@
     <DialogContent>
         <MudForm @ref="_form" @bind-IsValid="@_isValid">
             <MudGrid>
+                <!-- WORKFLOW CONFIGURATION (moved to top) -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.h6" Class="mb-2">Workflow Configuration</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    @if (_loadingWorkflows)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else if (_workflows.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-2">
+                            No active workflows available. Create one in the Workflows page first.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudSelect T="Guid?"
+                                   Label="Workflow Definition"
+                                   Value="_model.WorkflowDefinitionId"
+                                   ValueChanged="OnWorkflowChanged"
+                                   Clearable="true"
+                                   HelperText="Select the workflow this agent will execute">
+                            @foreach (var wf in _workflows)
+                            {
+                                <MudSelectItem Value="@((Guid?)wf.Id)">
+                                    @(wf.DisplayName ?? wf.Name) (v@(wf.Version))
+                                </MudSelectItem>
+                            }
+                        </MudSelect>
+                    }
+                </MudItem>
+
+                @if (_loadingRequirements)
+                {
+                    <MudItem xs="12">
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-2" />
+                    </MudItem>
+                }
+
+                @if (_requirements != null)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mt-2">
+                            This workflow requires:
+                        </MudText>
+                    </MudItem>
+
+                    @* LLM Provider — shown when workflow has Classify steps *@
+                    @if (_requirements.NeedsLlm)
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" Class="mt-2 mb-2">LLM Provider</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            @if (_loadingAccounts)
+                            {
+                                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                            }
+                            else if (_llmServiceAccounts.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                    No LLM service accounts configured. Create one in Service Accounts first.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudSelect T="Guid?"
+                                           Label="LLM Provider"
+                                           @bind-Value="_model.LlmServiceAccountId"
+                                           Clearable="true"
+                                           HelperText="Select the LLM provider for ticket classification">
+                                    @foreach (var account in _llmServiceAccounts)
+                                    {
+                                        <MudSelectItem Value="@((Guid?)account.Id)">
+                                            @(account.DisplayName ?? account.Name) (@account.Provider)
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            }
+                        </MudItem>
+                    }
+
+                    @* ServiceNow Trigger — shown when trigger type is servicenow *@
+                    @if (_requirements.TriggerType?.Equals("servicenow", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" Class="mt-2 mb-2">Trigger: ServiceNow</MudText>
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            @if (_loadingAccounts)
+                            {
+                                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                            }
+                            else if (_serviceNowAccounts.Count == 0)
+                            {
+                                <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                    No ServiceNow service accounts configured. Create one in Service Accounts first.
+                                </MudAlert>
+                            }
+                            else
+                            {
+                                <MudSelect T="Guid?"
+                                           Label="ServiceNow Connection"
+                                           @bind-Value="_model.ServiceNowAccountId"
+                                           Clearable="true"
+                                           HelperText="Select the ServiceNow instance to monitor">
+                                    @foreach (var account in _serviceNowAccounts)
+                                    {
+                                        <MudSelectItem Value="@((Guid?)account.Id)">
+                                            @(account.DisplayName ?? account.Name) (@account.Provider)
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            }
+                        </MudItem>
+
+                        @if (_requirements.NeedsAssignmentGroup)
+                        {
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_model.AssignmentGroup"
+                                              Label="Assignment Group"
+                                              HelperText="ServiceNow queue/group to monitor (e.g., 'Helpdesk')" />
+                            </MudItem>
+                        }
+                    }
+
+                    @* Manual Trigger — informational *@
+                    @if (_requirements.TriggerType?.Equals("manual", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" Class="mt-2 mb-2">Trigger: Manual</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                No service account needed. Work items are submitted manually via the Test Workflows page.
+                            </MudAlert>
+                        </MudItem>
+                    }
+
+                    @* Required Capabilities — read-only info *@
+                    @if (_requirements.RequiredCapabilities.Any())
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" Class="mt-2 mb-2">Execution Capabilities</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                Requires: @string.Join(", ", _requirements.RequiredCapabilities)
+                                <br />
+                                <MudText Typo="Typo.caption">Resolved at runtime via capability routing.</MudText>
+                            </MudAlert>
+                        </MudItem>
+                    }
+
+                    @* Sub-Workflows indicator *@
+                    @if (_requirements.HasSubWorkflows)
+                    {
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.h6" Class="mt-2 mb-2">Sub-Workflows</MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                This workflow uses sub-workflows. Their requirements are resolved
+                                through this agent's configuration.
+                            </MudAlert>
+                        </MudItem>
+                    }
+                }
+
+                @* No workflow selected — show static fallback sections *@
+                @if (_requirements == null && !_model.WorkflowDefinitionId.HasValue && !_loadingRequirements)
+                {
+                    <!-- LLM CONFIGURATION (static fallback) -->
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.h6" Class="mt-4 mb-2">LLM Configuration</MudText>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        @if (_loadingAccounts)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                        }
+                        else if (_llmServiceAccounts.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                No LLM service accounts configured. Create one in Service Accounts first.
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudSelect T="Guid?"
+                                       Label="LLM Provider"
+                                       @bind-Value="_model.LlmServiceAccountId"
+                                       Clearable="true"
+                                       HelperText="Select the LLM provider for ticket classification">
+                                @foreach (var account in _llmServiceAccounts)
+                                {
+                                    <MudSelectItem Value="@((Guid?)account.Id)">
+                                        @(account.DisplayName ?? account.Name) (@account.Provider)
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </MudItem>
+
+                    <!-- SERVICENOW CONFIGURATION (static fallback) -->
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.h6" Class="mt-4 mb-2">ServiceNow Integration</MudText>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        @if (_loadingAccounts)
+                        {
+                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                        }
+                        else if (_serviceNowAccounts.Count == 0)
+                        {
+                            <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                No ServiceNow service accounts configured. Create one in Service Accounts first.
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudSelect T="Guid?"
+                                       Label="ServiceNow Connection"
+                                       @bind-Value="_model.ServiceNowAccountId"
+                                       Clearable="true"
+                                       HelperText="Select the ServiceNow instance to monitor">
+                                @foreach (var account in _serviceNowAccounts)
+                                {
+                                    <MudSelectItem Value="@((Guid?)account.Id)">
+                                        @(account.DisplayName ?? account.Name) (@account.Provider)
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_model.AssignmentGroup"
+                                      Label="Assignment Group"
+                                      HelperText="ServiceNow queue/group to monitor (e.g., 'Helpdesk')" />
+                    </MudItem>
+                }
+
                 <!-- IDENTITY -->
                 <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Class="mb-2">Identity</MudText>
+                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Identity</MudText>
                 </MudItem>
 
                 <MudItem xs="12">
@@ -37,116 +287,10 @@
                                   HelperText="Optional description of this agent's purpose" />
                 </MudItem>
 
-                <!-- Host Name (optional - populated at runtime) -->
                 <MudItem xs="12">
                     <MudTextField @bind-Value="_model.HostName"
                                   Label="Host Name (Optional)"
                                   HelperText="Hostname where agent runs (auto-populated at runtime if not specified)" />
-                </MudItem>
-
-                <!-- LLM CONFIGURATION -->
-                <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">LLM Configuration</MudText>
-                </MudItem>
-
-                <MudItem xs="12">
-                    @if (_loadingAccounts)
-                    {
-                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                    }
-                    else if (_llmServiceAccounts.Count == 0)
-                    {
-                        <MudAlert Severity="Severity.Warning" Class="mb-2">
-                            No LLM service accounts configured. Create one in Service Accounts first.
-                        </MudAlert>
-                    }
-                    else
-                    {
-                        <MudSelect T="Guid?"
-                                   Label="LLM Provider"
-                                   @bind-Value="_model.LlmServiceAccountId"
-                                   Clearable="true"
-                                   HelperText="Select the LLM provider for ticket classification">
-                            @foreach (var account in _llmServiceAccounts)
-                            {
-                                <MudSelectItem Value="@((Guid?)account.Id)">
-                                    @(account.DisplayName ?? account.Name) (@account.Provider)
-                                </MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                </MudItem>
-
-                <!-- SERVICENOW CONFIGURATION -->
-                <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">ServiceNow Integration</MudText>
-                </MudItem>
-
-                <MudItem xs="12">
-                    @if (_loadingAccounts)
-                    {
-                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                    }
-                    else if (_serviceNowAccounts.Count == 0)
-                    {
-                        <MudAlert Severity="Severity.Warning" Class="mb-2">
-                            No ServiceNow service accounts configured. Create one in Service Accounts first.
-                        </MudAlert>
-                    }
-                    else
-                    {
-                        <MudSelect T="Guid?"
-                                   Label="ServiceNow Connection"
-                                   @bind-Value="_model.ServiceNowAccountId"
-                                   Clearable="true"
-                                   HelperText="Select the ServiceNow instance to monitor">
-                            @foreach (var account in _serviceNowAccounts)
-                            {
-                                <MudSelectItem Value="@((Guid?)account.Id)">
-                                    @(account.DisplayName ?? account.Name) (@account.Provider)
-                                </MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
-                </MudItem>
-
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_model.AssignmentGroup"
-                                  Label="Assignment Group"
-                                  HelperText="ServiceNow queue/group to monitor (e.g., 'Helpdesk')" />
-                </MudItem>
-
-                <!-- WORKFLOW CONFIGURATION -->
-                <MudItem xs="12">
-                    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Workflow</MudText>
-                </MudItem>
-
-                <MudItem xs="12">
-                    @if (_loadingWorkflows)
-                    {
-                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                    }
-                    else if (_workflows.Count == 0)
-                    {
-                        <MudAlert Severity="Severity.Warning" Class="mb-2">
-                            No active workflows available. Create one in the Workflows page first.
-                        </MudAlert>
-                    }
-                    else
-                    {
-                        <MudSelect T="Guid?"
-                                   Label="Workflow Definition"
-                                   @bind-Value="_model.WorkflowDefinitionId"
-                                   Clearable="true"
-                                   HelperText="Select the workflow this agent will execute when processing tickets">
-                            @foreach (var wf in _workflows)
-                            {
-                                <MudSelectItem Value="@((Guid?)wf.Id)">
-                                    @(wf.DisplayName ?? wf.Name) (v@(wf.Version))
-                                </MudSelectItem>
-                            }
-                        </MudSelect>
-                    }
                 </MudItem>
 
                 <!-- STATUS -->
@@ -162,16 +306,6 @@
                         Disabled agents will not process tickets
                     </MudText>
                 </MudItem>
-
-                <!-- Configuration Warning -->
-                @if (!_model.LlmServiceAccountId.HasValue && !_model.ServiceNowAccountId.HasValue)
-                {
-                    <MudItem xs="12">
-                        <MudAlert Severity="Severity.Info" Class="mt-2">
-                            This agent will require both LLM and ServiceNow configuration to process tickets.
-                        </MudAlert>
-                    </MudItem>
-                }
             </MudGrid>
         </MudForm>
     </DialogContent>
@@ -205,10 +339,12 @@
     private bool _saving;
     private bool _loadingAccounts;
     private bool _loadingWorkflows;
+    private bool _loadingRequirements;
     private AgentFormModel _model = new();
     private List<ServiceAccountListItem> _llmServiceAccounts = new();
     private List<ServiceAccountListItem> _serviceNowAccounts = new();
     private List<WorkflowListItem> _workflows = new();
+    private WorkflowRequirements? _requirements;
 
     protected override async Task OnInitializedAsync()
     {
@@ -217,6 +353,43 @@
         if (ExistingAgent != null)
         {
             _model = AgentFormModel.FromResponse(ExistingAgent);
+
+            // Load requirements for existing workflow
+            if (_model.WorkflowDefinitionId.HasValue)
+            {
+                await LoadRequirements(_model.WorkflowDefinitionId.Value);
+            }
+        }
+    }
+
+    private async Task OnWorkflowChanged(Guid? workflowId)
+    {
+        _model.WorkflowDefinitionId = workflowId;
+        _requirements = null;
+
+        if (workflowId.HasValue)
+        {
+            await LoadRequirements(workflowId.Value);
+        }
+    }
+
+    private async Task LoadRequirements(Guid workflowId)
+    {
+        _loadingRequirements = true;
+        StateHasChanged();
+        try
+        {
+            _requirements = await Http.GetFromJsonAsync<WorkflowRequirements>(
+                $"/api/v1/workflows/{workflowId}/requirements");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load workflow requirements: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loadingRequirements = false;
+            StateHasChanged();
         }
     }
 

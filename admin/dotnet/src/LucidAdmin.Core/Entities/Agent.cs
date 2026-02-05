@@ -101,6 +101,15 @@ public class Agent : BaseEntity
     /// </summary>
     public bool IsEnabled { get; set; } = true;
 
+    // === Service Account Bindings (Dynamic) ===
+
+    /// <summary>
+    /// Dynamic service account assignments based on workflow requirements.
+    /// Supplements the fixed LlmServiceAccountId and ServiceNowAccountId fields.
+    /// </summary>
+    public ICollection<AgentServiceAccountBinding> ServiceAccountBindings { get; set; }
+        = new List<AgentServiceAccountBinding>();
+
     // === Navigation Properties ===
 
     public ICollection<AuditEvent> AuditEvents { get; set; } = new List<AuditEvent>();

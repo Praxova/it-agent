@@ -29,6 +29,15 @@ public record AgentExportInfo
     public string? DisplayName { get; init; }
     public string? Description { get; init; }
     public required bool IsEnabled { get; init; }
+    public List<ServiceAccountBindingExportInfo>? ServiceAccountBindings { get; init; }
+}
+
+public record ServiceAccountBindingExportInfo
+{
+    public required string Role { get; init; }
+    public string? Qualifier { get; init; }
+    public required string ServiceAccountName { get; init; }
+    public required string ProviderType { get; init; }
 }
 
 public record CredentialReference
