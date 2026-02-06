@@ -383,12 +383,17 @@ class AgentRunner:
 
         if not items:
             logger.debug("No new work items")
+            # Still poll for approval decisions even when no new tickets
+            await self._poll_approvals()
             return
 
         logger.info(f"Found {len(items)} new work items")
 
         for item in items:
             await self._process_work_item(item)
+
+        # Poll for approval decisions
+        await self._poll_approvals()
 
     async def _process_work_item(self, item: WorkItem):
         """Process a single work item through the workflow."""
@@ -411,6 +416,10 @@ class AgentRunner:
                 self._tickets_succeeded += 1
                 logger.info(f"{item.display_id} completed successfully")
                 await self._trigger.complete(item, context)
+
+            elif context.status == ExecutionStatus.SUSPENDED:
+                logger.info(f"{item.display_id} suspended (approval pending)")
+                # Don't count as processed yet — will resume after approval
 
             elif context.status == ExecutionStatus.ESCALATED:
                 self._tickets_escalated += 1
@@ -438,6 +447,98 @@ class AgentRunner:
             self._last_error = str(e)
             logger.error(f"Failed to process {item.display_id}: {e}", exc_info=True)
             await self._trigger.fail(item, str(e))
+
+    async def _poll_approvals(self):
+        """Poll Admin Portal for actionable approval decisions."""
+        if not self._engine:
+            return
+
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.admin_portal_url}/api/approvals/actionable"
+                params = {"agentName": self.agent_name}
+                response = await client.get(url, params=params, timeout=10.0)
+
+                if response.status_code == 404:
+                    # Endpoint not available (older portal), skip silently
+                    return
+                response.raise_for_status()
+                decisions = response.json()
+
+            if not decisions:
+                return
+
+            logger.info(f"Found {len(decisions)} approval decisions to process")
+
+            for decision in decisions:
+                await self._process_approval_decision(decision)
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 404:
+                logger.warning(f"Approval poll failed: {e}")
+        except Exception as e:
+            logger.debug(f"Approval poll error (portal may not support approvals): {e}")
+
+    async def _process_approval_decision(self, decision: dict):
+        """Process a single approval decision."""
+        import json as _json
+
+        approval_id = decision.get("id")
+        status = decision.get("status", "")
+        ticket_id = decision.get("ticketId", "")
+        resume_after = decision.get("resumeAfterStep", "")
+        context_json = decision.get("contextSnapshotJson") or decision.get("contextSnapshot", "{}")
+
+        # Parse context snapshot
+        if isinstance(context_json, str):
+            context_snapshot = _json.loads(context_json)
+        else:
+            context_snapshot = context_json
+
+        # Get ticket data from snapshot or use minimal
+        ticket_data = context_snapshot.get("_ticket_data", {})
+
+        try:
+            if status in ("Approved", "AutoApproved"):
+                logger.info(f"Resuming workflow for ticket {ticket_id} (approval {approval_id}: {status})")
+                context = await self._engine.resume(
+                    context_snapshot=context_snapshot,
+                    ticket_id=ticket_id,
+                    ticket_data=ticket_data,
+                    resume_after_step=resume_after,
+                    outcome="approved",
+                )
+                # Track stats
+                self._tickets_processed += 1
+                if context.status == ExecutionStatus.COMPLETED:
+                    self._tickets_succeeded += 1
+                elif context.status == ExecutionStatus.ESCALATED:
+                    self._tickets_escalated += 1
+                else:
+                    self._tickets_failed += 1
+
+            elif status in ("Rejected", "TimedOut"):
+                logger.info(f"Approval {status.lower()} for ticket {ticket_id}, escalating")
+                self._tickets_processed += 1
+                self._tickets_escalated += 1
+
+            # Acknowledge the approval so it doesn't appear again
+            await self._acknowledge_approval(approval_id)
+
+        except Exception as e:
+            logger.error(f"Failed to process approval {approval_id}: {e}", exc_info=True)
+            self._tickets_failed += 1
+
+    async def _acknowledge_approval(self, approval_id: str):
+        """Acknowledge an approval decision so it won't be returned again."""
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.admin_portal_url}/api/approvals/{approval_id}/acknowledge"
+                response = await client.post(url, json={"agentName": self.agent_name}, timeout=10.0)
+                if response.status_code < 400:
+                    logger.debug(f"Acknowledged approval {approval_id}")
+        except Exception as e:
+            logger.warning(f"Failed to acknowledge approval {approval_id}: {e}")
 
     def stop(self):
         """Stop the agent."""

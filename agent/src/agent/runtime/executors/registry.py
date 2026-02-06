@@ -13,6 +13,7 @@ from .notify import NotifyExecutor
 from .escalate import EscalateExecutor
 from .end import EndExecutor
 from .sub_workflow import SubWorkflowExecutor
+from .approval import ApprovalExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class ExecutorRegistry:
             EscalateExecutor(),
             EndExecutor(),
             SubWorkflowExecutor(),
+            ApprovalExecutor(),
         ]
 
         for executor in builtins:

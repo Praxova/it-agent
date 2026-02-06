@@ -164,6 +164,16 @@ class WorkflowEngine:
             result = await self._execute_step(current_step, context)
             context.record_step_result(result)
 
+            # Check for suspended state (approval pending)
+            if result.status == ExecutionStatus.SUSPENDED:
+                if is_sub_workflow:
+                    context._sub_workflow_status = ExecutionStatus.SUSPENDED
+                else:
+                    context.status = ExecutionStatus.SUSPENDED
+                logger.info(f"Workflow suspended at step {current_step.name} "
+                            f"(approval pending, ticket: {ticket_id})")
+                break
+
             # Check for terminal states
             if result.status == ExecutionStatus.FAILED:
                 if is_sub_workflow:
@@ -247,6 +257,128 @@ class WorkflowEngine:
             )
             result.fail(str(e))
             return result
+
+    async def resume(
+        self,
+        context_snapshot: dict[str, Any],
+        ticket_id: str,
+        ticket_data: dict[str, Any],
+        resume_after_step: str,
+        outcome: str = "approved",
+    ) -> ExecutionContext:
+        """
+        Resume a suspended workflow after approval decision.
+
+        Rebuilds execution context from the stored snapshot,
+        sets the approval outcome, and continues execution
+        from the step after the approval node.
+
+        Args:
+            context_snapshot: Saved context variables dict
+            ticket_id: Ticket being processed
+            ticket_data: Original ticket data
+            resume_after_step: Name of the Approval step to resume after
+            outcome: "approved" or "rejected"
+
+        Returns:
+            ExecutionContext with results from remaining steps
+        """
+        if not self.export.workflow:
+            raise WorkflowExecutionError("No workflow defined in agent export")
+
+        # Create fresh execution context
+        context = ExecutionContext(
+            ticket_id=ticket_id,
+            ticket_data=ticket_data,
+            llm_driver=self.llm_driver,
+            admin_portal_url=self.admin_portal_url,
+        )
+
+        # Restore variables from snapshot
+        context.variables = dict(context_snapshot)
+        # Remove internal keys that shouldn't be in variables
+        context.variables.pop("_ticket_data", None)
+
+        # Set outcome from approval decision
+        context.variables["outcome"] = outcome
+
+        # Inject integration points
+        context.servicenow_client = self.servicenow_client
+        context.capability_router = self.capability_router
+        context.status = ExecutionStatus.RUNNING
+
+        # Initialize workflow stack
+        if self.export.workflow:
+            context.workflow_stack.append(self.export.workflow.name)
+
+        # Store export for sub-workflow resolution
+        context._agent_export = self.export
+
+        # Find the approval step
+        approval_step = self._steps.get(resume_after_step)
+        if not approval_step:
+            logger.warning(f"Resume step '{resume_after_step}' not found in workflow")
+            context.complete()
+            return context
+
+        # Find next step after the approval step using transitions
+        next_step = await self._find_next_step(resume_after_step, context)
+        if not next_step:
+            logger.warning(f"No transition from '{resume_after_step}' for outcome '{outcome}'")
+            context.complete()
+            return context
+
+        wf_name = self.export.workflow.name if self.export.workflow else "unknown"
+        logger.info(f"Resuming workflow '{wf_name}' for ticket {ticket_id} "
+                     f"after step '{resume_after_step}' with outcome '{outcome}'")
+
+        # Execute from the next step using the same loop logic
+        current_step = next_step
+        max_steps = 100
+        step_count = 0
+
+        while current_step and step_count < max_steps:
+            step_count += 1
+            context.current_step = current_step.name
+
+            logger.info(f"Executing step: {current_step.name} ({current_step.step_type})")
+
+            result = await self._execute_step(current_step, context)
+            context.record_step_result(result)
+
+            # Check for suspended state (another approval)
+            if result.status == ExecutionStatus.SUSPENDED:
+                context.status = ExecutionStatus.SUSPENDED
+                logger.info(f"Workflow suspended at step {current_step.name} "
+                            f"(approval pending, ticket: {ticket_id})")
+                break
+
+            if result.status == ExecutionStatus.FAILED:
+                context.fail(result.error or "Step failed")
+                break
+
+            if current_step.step_type == StepType.END:
+                context.complete()
+                break
+
+            if current_step.step_type == StepType.ESCALATE:
+                context.escalate(result.output.get("reason", "Escalated by workflow"))
+                break
+
+            next_step = await self._find_next_step(current_step.name, context)
+            if next_step is None:
+                logger.info(f"No outgoing transition from {current_step.name}, completing")
+                context.complete()
+                break
+
+            current_step = next_step
+
+        if step_count >= max_steps:
+            context.fail("Maximum step count exceeded - possible infinite loop")
+
+        logger.info(f"Resumed workflow complete: {context.status} "
+                     f"(workflow: {wf_name})")
+        return context
 
     async def _find_next_step(
         self,

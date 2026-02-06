@@ -19,6 +19,7 @@ class StepType(str, Enum):
     CONDITION = "Condition"
     END = "End"
     SUB_WORKFLOW = "SubWorkflow"  # Phase C2 will add executor
+    APPROVAL = "Approval"
 
 
 class CredentialReference(BaseModel):

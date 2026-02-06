@@ -15,6 +15,7 @@ class ExecutionStatus(str, Enum):
     COMPLETED = "completed"
     ESCALATED = "escalated"
     FAILED = "failed"
+    SUSPENDED = "suspended"
 
 
 @dataclass

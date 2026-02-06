@@ -10,6 +10,7 @@ from .notify import NotifyExecutor
 from .escalate import EscalateExecutor
 from .end import EndExecutor
 from .sub_workflow import SubWorkflowExecutor
+from .approval import ApprovalExecutor
 from .registry import ExecutorRegistry, default_registry
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "EscalateExecutor",
     "EndExecutor",
     "SubWorkflowExecutor",
+    "ApprovalExecutor",
     "ExecutorRegistry",
     "default_registry",
 ]
