@@ -566,6 +566,16 @@ public class WorkflowSeeder
             WorkflowDefinitionId = workflow.Id
         };
 
+        var approveClassification = new WorkflowStep
+        {
+            Name = "approve-classification",
+            DisplayName = "Approve Classification",
+            StepType = StepType.Approval,
+            ConfigurationJson = """{"description_template": "Classified as {{ticket_type}} (confidence: {{confidence}}). Affected user: {{affected_user}}. Proposed action: route to {{ticket_type}} sub-workflow.", "auto_approve_threshold": 0.99, "timeout_minutes": 60, "timeout_action": "escalate", "context_fields_to_display": ["ticket_type", "confidence", "affected_user", "reasoning"]}""",
+            PositionX = 550, PositionY = 300, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
         // SubWorkflow steps — each references a sub-workflow by name and ID
         var subPwReset = new WorkflowStep
         {
@@ -577,7 +587,7 @@ public class WorkflowSeeder
                 workflow_id = pwResetSub.Id.ToString(),
                 workflow_name = pwResetSub.Name
             }),
-            PositionX = 650, PositionY = 150, SortOrder = 3,
+            PositionX = 800, PositionY = 150, SortOrder = 4,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -591,7 +601,7 @@ public class WorkflowSeeder
                 workflow_id = groupMembershipSub.Id.ToString(),
                 workflow_name = groupMembershipSub.Name
             }),
-            PositionX = 650, PositionY = 300, SortOrder = 4,
+            PositionX = 800, PositionY = 300, SortOrder = 5,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -605,7 +615,7 @@ public class WorkflowSeeder
                 workflow_id = filePermissionsSub.Id.ToString(),
                 workflow_name = filePermissionsSub.Name
             }),
-            PositionX = 650, PositionY = 450, SortOrder = 5,
+            PositionX = 800, PositionY = 450, SortOrder = 6,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -615,7 +625,7 @@ public class WorkflowSeeder
             DisplayName = "Escalate Unknown",
             StepType = StepType.Escalate,
             ConfigurationJson = """{"targetGroup": "Level 2 Support", "reason": "Unrecognized ticket type"}""",
-            PositionX = 650, PositionY = 600, SortOrder = 6,
+            PositionX = 800, PositionY = 600, SortOrder = 7,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -625,7 +635,7 @@ public class WorkflowSeeder
             DisplayName = "Resolved",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "resolved"}""",
-            PositionX = 950, PositionY = 300, SortOrder = 7,
+            PositionX = 1100, PositionY = 300, SortOrder = 8,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -635,13 +645,13 @@ public class WorkflowSeeder
             DisplayName = "Escalated",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "pending"}""",
-            PositionX = 950, PositionY = 600, SortOrder = 8,
+            PositionX = 1100, PositionY = 600, SortOrder = 9,
             WorkflowDefinitionId = workflow.Id
         };
 
         _context.WorkflowSteps.AddRange(new[]
         {
-            trigger, classify,
+            trigger, classify, approveClassification,
             subPwReset, subGroupMembership, subFilePermissions,
             escalate, endSuccess, endEscalated
         });
@@ -654,23 +664,32 @@ public class WorkflowSeeder
             new() { FromStepId = trigger.Id, ToStepId = classify.Id,
                     Label = "start", OutputIndex = 0 },
 
-            // Classify → SubWorkflows (based on ticket_type from classification)
-            new() { FromStepId = classify.Id, ToStepId = subPwReset.Id,
-                    Condition = "ticket_type == 'password-reset'",
-                    Label = "password-reset", OutputIndex = 0 },
-
-            new() { FromStepId = classify.Id, ToStepId = subGroupMembership.Id,
-                    Condition = "ticket_type == 'group-membership'",
-                    Label = "group-membership", OutputIndex = 1 },
-
-            new() { FromStepId = classify.Id, ToStepId = subFilePermissions.Id,
-                    Condition = "ticket_type == 'file-permissions'",
-                    Label = "file-permissions", OutputIndex = 2 },
+            // Classify → Approval (high confidence)
+            new() { FromStepId = classify.Id, ToStepId = approveClassification.Id,
+                    Condition = "confidence >= 0.7",
+                    Label = "high-confidence", OutputIndex = 0 },
 
             // Classify → Escalate (unknown type or low confidence)
             new() { FromStepId = classify.Id, ToStepId = escalate.Id,
                     Condition = "ticket_type == 'unknown' or confidence < 0.7",
-                    Label = "unknown", OutputIndex = 3 },
+                    Label = "unknown", OutputIndex = 1 },
+
+            // Approval → SubWorkflows (approved, routed by ticket_type)
+            new() { FromStepId = approveClassification.Id, ToStepId = subPwReset.Id,
+                    Condition = "ticket_type == 'password-reset'",
+                    Label = "password-reset", OutputIndex = 0 },
+
+            new() { FromStepId = approveClassification.Id, ToStepId = subGroupMembership.Id,
+                    Condition = "ticket_type == 'group-membership'",
+                    Label = "group-membership", OutputIndex = 0 },
+
+            new() { FromStepId = approveClassification.Id, ToStepId = subFilePermissions.Id,
+                    Condition = "ticket_type == 'file-permissions'",
+                    Label = "file-permissions", OutputIndex = 0 },
+
+            // Approval → Escalate (rejected)
+            new() { FromStepId = approveClassification.Id, ToStepId = escalate.Id,
+                    Label = "rejected", OutputIndex = 1 },
 
             // SubWorkflow completed → End-Success
             new() { FromStepId = subPwReset.Id, ToStepId = endSuccess.Id,
@@ -734,7 +753,7 @@ public class WorkflowSeeder
             _logger.LogInformation("Linked dispatcher workflow to test-agent");
         }
 
-        _logger.LogInformation("Seeded dispatcher workflow: {Name} with 8 steps, 13 transitions", name);
+        _logger.LogInformation("Seeded dispatcher workflow: {Name} with 9 steps, 14 transitions", name);
     }
 
     private async Task<WorkflowDefinition?> SeedPasswordResetSubWorkflow()
@@ -763,8 +782,8 @@ public class WorkflowSeeder
         _context.WorkflowDefinitions.Add(workflow);
         await _context.SaveChangesAsync();
 
-        // Steps: Validate → Execute → Notify → End-Success
-        //                                    ↘ Escalate → End-Escalated
+        // Steps: Validate → [Approval] → Execute → Notify → End-Success
+        //                                        ↘ Escalate → End-Escalated
         var validate = new WorkflowStep
         {
             Name = "validate-request",
@@ -775,13 +794,23 @@ public class WorkflowSeeder
             WorkflowDefinitionId = workflow.Id
         };
 
+        var approveReset = new WorkflowStep
+        {
+            Name = "approve-reset",
+            DisplayName = "Approve Password Reset",
+            StepType = StepType.Approval,
+            ConfigurationJson = """{"description_template": "Reset password for {{affected_user}}. Tool: ad-password-reset.", "auto_approve_threshold": 0.99, "timeout_minutes": 30, "timeout_action": "escalate", "context_fields_to_display": ["affected_user", "ticket_type", "confidence"]}""",
+            PositionX = 250, PositionY = 200, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
         var execute = new WorkflowStep
         {
             Name = "execute-reset",
             DisplayName = "Reset Password",
             StepType = StepType.Execute,
             ConfigurationJson = """{"capability": "ad-password-reset", "generateTempPassword": true}""",
-            PositionX = 350, PositionY = 200, SortOrder = 2,
+            PositionX = 450, PositionY = 200, SortOrder = 3,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -791,7 +820,7 @@ public class WorkflowSeeder
             DisplayName = "Notify User",
             StepType = StepType.Notify,
             ConfigurationJson = """{"template": "password-reset-success", "channel": "ticket-comment", "includeTempPassword": true}""",
-            PositionX = 600, PositionY = 200, SortOrder = 3,
+            PositionX = 700, PositionY = 200, SortOrder = 4,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -801,7 +830,7 @@ public class WorkflowSeeder
             DisplayName = "Escalate",
             StepType = StepType.Escalate,
             ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
-            PositionX = 350, PositionY = 400, SortOrder = 4,
+            PositionX = 450, PositionY = 400, SortOrder = 5,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -811,7 +840,7 @@ public class WorkflowSeeder
             DisplayName = "Completed",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "resolved", "resolution_code": "Automated - Password Reset"}""",
-            PositionX = 850, PositionY = 200, SortOrder = 5,
+            PositionX = 950, PositionY = 200, SortOrder = 6,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -821,17 +850,19 @@ public class WorkflowSeeder
             DisplayName = "Escalated",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "pending", "resolution_code": "Escalated"}""",
-            PositionX = 600, PositionY = 400, SortOrder = 6,
+            PositionX = 700, PositionY = 400, SortOrder = 7,
             WorkflowDefinitionId = workflow.Id
         };
 
-        _context.WorkflowSteps.AddRange(new[] { validate, execute, notify, escalate, endSuccess, endEscalated });
+        _context.WorkflowSteps.AddRange(new[] { validate, approveReset, execute, notify, escalate, endSuccess, endEscalated });
         await _context.SaveChangesAsync();
 
         var transitions = new List<StepTransition>
         {
-            new() { FromStepId = validate.Id, ToStepId = execute.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
+            new() { FromStepId = validate.Id, ToStepId = approveReset.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
             new() { FromStepId = validate.Id, ToStepId = escalate.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
+            new() { FromStepId = approveReset.Id, ToStepId = execute.Id, Label = "approved", OutputIndex = 0 },
+            new() { FromStepId = approveReset.Id, ToStepId = escalate.Id, Label = "rejected", OutputIndex = 1 },
             new() { FromStepId = execute.Id, ToStepId = notify.Id, Condition = "success == true", Label = "success", OutputIndex = 0 },
             new() { FromStepId = execute.Id, ToStepId = escalate.Id, Condition = "success == false", Label = "failed", OutputIndex = 1 },
             new() { FromStepId = notify.Id, ToStepId = endSuccess.Id, Label = "done", OutputIndex = 0 },
@@ -857,7 +888,7 @@ public class WorkflowSeeder
         }
 
         await _context.SaveChangesAsync();
-        _logger.LogInformation("Seeded sub-workflow: {Name} with 6 steps", name);
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 7 steps", name);
         return workflow;
     }
 
