@@ -1,0 +1,603 @@
+@page "/approvals"
+@attribute [Authorize]
+@using System.Text.Json
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Approvals - Lucid Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Approval Queue</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        Review and decide on pending agent actions before they are executed.
+    </MudText>
+
+    @* Stats Bar *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Pending</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Warning">@(_stats?.PendingCount ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Auto-Approved Today</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Success">@(_stats?.AutoApprovedToday ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Human-Approved Today</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Info">@(_stats?.HumanApprovedToday ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Rejected Today</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Error">@(_stats?.RejectedToday ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Avg Wait</MudText>
+                <MudText Typo="Typo.h5">@FormatAvgWait(_stats?.AvgWaitMinutes)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="2">
+            <MudPaper Class="pa-3 d-flex flex-column align-center" Elevation="1">
+                <MudText Typo="Typo.caption">Timed Out Today</MudText>
+                <MudText Typo="Typo.h5" Color="Color.Warning">@(_stats?.TimedOutToday ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* Filters Row *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4" md="3">
+            <MudSelect @bind-Value="_statusFilter" Label="Status" T="string"
+                        Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem T="string" Value="@("")">All</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Pending")">Pending</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Approved")">Approved</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Rejected")">Rejected</MudSelectItem>
+                <MudSelectItem T="string" Value="@("AutoApproved")">Auto-Approved</MudSelectItem>
+                <MudSelectItem T="string" Value="@("TimedOut")">Timed Out</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Cancelled")">Cancelled</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3">
+            <MudTextField @bind-Value="_agentFilter" Label="Agent Name" Clearable="true"
+                          Variant="Variant.Outlined" Dense="true" />
+        </MudItem>
+        <MudItem xs="12" sm="4" md="3" Class="d-flex align-end">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                       OnClick="RefreshData" StartIcon="@Icons.Material.Filled.Refresh"
+                       Disabled="_refreshing">
+                Refresh
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @* Approvals Table *@
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudTable ServerData="LoadApprovals" @ref="_table" Hover="true" Dense="true"
+                  Breakpoint="Breakpoint.Sm" Loading="_refreshing"
+                  RowsPerPage="_pageSize" T="ApprovalListItem">
+            <HeaderContent>
+                <MudTh>Ticket</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh>Workflow</MudTh>
+                <MudTh>Proposed Action</MudTh>
+                <MudTh>Confidence</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Waiting Since</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>
+                    <MudLink OnClick="@(() => ShowDetails(context))">@context.TicketId</MudLink>
+                </MudTd>
+                <MudTd>@TruncateText(context.TicketShortDescription, 40)</MudTd>
+                <MudTd>@context.WorkflowName</MudTd>
+                <MudTd>@TruncateText(context.ProposedAction, 60)</MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="MudBlazor.Size.Small"
+                             Color="@GetConfidenceColor(context.Confidence)">
+                        @(context.Confidence.HasValue ? context.Confidence.Value.ToString("P0") : "N/A")
+                    </MudChip>
+                </MudTd>
+                <MudTd>
+                    <MudChip T="string" Size="MudBlazor.Size.Small"
+                             Color="@GetStatusColor(context.Status)">
+                        @FormatStatus(context.Status)
+                    </MudChip>
+                </MudTd>
+                <MudTd>@FormatTime(context.CreatedAt)</MudTd>
+                <MudTd>
+                    @if (context.Status == "Pending")
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success"
+                                       Size="MudBlazor.Size.Small" Title="Approve"
+                                       OnClick="@(() => QuickDecide(context, "Approved"))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Cancel" Color="Color.Error"
+                                       Size="MudBlazor.Size.Small" Title="Reject"
+                                       OnClick="@(() => QuickDecide(context, "Rejected"))" />
+                    }
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Typo="Typo.body2">No approvals found matching the current filters.</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    }
+
+    @* Detail Panel *@
+    @if (_selectedApproval != null)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-3">
+                <MudText Typo="Typo.h6">Approval Details</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                               OnClick="@(() => { _selectedApproval = null; _selectedDetail = null; _decisionComment = null; })" />
+            </MudStack>
+
+            <MudGrid>
+                @* Row 1 *@
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Ticket ID</MudText>
+                    <MudText>@_selectedApproval.TicketId</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Status</MudText>
+                    <MudChip T="string" Color="@GetStatusColor(_selectedApproval.Status)">@FormatStatus(_selectedApproval.Status)</MudChip>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Workflow</MudText>
+                    <MudText>@_selectedApproval.WorkflowName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Step</MudText>
+                    <MudText>@_selectedApproval.StepName</MudText>
+                </MudItem>
+
+                @* Row 2 *@
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Agent</MudText>
+                    <MudText>@_selectedApproval.AgentName</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Confidence</MudText>
+                    <MudChip T="string" Size="MudBlazor.Size.Small"
+                             Color="@GetConfidenceColor(_selectedApproval.Confidence)">
+                        @(_selectedApproval.Confidence.HasValue ? _selectedApproval.Confidence.Value.ToString("P1") : "N/A")
+                    </MudChip>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Auto-Approve Threshold</MudText>
+                    <MudText>@(_selectedApproval.AutoApproveThreshold.HasValue ? _selectedApproval.AutoApproveThreshold.Value.ToString("P0") : "None")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Was Auto-Approved</MudText>
+                    <MudText>@(_selectedApproval.WasAutoApproved ? "Yes" : "No")</MudText>
+                </MudItem>
+
+                @* Row 3 *@
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Created</MudText>
+                    <MudText>@_selectedApproval.CreatedAt.ToString("g")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Decided At</MudText>
+                    <MudText>@(_selectedApproval.DecidedAt?.ToString("g") ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Decided By</MudText>
+                    <MudText>@(_selectedApproval.DecidedBy ?? "-")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudText Typo="Typo.caption">Expires At</MudText>
+                    <MudText>
+                        @if (_selectedApproval.ExpiresAt.HasValue)
+                        {
+                            @_selectedApproval.ExpiresAt.Value.ToString("g")
+                            @if (_selectedApproval.Status == "Pending")
+                            {
+                                var remaining = _selectedApproval.ExpiresAt.Value - DateTime.UtcNow;
+                                if (remaining.TotalMinutes > 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Warning"> (@FormatDuration(remaining) remaining)</MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Error"> (expired)</MudText>
+                                }
+                            }
+                        }
+                        else
+                        {
+                            @("-")
+                        }
+                    </MudText>
+                </MudItem>
+
+                @* Row 4: Proposed Action *@
+                <MudItem xs="12">
+                    <MudText Typo="Typo.caption">Proposed Action</MudText>
+                    <MudPaper Class="pa-3 mt-1" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
+                        <MudText>@_selectedApproval.ProposedAction</MudText>
+                    </MudPaper>
+                </MudItem>
+
+                @* Row 5: Decision *@
+                @if (_selectedApproval.Decision != null)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption">Decision Comment</MudText>
+                        <MudText>@_selectedApproval.Decision</MudText>
+                    </MudItem>
+                }
+
+                @* Row 6: Context Snapshot *@
+                @if (_selectedDetail?.ContextSnapshot != null)
+                {
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.caption" Class="mb-1">Context Snapshot</MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="max-height: 300px; overflow-y: auto;">
+                            <thead>
+                                <tr>
+                                    <th>Key</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var kvp in _selectedDetail.ContextSnapshot
+                                    .Where(k => !k.Key.StartsWith("_"))
+                                    .OrderBy(k => k.Key))
+                                {
+                                    <tr>
+                                        <td><strong>@kvp.Key</strong></td>
+                                        <td>@FormatContextValue(kvp.Value)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                }
+                else if (_selectedDetail == null && _selectedApproval != null)
+                {
+                    <MudItem xs="12">
+                        <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" />
+                        <MudText Typo="Typo.caption" Class="ml-2" Style="display: inline;">Loading context...</MudText>
+                    </MudItem>
+                }
+
+                @* Row 7: Action buttons *@
+                @if (_selectedApproval.Status == "Pending")
+                {
+                    <MudItem xs="12">
+                        <MudDivider Class="my-2" />
+                        <MudGrid>
+                            <MudItem xs="12" sm="8">
+                                <MudTextField @bind-Value="_decisionComment" Label="Comment (optional)"
+                                              Variant="Variant.Outlined" Dense="true" />
+                            </MudItem>
+                            <MudItem xs="12" sm="4" Class="d-flex align-end gap-2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                           OnClick="@(() => DetailDecide("Approved"))"
+                                           Disabled="_deciding"
+                                           StartIcon="@Icons.Material.Filled.CheckCircle">
+                                    Approve
+                                </MudButton>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                                           OnClick="@(() => DetailDecide("Rejected"))"
+                                           Disabled="_deciding"
+                                           StartIcon="@Icons.Material.Filled.Cancel">
+                                    Reject
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    // State
+    private bool _loading = true;
+    private bool _refreshing = false;
+    private string _statusFilter = "Pending";
+    private string? _agentFilter;
+    private int _pageSize = 20;
+    private ApprovalStats? _stats;
+    private MudTable<ApprovalListItem>? _table;
+    private ApprovalListItem? _selectedApproval;
+    private ApprovalDetailItem? _selectedDetail;
+    private string? _decisionComment;
+    private bool _deciding = false;
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStats();
+        _loading = false;
+
+        // Auto-refresh every 5 seconds
+        _refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                if (_deciding) return; // Don't refresh while deciding
+                _refreshing = true;
+                StateHasChanged();
+                await LoadStats();
+                if (_selectedApproval == null && _table != null)
+                {
+                    await _table.ReloadServerData();
+                }
+                _refreshing = false;
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task<TableData<ApprovalListItem>> LoadApprovals(TableState state, CancellationToken ct)
+    {
+        try
+        {
+            var page = state.Page + 1; // MudTable is 0-indexed, API is 1-indexed
+            var pageSize = state.PageSize;
+
+            var url = $"/api/approvals?page={page}&pageSize={pageSize}";
+            if (!string.IsNullOrEmpty(_statusFilter))
+                url += $"&status={_statusFilter}";
+            if (!string.IsNullOrEmpty(_agentFilter))
+                url += $"&agentName={Uri.EscapeDataString(_agentFilter)}";
+
+            var response = await Http.GetFromJsonAsync<PaginatedResponse>(url, ct);
+            if (response != null)
+            {
+                return new TableData<ApprovalListItem>
+                {
+                    Items = response.Items,
+                    TotalItems = response.TotalCount
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load approvals: {ex.Message}", Severity.Error);
+        }
+
+        return new TableData<ApprovalListItem> { Items = new List<ApprovalListItem>(), TotalItems = 0 };
+    }
+
+    private async Task LoadStats()
+    {
+        try
+        {
+            _stats = await Http.GetFromJsonAsync<ApprovalStats>("/api/approvals/stats");
+        }
+        catch { }
+    }
+
+    private async Task RefreshData()
+    {
+        _refreshing = true;
+        await LoadStats();
+        if (_table != null)
+            await _table.ReloadServerData();
+        _refreshing = false;
+    }
+
+    private async Task ShowDetails(ApprovalListItem item)
+    {
+        _selectedApproval = item;
+        _selectedDetail = null;
+        _decisionComment = null;
+        StateHasChanged();
+
+        // Fetch full detail with context snapshot
+        try
+        {
+            _selectedDetail = await Http.GetFromJsonAsync<ApprovalDetailItem>($"/api/approvals/{item.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load details: {ex.Message}", Severity.Error);
+        }
+        StateHasChanged();
+    }
+
+    private async Task QuickDecide(ApprovalListItem item, string status)
+    {
+        _deciding = true;
+        try
+        {
+            var request = new { status, decidedBy = "admin" };
+            var response = await Http.PutAsJsonAsync($"/api/approvals/{item.Id}/decide", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Approval {status.ToLower()}", status == "Approved" ? Severity.Success : Severity.Info);
+                if (_table != null)
+                    await _table.ReloadServerData();
+                await LoadStats();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Decision failed: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deciding = false;
+        }
+    }
+
+    private async Task DetailDecide(string status)
+    {
+        if (_selectedApproval == null) return;
+
+        _deciding = true;
+        try
+        {
+            var request = new
+            {
+                status,
+                decision = _decisionComment,
+                decidedBy = "admin"
+            };
+            var response = await Http.PutAsJsonAsync($"/api/approvals/{_selectedApproval.Id}/decide", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Approval {status.ToLower()}", status == "Approved" ? Severity.Success : Severity.Info);
+                _selectedApproval = null;
+                _selectedDetail = null;
+                _decisionComment = null;
+                if (_table != null)
+                    await _table.ReloadServerData();
+                await LoadStats();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Decision failed: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _deciding = false;
+        }
+    }
+
+    // Helpers
+
+    private Color GetStatusColor(string status) => status switch
+    {
+        "Pending" => Color.Warning,
+        "Approved" => Color.Success,
+        "Rejected" => Color.Error,
+        "AutoApproved" => Color.Success,
+        "TimedOut" => Color.Warning,
+        "Cancelled" => Color.Default,
+        _ => Color.Default
+    };
+
+    private string FormatStatus(string status) => status switch
+    {
+        "AutoApproved" => "Auto-Approved",
+        "TimedOut" => "Timed Out",
+        _ => status
+    };
+
+    private Color GetConfidenceColor(decimal? confidence)
+    {
+        if (!confidence.HasValue) return Color.Error;
+        if (confidence.Value >= 0.90m) return Color.Success;
+        if (confidence.Value >= 0.70m) return Color.Warning;
+        return Color.Error;
+    }
+
+    private string FormatTime(DateTime dt)
+    {
+        var elapsed = DateTime.UtcNow - dt;
+        if (elapsed.TotalMinutes < 1) return "just now";
+        if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m ago";
+        if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
+        return dt.ToString("g");
+    }
+
+    private string FormatAvgWait(double? minutes)
+    {
+        if (!minutes.HasValue) return "-";
+        if (minutes.Value < 60) return $"{minutes.Value:F0}m";
+        var hours = (int)(minutes.Value / 60);
+        var mins = (int)(minutes.Value % 60);
+        return $"{hours}h {mins}m";
+    }
+
+    private string FormatDuration(TimeSpan ts)
+    {
+        if (ts.TotalMinutes < 60) return $"{(int)ts.TotalMinutes}m";
+        return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+    }
+
+    private static string TruncateText(string? text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text)) return "-";
+        return text.Length <= maxLength ? text : text[..maxLength] + "...";
+    }
+
+    private static string FormatContextValue(object? value)
+    {
+        if (value is null) return "null";
+        if (value is JsonElement el)
+        {
+            return el.ValueKind switch
+            {
+                JsonValueKind.String => el.GetString() ?? "",
+                JsonValueKind.Number => el.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Null => "null",
+                _ => el.GetRawText()
+            };
+        }
+        return value.ToString() ?? "";
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+
+    // Page-local DTOs
+
+    private record ApprovalStats(
+        int PendingCount, int AutoApprovedToday, int HumanApprovedToday,
+        int RejectedToday, int TimedOutToday, double? AvgWaitMinutes);
+
+    private record ApprovalListItem(
+        Guid Id, string WorkflowName, string StepName, string AgentName,
+        string TicketId, string? TicketShortDescription, string ProposedAction,
+        string ResumeAfterStep, Guid? WorkflowDefinitionId,
+        decimal? AutoApproveThreshold, decimal? Confidence, bool WasAutoApproved,
+        string Status, string? Decision, string? DecidedBy, DateTime? DecidedAt,
+        int? TimeoutMinutes, DateTime? ExpiresAt, DateTime? AcknowledgedAt,
+        DateTime CreatedAt, DateTime UpdatedAt);
+
+    private record ApprovalDetailItem(
+        Guid Id, string WorkflowName, string StepName, string AgentName,
+        string TicketId, string? TicketShortDescription, string ProposedAction,
+        Dictionary<string, object>? ContextSnapshot,
+        string ResumeAfterStep, Guid? WorkflowDefinitionId,
+        decimal? AutoApproveThreshold, decimal? Confidence, bool WasAutoApproved,
+        string Status, string? Decision, string? DecidedBy, DateTime? DecidedAt,
+        int? TimeoutMinutes, DateTime? ExpiresAt, DateTime? AcknowledgedAt,
+        DateTime CreatedAt, DateTime UpdatedAt);
+
+    private record PaginatedResponse(
+        List<ApprovalListItem> Items, int TotalCount, int Page, int PageSize);
+}
