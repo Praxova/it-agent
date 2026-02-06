@@ -202,6 +202,7 @@ public class AgentExportService : IAgentExportService
             Version = workflow.Version,
             TriggerType = workflow.TriggerType,
             TriggerConfig = ParseConfigJsonAsObject(workflow.TriggerConfigJson),
+            ExampleSetName = workflow.ExampleSet?.Name,
             Steps = workflow.Steps
                 .OrderBy(s => s.SortOrder)
                 .Select(MapStepInfo)
@@ -497,10 +498,11 @@ public class AgentExportService : IAgentExportService
 
     private string BuildExpectedOutputJson(Example example)
     {
-        // Build expected output as JSON
+        // Build expected output as JSON with kebab-case ticket types
+        // matching dispatcher transition conditions
         var output = new Dictionary<string, object?>
         {
-            ["ticket_type"] = example.ExpectedTicketType.ToString(),
+            ["ticket_type"] = TicketTypeToClassificationString(example.ExpectedTicketType),
             ["confidence"] = example.ExpectedConfidence,
             ["affected_user"] = example.ExpectedAffectedUser,
             ["target_group"] = example.ExpectedTargetGroup,
@@ -512,4 +514,17 @@ public class AgentExportService : IAgentExportService
 
         return JsonSerializer.Serialize(output);
     }
+
+    private static string TicketTypeToClassificationString(TicketType type) => type switch
+    {
+        TicketType.PasswordReset => "password-reset",
+        TicketType.GroupAccessAdd => "group-membership",
+        TicketType.GroupAccessRemove => "group-membership",
+        TicketType.FilePermissionGrant => "file-permissions",
+        TicketType.FilePermissionRevoke => "file-permissions",
+        TicketType.Unknown => "unknown",
+        TicketType.MultipleRequests => "unknown",
+        TicketType.OutOfScope => "unknown",
+        _ => "unknown"
+    };
 }

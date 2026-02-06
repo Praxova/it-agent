@@ -115,7 +115,7 @@ public class WorkflowSeeder
                 Name = "classify",
                 DisplayName = "Classify & Extract",
                 StepType = StepType.Classify,
-                ConfigurationJson = """{"model": "claude-sonnet-4-5", "temperature": 0.0, "extract_fields": ["affected_user", "caller_name", "confidence", "should_escalate", "escalation_reason"]}""",
+                ConfigurationJson = """{"use_example_set": "password-reset-examples", "model": "claude-sonnet-4-5", "temperature": 0.0, "extract_fields": ["affected_user", "caller_name", "confidence", "should_escalate", "escalation_reason"]}""",
                 PositionX = 300,
                 PositionY = 200,
                 DrawflowNodeId = 2,
@@ -381,7 +381,7 @@ public class WorkflowSeeder
         {
             Name = "classify-ticket",
             StepType = StepType.Classify,
-            ConfigurationJson = """{"useExampleSet": "password-reset-examples"}""",
+            ConfigurationJson = """{"use_example_set": "password-reset-examples"}""",
             PositionX = 300,
             PositionY = 300,
             SortOrder = 2,
@@ -561,7 +561,7 @@ public class WorkflowSeeder
             Name = "classify",
             DisplayName = "Classify Ticket",
             StepType = StepType.Classify,
-            ConfigurationJson = """{"extract_fields": ["ticket_type", "affected_user", "caller_name", "confidence", "should_escalate", "escalation_reason"]}""",
+            ConfigurationJson = """{"use_example_set": "it-dispatch-classification", "extract_fields": ["ticket_type", "affected_user", "caller_name", "confidence", "should_escalate", "escalation_reason"]}""",
             PositionX = 350, PositionY = 300, SortOrder = 2,
             WorkflowDefinitionId = workflow.Id
         };
@@ -902,7 +902,7 @@ public class WorkflowSeeder
             Name = "execute-group-change",
             DisplayName = "Modify Group Membership",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "ad-group-membership", "action": "add"}""",
+            ConfigurationJson = """{"capability": "ad-group-add", "action": "add"}""",
             PositionX = 350, PositionY = 200, SortOrder = 2,
             WorkflowDefinitionId = workflow.Id
         };
@@ -1023,7 +1023,7 @@ public class WorkflowSeeder
             Name = "execute-permissions",
             DisplayName = "Set File Permissions",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "file-permissions", "permission": "read"}""",
+            ConfigurationJson = """{"capability": "ntfs-permission-grant", "permission": "read"}""",
             PositionX = 350, PositionY = 200, SortOrder = 2,
             WorkflowDefinitionId = workflow.Id
         };

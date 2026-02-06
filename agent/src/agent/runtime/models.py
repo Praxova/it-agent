@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StepType(str, Enum):
@@ -93,6 +93,7 @@ class WorkflowExportInfo(BaseModel):
     description: str | None = None
     version: str
     trigger_type: str | None = Field(None, alias="triggerType")
+    example_set_name: str | None = Field(None, alias="exampleSetName")
     steps: list[WorkflowStepExportInfo] = []
     transitions: list[WorkflowTransitionExportInfo] = []
     ruleset_mappings: list[StepRulesetMapping] = Field(default_factory=list, alias="rulesetMappings")
@@ -156,6 +157,12 @@ class AgentBasicInfo(BaseModel):
     service_account_bindings: list[ServiceAccountBindingInfo] = Field(
         default_factory=list, alias="serviceAccountBindings"
     )
+
+    @field_validator("service_account_bindings", mode="before")
+    @classmethod
+    def _coerce_null_to_list(cls, v):
+        """Handle C# serializer sending null instead of [] for empty collections."""
+        return v if v is not None else []
 
 
 class AgentExport(BaseModel):

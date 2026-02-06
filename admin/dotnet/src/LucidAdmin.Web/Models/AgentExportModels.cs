@@ -77,6 +77,7 @@ public record WorkflowExportInfo
     public string? Version { get; init; }
     public string? TriggerType { get; init; }
     public Dictionary<string, object?>? TriggerConfig { get; init; }
+    public string? ExampleSetName { get; init; }
     public required List<WorkflowStepExportInfo> Steps { get; init; }
     public required List<WorkflowTransitionExportInfo> Transitions { get; init; }
     public required List<string> WorkflowRulesets { get; init; }
