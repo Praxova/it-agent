@@ -31,7 +31,8 @@ public static class WorkflowEndpoints
                 new(StepType.Escalate, "Escalate", "Escalate to human operator", "🚨", "#FF5722", 1, 1),
                 new(StepType.Condition, "Condition", "Branch based on condition", "❓", "#795548", 1, 2),
                 new(StepType.End, "End", "End of workflow path", "🏁", "#607D8B", 1, 0),
-                new(StepType.SubWorkflow, "Sub-Workflow", "Execute another workflow as a sub-step", "📋", "#009688", 1, 2)
+                new(StepType.SubWorkflow, "Sub-Workflow", "Execute another workflow as a sub-step", "📋", "#009688", 1, 2),
+                new(StepType.Approval, "Approval", "Human approval checkpoint with auto-approve threshold", "✋", "#FF8F00", 1, 2)
             };
             return Results.Ok(stepTypes);
         });

@@ -728,5 +728,5 @@ designer polish and demo readiness.
 | A1 | Data model + API endpoints | ✅ Complete | 2026-02-06 |
 | A2 | ApprovalExecutor + engine suspend/resume | ✅ Complete | 2026-02-06 |
 | A3 | Approval queue UI (Blazor) | ✅ Complete | 2026-02-06 |
-| A4 | Workflow designer integration | 🔲 Not Started | — |
+| A4 | Workflow designer integration | ✅ Complete | 2026-02-06 |
 | A5 | Seeded approval workflows | 🔲 Not Started | — |

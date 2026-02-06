@@ -74,6 +74,11 @@ public class WorkflowNodeModel : NodeModel
                 OutputPorts["escalated"] = AddPort(PortAlignment.Right);
                 break;
 
+            case StepType.Approval:
+                OutputPorts["approved"] = AddPort(PortAlignment.Right);
+                OutputPorts["rejected"] = AddPort(PortAlignment.Right);
+                break;
+
             case StepType.End:
                 // No outputs — terminal node
                 break;

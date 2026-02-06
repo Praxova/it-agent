@@ -72,6 +72,7 @@
         StepType.Condition => "#795548",
         StepType.End => "#607D8B",
         StepType.SubWorkflow => "#009688",
+        StepType.Approval => "#FF8F00",
         _ => "#666"
     };
 
@@ -88,6 +89,7 @@
         StepType.Condition => "❓",
         StepType.End => "🏁",
         StepType.SubWorkflow => "📋",
+        StepType.Approval => "✋",
         _ => "📦"
     };
 
@@ -105,6 +107,8 @@
         "done" => "Done",
         "completed" => "Completed",
         "escalated" => "Escalated",
+        "approved" => "Approved",
+        "rejected" => "Rejected",
         _ => portKey
     };
 }

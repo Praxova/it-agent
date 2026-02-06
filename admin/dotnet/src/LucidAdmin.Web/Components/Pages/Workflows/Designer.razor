@@ -151,6 +151,27 @@
                                         }
                                     }
                                     break;
+                                case StepType.Approval:
+                                    <MudTextField @bind-Value="_stepConfig_DescriptionTemplate"
+                                                  Label="Description Template" Lines="3" Class="mb-2"
+                                                  HelperText="Mustache template: {{ticket_type}}, {{confidence}}, {{affected_user}}" />
+                                    <MudNumericField @bind-Value="_stepConfig_AutoApproveThreshold"
+                                                     Label="Auto-Approve Threshold" Class="mb-2"
+                                                     Min="0.0m" Max="1.01m" Step="0.05m" Format="F2"
+                                                     T="decimal?"
+                                                     HelperText="Confidence >= threshold auto-approves. Leave empty or >1.0 to always require human." />
+                                    <MudNumericField @bind-Value="_stepConfig_TimeoutMinutes"
+                                                     Label="Timeout (minutes)" Class="mb-2"
+                                                     Min="0" T="int?"
+                                                     HelperText="Auto-escalate after N minutes. Empty = no timeout." />
+                                    <MudSelect @bind-Value="_stepConfig_TimeoutAction" Label="Timeout Action" Class="mb-2" T="string">
+                                        <MudSelectItem Value="@("escalate")">Escalate (follow rejected path)</MudSelectItem>
+                                        <MudSelectItem Value="@("auto_approve")">Auto-Approve (follow approved path)</MudSelectItem>
+                                    </MudSelect>
+                                    <MudTextField @bind-Value="_stepConfig_ContextFieldsToDisplay"
+                                                  Label="Context Fields to Display" Class="mb-2"
+                                                  HelperText="Comma-separated: ticket_type, confidence, affected_user, reasoning" />
+                                    break;
                             }
 
                             <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="MudBlazor.Size.Small"
@@ -236,6 +257,13 @@
     // Sub-workflow config fields
     private Guid? _stepConfig_SubWorkflowId;
     private string? _stepConfig_SubWorkflowName;
+
+    // Approval step config
+    private string? _stepConfig_DescriptionTemplate;
+    private decimal? _stepConfig_AutoApproveThreshold;
+    private int? _stepConfig_TimeoutMinutes;
+    private string _stepConfig_TimeoutAction = "escalate";
+    private string? _stepConfig_ContextFieldsToDisplay;
 
     // Node tracking
     private int _nextStepNumber = 1;
@@ -479,6 +507,11 @@
         _stepConfig_TriggerSource = null;
         _stepConfig_SubWorkflowId = null;
         _stepConfig_SubWorkflowName = null;
+        _stepConfig_DescriptionTemplate = null;
+        _stepConfig_AutoApproveThreshold = null;
+        _stepConfig_TimeoutMinutes = null;
+        _stepConfig_TimeoutAction = "escalate";
+        _stepConfig_ContextFieldsToDisplay = null;
 
         if (_selectedStep is not null)
         {
@@ -504,6 +537,18 @@
                             _stepConfig_SubWorkflowId = guid;
                         if (config.TryGetValue("workflow_name", out var wfName))
                             _stepConfig_SubWorkflowName = wfName.GetString();
+
+                        // Approval config
+                        if (config.TryGetValue("description_template", out var dt))
+                            _stepConfig_DescriptionTemplate = dt.GetString();
+                        if (config.TryGetValue("auto_approve_threshold", out var aat) && aat.TryGetDecimal(out var aatVal))
+                            _stepConfig_AutoApproveThreshold = aatVal;
+                        if (config.TryGetValue("timeout_minutes", out var tm) && tm.TryGetInt32(out var tmVal))
+                            _stepConfig_TimeoutMinutes = tmVal;
+                        if (config.TryGetValue("timeout_action", out var ta))
+                            _stepConfig_TimeoutAction = ta.GetString() ?? "escalate";
+                        if (config.TryGetValue("context_fields_to_display", out var cfd))
+                            _stepConfig_ContextFieldsToDisplay = cfd.GetString();
                     }
                 }
                 catch { }
@@ -719,6 +764,18 @@
                     config["workflow_id"] = subWf.Id.ToString();
                     config["workflow_name"] = subWf.Name;
                 }
+                break;
+            case StepType.Approval:
+                if (!string.IsNullOrEmpty(_stepConfig_DescriptionTemplate))
+                    config["description_template"] = _stepConfig_DescriptionTemplate;
+                if (_stepConfig_AutoApproveThreshold.HasValue)
+                    config["auto_approve_threshold"] = _stepConfig_AutoApproveThreshold.Value.ToString("F2");
+                if (_stepConfig_TimeoutMinutes.HasValue)
+                    config["timeout_minutes"] = _stepConfig_TimeoutMinutes.Value.ToString();
+                if (!string.IsNullOrEmpty(_stepConfig_TimeoutAction))
+                    config["timeout_action"] = _stepConfig_TimeoutAction;
+                if (!string.IsNullOrEmpty(_stepConfig_ContextFieldsToDisplay))
+                    config["context_fields_to_display"] = _stepConfig_ContextFieldsToDisplay;
                 break;
         }
 
