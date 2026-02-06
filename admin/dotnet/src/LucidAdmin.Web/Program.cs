@@ -332,6 +332,7 @@ app.MapRulesetEndpoints();
 app.MapExampleSetEndpoints();
 app.MapWorkflowEndpoints();
 app.MapManualSubmissionEndpoints();
+app.MapApprovalEndpoints();
 
 // Map Blazor
 app.MapRazorComponents<LucidAdmin.Web.Components.App>()

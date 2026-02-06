@@ -24,6 +24,7 @@ public class LucidDbContext : DbContext
     public DbSet<StepRulesetMapping> StepRulesetMappings { get; set; } = null!;
     public DbSet<ManualSubmission> ManualSubmissions { get; set; } = null!;
     public DbSet<AgentServiceAccountBinding> AgentServiceAccountBindings { get; set; } = null!;
+    public DbSet<ApprovalRequest> ApprovalRequests { get; set; } = null!;
 
     public LucidDbContext(DbContextOptions<LucidDbContext> options) : base(options) { }
 

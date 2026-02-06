@@ -36,5 +36,8 @@ public enum StepType
     End,
 
     /// <summary>Execute another workflow as a sub-step.</summary>
-    SubWorkflow
+    SubWorkflow,
+
+    /// <summary>Human-in-the-loop approval checkpoint.</summary>
+    Approval
 }
