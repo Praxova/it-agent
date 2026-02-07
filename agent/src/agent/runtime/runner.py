@@ -508,19 +508,43 @@ class AgentRunner:
                     resume_after_step=resume_after,
                     outcome="approved",
                 )
-                # Track stats
+                # Track stats and update ServiceNow
                 self._tickets_processed += 1
+                work_item = self._build_work_item_from_approval(decision)
+
                 if context.status == ExecutionStatus.COMPLETED:
                     self._tickets_succeeded += 1
+                    logger.info(f"{ticket_id} completed successfully after approval")
+                    await self._trigger.complete(work_item, context)
+
+                elif context.status == ExecutionStatus.SUSPENDED:
+                    # Another approval step encountered — don't count yet
+                    logger.info(f"{ticket_id} suspended again (another approval pending)")
+
                 elif context.status == ExecutionStatus.ESCALATED:
                     self._tickets_escalated += 1
+                    logger.info(f"{ticket_id} escalated after approval resume")
+                    await self._trigger.escalate(work_item, context)
+
                 else:
                     self._tickets_failed += 1
+                    logger.warning(f"{ticket_id} failed after approval resume: {context.status}")
+                    error_msg = f"Workflow failed after approval with status {context.status}"
+                    await self._trigger.fail(work_item, error_msg)
 
             elif status in ("Rejected", "TimedOut"):
                 logger.info(f"Approval {status.lower()} for ticket {ticket_id}, escalating")
                 self._tickets_processed += 1
                 self._tickets_escalated += 1
+                # Update ServiceNow with rejection/timeout
+                work_item = self._build_work_item_from_approval(decision)
+                rejection_context = ExecutionContext(ticket_id=ticket_id)
+                rejection_context.escalation_reason = (
+                    f"Approval {status.lower()}: {decision.get('decision', 'No reason provided')}"
+                )
+                rejection_context.set_variable("ticket_type", context_snapshot.get("ticket_type", "unknown"))
+                rejection_context.set_variable("confidence", context_snapshot.get("confidence", "N/A"))
+                await self._trigger.escalate(work_item, rejection_context)
 
             # Acknowledge the approval so it doesn't appear again
             await self._acknowledge_approval(approval_id)
@@ -539,6 +563,30 @@ class AgentRunner:
                     logger.debug(f"Acknowledged approval {approval_id}")
         except Exception as e:
             logger.warning(f"Failed to acknowledge approval {approval_id}: {e}")
+
+    def _build_work_item_from_approval(self, decision: dict) -> WorkItem:
+        """Reconstruct a WorkItem from an approval decision for trigger callbacks."""
+        import json as _json
+
+        ticket_id = decision.get("ticketId", "")
+        context_json = decision.get("contextSnapshotJson") or decision.get("contextSnapshot", "{}")
+        if isinstance(context_json, str):
+            context_snapshot = _json.loads(context_json)
+        else:
+            context_snapshot = context_json
+
+        ticket_data = context_snapshot.get("_ticket_data", {})
+
+        return WorkItem(
+            id=ticket_data.get("sys_id", ticket_id),
+            source_type=self._trigger.trigger_type if self._trigger else "servicenow",
+            data=ticket_data,
+            raw=None,
+            title=decision.get("ticketShortDescription", ""),
+            description=ticket_data.get("description", ""),
+            requester=ticket_data.get("caller_id", ""),
+            display_id=ticket_id,
+        )
 
     def stop(self):
         """Stop the agent."""

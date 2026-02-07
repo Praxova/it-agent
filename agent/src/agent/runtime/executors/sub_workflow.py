@@ -148,6 +148,15 @@ class SubWorkflowExecutor(BaseStepExecutor):
                 })
                 logger.info(f"Sub-workflow '{workflow_name}' completed successfully")
 
+            elif sub_status == ExecutionStatus.SUSPENDED:
+                # Approval step encountered in sub-workflow — propagate suspension
+                result.status = ExecutionStatus.SUSPENDED
+                result.output = {
+                    "outcome": "pending_approval",
+                    "sub_workflow_name": workflow_name,
+                }
+                logger.info(f"Sub-workflow '{workflow_name}' suspended (approval pending)")
+
             elif sub_status == ExecutionStatus.ESCALATED:
                 result.complete({
                     "outcome": "escalated",
