@@ -181,6 +181,37 @@
                             </MudButton>
                         </MudExpansionPanel>
                     }
+
+                    @* Selected Transition Properties *@
+                    @if (_selectedLink != null)
+                    {
+                        <MudExpansionPanel Text="Transition Properties" IsInitiallyExpanded="true">
+                            @{
+                                var srcPort = (_selectedLink.Source as SinglePortAnchor)?.Port;
+                                var tgtPort = (_selectedLink.Target as SinglePortAnchor)?.Port;
+                                var srcNode = srcPort?.Parent as WorkflowNodeModel;
+                                var tgtNode = tgtPort?.Parent as WorkflowNodeModel;
+                            }
+                            <MudText Typo="Typo.caption" Class="mb-2" Style="color: #888;">
+                                @(srcNode?.DisplayName ?? "?") → @(tgtNode?.DisplayName ?? "?")
+                            </MudText>
+
+                            <MudTextField Value="@_linkEdit_Label"
+                                          ValueChanged="@((string val) => { _linkEdit_Label = val; })"
+                                          Label="Label" Class="mb-2"
+                                          HelperText="Port name (e.g., approved, rejected, valid)" />
+
+                            <MudTextField Value="@_linkEdit_Condition"
+                                          ValueChanged="@((string val) => { _linkEdit_Condition = val; })"
+                                          Label="Condition" Lines="2" Class="mb-2"
+                                          HelperText="e.g., outcome == 'approved' and ticket_type == 'password-reset'" />
+
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="MudBlazor.Size.Small"
+                                       OnClick="DeleteSelectedLink" Class="mt-2">
+                                Delete Transition
+                            </MudButton>
+                        </MudExpansionPanel>
+                    }
                 </MudExpansionPanels>
 
                 @* Action Buttons *@
@@ -265,6 +296,18 @@
     private int? _stepConfig_TimeoutMinutes;
     private string _stepConfig_TimeoutAction = "escalate";
     private string? _stepConfig_ContextFieldsToDisplay;
+
+    // Link metadata tracking (Blazor.Diagrams LinkModel has no built-in metadata)
+    private Dictionary<BaseLinkModel, TransitionMetadata> _linkMetadata = new();
+    private BaseLinkModel? _selectedLink;
+    private string? _linkEdit_Label;
+    private string? _linkEdit_Condition;
+
+    private class TransitionMetadata
+    {
+        public string? Label { get; set; }
+        public string? Condition { get; set; }
+    }
 
     // Node tracking
     private int _nextStepNumber = 1;
@@ -416,6 +459,13 @@
                         new SinglePortAnchor(targetPort)
                     );
                     _diagram.Links.Add(link);
+
+                    // Preserve transition metadata from DB
+                    _linkMetadata[link] = new TransitionMetadata
+                    {
+                        Label = trans.Label,
+                        Condition = trans.Condition
+                    };
                 }
             }
         }
@@ -449,28 +499,69 @@
 
     private void OnSelectionChanged(SelectableModel? model)
     {
-        // Persist current step config BEFORE switching
+        // Persist current config BEFORE switching
         PersistCurrentStepConfig();
+        PersistCurrentLinkConfig();
 
         if (model is WorkflowNodeModel node && node.Selected)
         {
             _selectedStep = _steps.FirstOrDefault(s => s.Name == node.StepName);
+            _selectedLink = null;
             LoadStepConfig();
+        }
+        else if (model is BaseLinkModel link && link.Selected)
+        {
+            _selectedStep = null;
+            _selectedLink = link;
+            LoadLinkConfig();
         }
         else
         {
             _selectedStep = null;
+            _selectedLink = null;
         }
         InvokeAsync(StateHasChanged);
     }
 
     private void OnLinkAdded(BaseLinkModel link)
     {
-        // Link is being created, will be handled when complete
+        // Subscribe to target changes to detect when link connection completes
+        link.TargetChanged += OnLinkTargetChanged;
+    }
+
+    private void OnLinkTargetChanged(BaseLinkModel link, Blazor.Diagrams.Core.Anchors.Anchor oldTarget, Blazor.Diagrams.Core.Anchors.Anchor newTarget)
+    {
+        // Only process when link has both source and target
+        var sourcePort = (link.Source as SinglePortAnchor)?.Port;
+        var targetPort = (newTarget as SinglePortAnchor)?.Port;
+
+        if (sourcePort?.Parent is WorkflowNodeModel fromNode &&
+            targetPort?.Parent is WorkflowNodeModel)
+        {
+            // Find the port key name from the source node's OutputPorts dictionary
+            var portKey = fromNode.OutputPorts
+                .FirstOrDefault(kvp => kvp.Value == sourcePort).Key;
+
+            if (!_linkMetadata.ContainsKey(link))
+            {
+                _linkMetadata[link] = new TransitionMetadata
+                {
+                    Label = portKey,
+                    Condition = GenerateDefaultCondition(fromNode.StepType, portKey)
+                };
+            }
+        }
+        InvokeAsync(StateHasChanged);
     }
 
     private void OnLinkRemoved(BaseLinkModel link)
     {
+        link.TargetChanged -= OnLinkTargetChanged;
+        _linkMetadata.Remove(link);
+
+        if (_selectedLink == link)
+            _selectedLink = null;
+
         if (link is LinkModel linkModel)
         {
             var sourcePort = (linkModel.Source as SinglePortAnchor)?.Port;
@@ -654,8 +745,9 @@
         _saving = true;
         try
         {
-            // Persist current step config before rebuilding
+            // Persist current config before rebuilding
             PersistCurrentStepConfig();
+            PersistCurrentLinkConfig();
 
             // Build steps and transitions from diagram state
             BuildStepsAndTransitionsFromDiagram();
@@ -740,12 +832,15 @@
             if (sourcePort?.Parent is WorkflowNodeModel fromNode &&
                 targetPort?.Parent is WorkflowNodeModel toNode)
             {
+                // Look up stored metadata for this link
+                _linkMetadata.TryGetValue(link, out var metadata);
+
                 _transitions.Add(new StepTransitionDto(
                     null,
                     fromNode.StepName,
                     toNode.StepName,
-                    null, // label
-                    null, // condition
+                    metadata?.Label,
+                    metadata?.Condition,
                     fromNode.GetOutputIndex(sourcePort),
                     0     // input index (always 0, single ExecIn)
                 ));
@@ -846,6 +941,62 @@
         return approvalConfig.ToJsonString();
     }
 
+    private void LoadLinkConfig()
+    {
+        if (_selectedLink != null && _linkMetadata.TryGetValue(_selectedLink, out var metadata))
+        {
+            _linkEdit_Label = metadata.Label;
+            _linkEdit_Condition = metadata.Condition;
+        }
+        else
+        {
+            _linkEdit_Label = null;
+            _linkEdit_Condition = null;
+        }
+    }
+
+    private void PersistCurrentLinkConfig()
+    {
+        if (_selectedLink == null) return;
+
+        if (!_linkMetadata.ContainsKey(_selectedLink))
+            _linkMetadata[_selectedLink] = new TransitionMetadata();
+
+        _linkMetadata[_selectedLink].Label = _linkEdit_Label;
+        _linkMetadata[_selectedLink].Condition = _linkEdit_Condition;
+    }
+
+    private void DeleteSelectedLink()
+    {
+        if (_selectedLink != null)
+        {
+            _diagram.Links.Remove(_selectedLink);
+            _selectedLink = null;
+        }
+    }
+
+    private string? GenerateDefaultCondition(StepType stepType, string? portKey)
+    {
+        if (string.IsNullOrEmpty(portKey)) return null;
+
+        return (stepType, portKey) switch
+        {
+            (StepType.Approval, "approved") => "outcome == 'approved'",
+            (StepType.Approval, "rejected") => "outcome == 'rejected'",
+            (StepType.Validate, "valid") => "valid == true",
+            (StepType.Validate, "invalid") => "valid == false",
+            (StepType.Execute, "success") => "success == true",
+            (StepType.Execute, "failure") => "success == false",
+            (StepType.Condition, "true") => null,
+            (StepType.Condition, "false") => null,
+            (StepType.Classify, "high_confidence") => null,
+            (StepType.Classify, "low_confidence") => null,
+            (StepType.SubWorkflow, "completed") => "outcome == 'completed'",
+            (StepType.SubWorkflow, "escalated") => "outcome == 'escalated'",
+            _ => null
+        };
+    }
+
     private void OnSubWorkflowChanged(Guid? newValue)
     {
         _stepConfig_SubWorkflowId = newValue;
@@ -924,5 +1075,9 @@
         _diagram.Links.Added -= OnLinkAdded;
         _diagram.Links.Removed -= OnLinkRemoved;
         _diagram.Nodes.Removed -= OnNodeRemoved;
+        foreach (var link in _diagram.Links)
+        {
+            link.TargetChanged -= OnLinkTargetChanged;
+        }
     }
 }
