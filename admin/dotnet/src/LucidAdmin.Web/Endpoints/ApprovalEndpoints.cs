@@ -79,7 +79,7 @@ public static class ApprovalEndpoints
                 .OrderBy(a => a.CreatedAt)
                 .ToListAsync();
 
-            return Results.Ok(actionable.Select(MapToResponse));
+            return Results.Ok(actionable.Select(MapToDetailResponse));
         });
 
         // POST /api/approvals/{id}/acknowledge — Agent marks approval as consumed
