@@ -7,6 +7,7 @@
 @using LucidAdmin.Web.Components.WorkflowDesigner.Models
 @using LucidAdmin.Web.Components.WorkflowDesigner.Widgets
 @using System.Text.Json
+@using System.Text.Json.Nodes
 @using Blazor.Diagrams
 @using Blazor.Diagrams.Core
 @using Blazor.Diagrams.Core.Anchors
@@ -448,6 +449,9 @@
 
     private void OnSelectionChanged(SelectableModel? model)
     {
+        // Persist current step config BEFORE switching
+        PersistCurrentStepConfig();
+
         if (model is WorkflowNodeModel node && node.Selected)
         {
             _selectedStep = _steps.FirstOrDefault(s => s.Name == node.StepName);
@@ -548,7 +552,22 @@
                         if (config.TryGetValue("timeout_action", out var ta))
                             _stepConfig_TimeoutAction = ta.GetString() ?? "escalate";
                         if (config.TryGetValue("context_fields_to_display", out var cfd))
-                            _stepConfig_ContextFieldsToDisplay = cfd.GetString();
+                        {
+                            if (cfd.ValueKind == JsonValueKind.Array)
+                            {
+                                var items = new List<string>();
+                                foreach (var item in cfd.EnumerateArray())
+                                {
+                                    var s = item.GetString();
+                                    if (s != null) items.Add(s);
+                                }
+                                _stepConfig_ContextFieldsToDisplay = string.Join(", ", items);
+                            }
+                            else if (cfd.ValueKind == JsonValueKind.String)
+                            {
+                                _stepConfig_ContextFieldsToDisplay = cfd.GetString();
+                            }
+                        }
                     }
                 }
                 catch { }
@@ -635,11 +654,8 @@
         _saving = true;
         try
         {
-            // Update step configs before saving
-            if (_selectedStep is not null)
-            {
-                UpdateSelectedStepConfig();
-            }
+            // Persist current step config before rebuilding
+            PersistCurrentStepConfig();
 
             // Build steps and transitions from diagram state
             BuildStepsAndTransitionsFromDiagram();
@@ -737,52 +753,47 @@
         }
     }
 
-    private void UpdateSelectedStepConfig()
+    private void PersistCurrentStepConfig()
     {
         if (_selectedStep is null) return;
 
-        var config = new Dictionary<string, string>();
+        string? configJson = null;
 
         switch (_selectedStep.StepType)
         {
             case StepType.Trigger when !string.IsNullOrEmpty(_stepConfig_TriggerSource):
-                config["source"] = _stepConfig_TriggerSource;
+                configJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["source"] = _stepConfig_TriggerSource });
                 break;
             case StepType.Execute when !string.IsNullOrEmpty(_stepConfig_Capability):
-                config["capability"] = _stepConfig_Capability;
+                configJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["capability"] = _stepConfig_Capability });
                 break;
             case StepType.Condition when !string.IsNullOrEmpty(_stepConfig_Condition):
-                config["condition"] = _stepConfig_Condition;
+                configJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["condition"] = _stepConfig_Condition });
                 break;
             case StepType.Notify when !string.IsNullOrEmpty(_stepConfig_NotifyType):
-                config["notifyType"] = _stepConfig_NotifyType;
+                configJson = JsonSerializer.Serialize(new Dictionary<string, string> { ["notifyType"] = _stepConfig_NotifyType });
                 break;
             case StepType.SubWorkflow when _stepConfig_SubWorkflowId.HasValue:
                 var subWf = _availableWorkflows.FirstOrDefault(w => w.Id == _stepConfig_SubWorkflowId);
                 if (subWf != null)
                 {
-                    config["workflow_id"] = subWf.Id.ToString();
-                    config["workflow_name"] = subWf.Name;
+                    configJson = JsonSerializer.Serialize(new Dictionary<string, string>
+                    {
+                        ["workflow_id"] = subWf.Id.ToString(),
+                        ["workflow_name"] = subWf.Name
+                    });
                 }
                 break;
             case StepType.Approval:
-                if (!string.IsNullOrEmpty(_stepConfig_DescriptionTemplate))
-                    config["description_template"] = _stepConfig_DescriptionTemplate;
-                if (_stepConfig_AutoApproveThreshold.HasValue)
-                    config["auto_approve_threshold"] = _stepConfig_AutoApproveThreshold.Value.ToString("F2");
-                if (_stepConfig_TimeoutMinutes.HasValue)
-                    config["timeout_minutes"] = _stepConfig_TimeoutMinutes.Value.ToString();
-                if (!string.IsNullOrEmpty(_stepConfig_TimeoutAction))
-                    config["timeout_action"] = _stepConfig_TimeoutAction;
-                if (!string.IsNullOrEmpty(_stepConfig_ContextFieldsToDisplay))
-                    config["context_fields_to_display"] = _stepConfig_ContextFieldsToDisplay;
+                configJson = BuildApprovalConfigJson();
                 break;
         }
 
+        if (configJson == null) return;
+
         var index = _steps.FindIndex(s => s.Name == _selectedStep.Name);
-        if (index >= 0 && config.Count > 0)
+        if (index >= 0)
         {
-            var configJson = JsonSerializer.Serialize(config);
             _steps[index] = _steps[index] with { ConfigurationJson = configJson };
 
             // Also update the node model
@@ -802,6 +813,37 @@
                 }
             }
         }
+    }
+
+    private string BuildApprovalConfigJson()
+    {
+        // Start with existing config to preserve fields we don't have UI for
+        var existingConfigJson = _selectedStep?.ConfigurationJson;
+        JsonObject approvalConfig = new();
+        if (!string.IsNullOrEmpty(existingConfigJson))
+        {
+            try { approvalConfig = JsonNode.Parse(existingConfigJson)?.AsObject() ?? new(); }
+            catch { approvalConfig = new(); }
+        }
+
+        if (!string.IsNullOrEmpty(_stepConfig_DescriptionTemplate))
+            approvalConfig["description_template"] = _stepConfig_DescriptionTemplate;
+        if (_stepConfig_AutoApproveThreshold.HasValue)
+            approvalConfig["auto_approve_threshold"] = (double)_stepConfig_AutoApproveThreshold.Value;
+        if (_stepConfig_TimeoutMinutes.HasValue)
+            approvalConfig["timeout_minutes"] = _stepConfig_TimeoutMinutes.Value;
+        if (!string.IsNullOrEmpty(_stepConfig_TimeoutAction))
+            approvalConfig["timeout_action"] = _stepConfig_TimeoutAction;
+        if (!string.IsNullOrEmpty(_stepConfig_ContextFieldsToDisplay))
+        {
+            var fields = _stepConfig_ContextFieldsToDisplay
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var arr = new JsonArray();
+            foreach (var f in fields) arr.Add(f);
+            approvalConfig["context_fields_to_display"] = arr;
+        }
+
+        return approvalConfig.ToJsonString();
     }
 
     private void OnSubWorkflowChanged(Guid? newValue)
