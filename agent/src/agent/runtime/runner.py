@@ -166,6 +166,7 @@ class AgentRunner:
             export=export,
             llm_driver=llm_driver,
             admin_portal_url=self.admin_portal_url,
+            agent_name=self.agent_name,
         )
 
         # Inject ServiceNow client into engine context (for executors)

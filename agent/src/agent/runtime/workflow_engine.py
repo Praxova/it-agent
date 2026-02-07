@@ -38,6 +38,7 @@ class WorkflowEngine:
         export: AgentExport,
         llm_driver: BasePromptDriver,
         admin_portal_url: str = "",
+        agent_name: str = "unknown",
         executor_registry: ExecutorRegistry | None = None,
     ):
         """
@@ -47,11 +48,13 @@ class WorkflowEngine:
             export: Loaded agent export with workflow definition
             llm_driver: Configured LLM driver for classification steps
             admin_portal_url: URL for capability routing
+            agent_name: Name of the agent running this engine
             executor_registry: Optional custom executor registry (uses default if not provided)
         """
         self.export = export
         self.llm_driver = llm_driver
         self.admin_portal_url = admin_portal_url
+        self.agent_name = agent_name
         self.condition_evaluator = ConditionEvaluator()
 
         # Registry of step executors (populated by register_executor)
@@ -132,6 +135,7 @@ class WorkflowEngine:
             )
             context.servicenow_client = self.servicenow_client
             context.capability_router = self.capability_router
+            context.variables["agent_name"] = self.agent_name
             context.status = ExecutionStatus.RUNNING
 
             # Initialize workflow stack for top-level workflow
