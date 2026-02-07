@@ -544,7 +544,7 @@ class AgentRunner:
                 self._tickets_escalated += 1
                 # Update ServiceNow with rejection/timeout
                 work_item = self._build_work_item_from_approval(decision)
-                rejection_context = ExecutionContext(ticket_id=ticket_id)
+                rejection_context = ExecutionContext(ticket_id=ticket_id, ticket_data=ticket_data)
                 rejection_context.escalation_reason = (
                     f"Approval {status.lower()}: {decision.get('decision', 'No reason provided')}"
                 )
