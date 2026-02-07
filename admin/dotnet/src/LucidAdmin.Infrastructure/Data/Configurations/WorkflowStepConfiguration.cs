@@ -33,7 +33,7 @@ public class WorkflowStepConfiguration : IEntityTypeConfiguration<WorkflowStep>
         builder.HasMany(e => e.IncomingTransitions)
             .WithOne(t => t.ToStep)
             .HasForeignKey(t => t.ToStepId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasMany(e => e.RulesetMappings)
             .WithOne(m => m.WorkflowStep)

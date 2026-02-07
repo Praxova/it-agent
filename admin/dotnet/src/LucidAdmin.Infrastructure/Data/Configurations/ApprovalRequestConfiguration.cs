@@ -29,5 +29,12 @@ public class ApprovalRequestConfiguration : IEntityTypeConfiguration<ApprovalReq
 
         builder.Property(e => e.AutoApproveThreshold).HasPrecision(5, 4);
         builder.Property(e => e.Confidence).HasPrecision(5, 4);
+
+        // WorkflowDefinition relationship (no navigation property on ApprovalRequest)
+        // SetNull on delete - preserve approval history when workflow is deleted
+        builder.HasOne<WorkflowDefinition>()
+            .WithMany()
+            .HasForeignKey(e => e.WorkflowDefinitionId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

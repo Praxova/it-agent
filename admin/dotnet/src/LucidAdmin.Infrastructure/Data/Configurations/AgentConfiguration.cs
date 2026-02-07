@@ -39,6 +39,13 @@ public class AgentConfiguration : IEntityTypeConfiguration<Agent>
             .HasForeignKey(a => a.ServiceNowAccountId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        // WorkflowDefinition relationship
+        // SetNull on delete - if the workflow is deleted, just nullify the reference
+        builder.HasOne(a => a.WorkflowDefinition)
+            .WithMany()
+            .HasForeignKey(a => a.WorkflowDefinitionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         // AuditEvents relationship is configured in AuditEventConfiguration
     }
 }
