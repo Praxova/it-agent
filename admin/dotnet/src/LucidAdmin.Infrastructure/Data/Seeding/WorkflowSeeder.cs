@@ -676,19 +676,20 @@ public class WorkflowSeeder
 
             // Approval → SubWorkflows (approved, routed by ticket_type)
             new() { FromStepId = approveClassification.Id, ToStepId = subPwReset.Id,
-                    Condition = "ticket_type == 'password-reset'",
+                    Condition = "outcome == 'approved' and ticket_type == 'password-reset'",
                     Label = "password-reset", OutputIndex = 0 },
 
             new() { FromStepId = approveClassification.Id, ToStepId = subGroupMembership.Id,
-                    Condition = "ticket_type == 'group-membership'",
+                    Condition = "outcome == 'approved' and ticket_type == 'group-membership'",
                     Label = "group-membership", OutputIndex = 0 },
 
             new() { FromStepId = approveClassification.Id, ToStepId = subFilePermissions.Id,
-                    Condition = "ticket_type == 'file-permissions'",
+                    Condition = "outcome == 'approved' and ticket_type == 'file-permissions'",
                     Label = "file-permissions", OutputIndex = 0 },
 
             // Approval → Escalate (rejected)
             new() { FromStepId = approveClassification.Id, ToStepId = escalate.Id,
+                    Condition = "outcome == 'rejected'",
                     Label = "rejected", OutputIndex = 1 },
 
             // SubWorkflow completed → End-Success
@@ -861,8 +862,8 @@ public class WorkflowSeeder
         {
             new() { FromStepId = validate.Id, ToStepId = approveReset.Id, Condition = "valid == true", Label = "valid", OutputIndex = 0 },
             new() { FromStepId = validate.Id, ToStepId = escalate.Id, Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
-            new() { FromStepId = approveReset.Id, ToStepId = execute.Id, Label = "approved", OutputIndex = 0 },
-            new() { FromStepId = approveReset.Id, ToStepId = escalate.Id, Label = "rejected", OutputIndex = 1 },
+            new() { FromStepId = approveReset.Id, ToStepId = execute.Id, Condition = "outcome == 'approved'", Label = "approved", OutputIndex = 0 },
+            new() { FromStepId = approveReset.Id, ToStepId = escalate.Id, Condition = "outcome == 'rejected'", Label = "rejected", OutputIndex = 1 },
             new() { FromStepId = execute.Id, ToStepId = notify.Id, Condition = "success == true", Label = "success", OutputIndex = 0 },
             new() { FromStepId = execute.Id, ToStepId = escalate.Id, Condition = "success == false", Label = "failed", OutputIndex = 1 },
             new() { FromStepId = notify.Id, ToStepId = endSuccess.Id, Label = "done", OutputIndex = 0 },

@@ -26,7 +26,10 @@ class ConditionEvaluator:
     Supports 'or' compound conditions:
     - ticket_type == 'unknown' or confidence < 0.7
 
-    Does NOT support AND/NOT for security.
+    Supports 'and' compound conditions:
+    - outcome == 'approved' and ticket_type == 'password-reset'
+
+    Does NOT support NOT for security.
     """
 
     # Supported operators
@@ -64,14 +67,22 @@ class ConditionEvaluator:
         if not condition or condition.strip() == "":
             return True
 
-        # Support 'or' compound conditions — split and evaluate each sub-condition
+        # Support compound conditions with 'or' and 'and'
+        # 'or' has lower precedence: split on 'or' first, then 'and' within each clause
         if " or " in condition:
             sub_conditions = [c.strip() for c in condition.split(" or ")]
-            for sub in sub_conditions:
-                if self._evaluate_single(sub, context):
-                    return True
-            return False
+            return any(self._evaluate_and_clause(sub, context) for sub in sub_conditions)
 
+        if " and " in condition:
+            return self._evaluate_and_clause(condition, context)
+
+        return self._evaluate_single(condition, context)
+
+    def _evaluate_and_clause(self, condition: str, context: dict[str, Any]) -> bool:
+        """Evaluate a condition that may contain 'and' conjunctions."""
+        if " and " in condition:
+            sub_conditions = [c.strip() for c in condition.split(" and ")]
+            return all(self._evaluate_single(sub, context) for sub in sub_conditions)
         return self._evaluate_single(condition, context)
 
     def _evaluate_single(self, condition: str, context: dict[str, Any]) -> bool:

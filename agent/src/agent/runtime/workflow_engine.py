@@ -413,6 +413,17 @@ class WorkflowEngine:
             except Exception as e:
                 logger.warning(f"Failed to evaluate condition '{trans.condition}': {e}")
 
+        # Defensive fallback: if context has an "outcome" variable (set by resume()),
+        # try matching transitions by label instead of condition.
+        # This handles the case where transitions have labels but no conditions.
+        outcome = eval_context.get("outcome")
+        if outcome:
+            for trans in transitions:
+                if trans.label and trans.label.lower() == outcome.lower():
+                    logger.info(f"Transition matched by label fallback: {trans.from_step_name} -> "
+                               f"{trans.to_step_name} (label: {trans.label}, outcome: {outcome})")
+                    return self._steps.get(trans.to_step_name)
+
         # No condition matched
         logger.warning(f"No transition condition matched for step {current_step_name}")
         return None
