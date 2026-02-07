@@ -302,6 +302,7 @@ class WorkflowEngine:
         context.variables = dict(context_snapshot)
         # Remove internal keys that shouldn't be in variables
         context.variables.pop("_ticket_data", None)
+        context.variables.pop("_workflow_stack", None)
 
         # Set outcome from approval decision
         context.variables["outcome"] = outcome
@@ -311,8 +312,12 @@ class WorkflowEngine:
         context.capability_router = self.capability_router
         context.status = ExecutionStatus.RUNNING
 
-        # Initialize workflow stack
-        if self.export.workflow:
+        # Restore workflow stack from snapshot, or initialize fresh
+        saved_stack = context_snapshot.get("_workflow_stack")
+        if saved_stack and isinstance(saved_stack, list):
+            context.workflow_stack = list(saved_stack)
+            logger.debug(f"Restored workflow stack: {context.workflow_stack}")
+        elif self.export.workflow:
             context.workflow_stack.append(self.export.workflow.name)
 
         # Store export for sub-workflow resolution

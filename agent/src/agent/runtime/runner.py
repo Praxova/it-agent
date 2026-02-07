@@ -488,6 +488,7 @@ class AgentRunner:
         status = decision.get("status", "")
         ticket_id = decision.get("ticketId", "")
         resume_after = decision.get("resumeAfterStep", "")
+        workflow_name = decision.get("workflowName", "")
         context_json = decision.get("contextSnapshotJson") or decision.get("contextSnapshot", "{}")
 
         # Parse context snapshot
@@ -502,7 +503,11 @@ class AgentRunner:
         try:
             if status in ("Approved", "AutoApproved"):
                 logger.info(f"Resuming workflow for ticket {ticket_id} (approval {approval_id}: {status})")
-                context = await self._engine.resume(
+
+                # Determine which engine to use for resume
+                engine = self._get_resume_engine(workflow_name, context_snapshot)
+
+                context = await engine.resume(
                     context_snapshot=context_snapshot,
                     ticket_id=ticket_id,
                     ticket_data=ticket_data,
@@ -553,6 +558,72 @@ class AgentRunner:
         except Exception as e:
             logger.error(f"Failed to process approval {approval_id}: {e}", exc_info=True)
             self._tickets_failed += 1
+
+    def _get_resume_engine(self, workflow_name: str, context_snapshot: dict) -> WorkflowEngine:
+        """
+        Get the correct WorkflowEngine for resuming after approval.
+
+        If the approval came from the main dispatcher workflow, return self._engine.
+        If it came from a sub-workflow, build a child engine for that sub-workflow
+        so resume() can find the correct steps.
+        """
+        from .models import AgentExport
+
+        main_wf_name = ""
+        if self._engine and self._engine.export and self._engine.export.workflow:
+            main_wf_name = self._engine.export.workflow.name
+
+        # If workflow matches main engine, use it directly
+        if workflow_name == main_wf_name or not workflow_name:
+            return self._engine
+
+        # Sub-workflow: look up definition from export
+        export = self._engine.export
+        sub_workflow_def = export.sub_workflows.get(workflow_name)
+
+        if not sub_workflow_def:
+            # Try case-insensitive match
+            for name, wf in export.sub_workflows.items():
+                if name.lower() == workflow_name.lower():
+                    sub_workflow_def = wf
+                    break
+
+        if not sub_workflow_def:
+            logger.warning(
+                f"Sub-workflow '{workflow_name}' not found in export, "
+                f"falling back to main engine. "
+                f"Available sub-workflows: {list(export.sub_workflows.keys())}"
+            )
+            return self._engine
+
+        logger.info(f"Building child engine for sub-workflow '{workflow_name}' resume")
+
+        # Build a temporary export with the sub-workflow as the main workflow
+        child_export = AgentExport(
+            version=export.version,
+            exported_at=export.exported_at,
+            agent=export.agent,
+            llm_provider=export.llm_provider,
+            service_now=export.service_now,
+            workflow=sub_workflow_def,
+            rulesets=export.rulesets,
+            example_sets=export.example_sets,
+            required_capabilities=export.required_capabilities,
+            sub_workflows=export.sub_workflows,
+        )
+
+        child_engine = WorkflowEngine(
+            export=child_export,
+            llm_driver=self._engine.llm_driver,
+            admin_portal_url=self.admin_portal_url,
+            agent_name=self.agent_name,
+        )
+
+        # Share integration points
+        child_engine.servicenow_client = self._engine.servicenow_client
+        child_engine.capability_router = self._engine.capability_router
+
+        return child_engine
 
     async def _acknowledge_approval(self, approval_id: str):
         """Acknowledge an approval decision so it won't be returned again."""

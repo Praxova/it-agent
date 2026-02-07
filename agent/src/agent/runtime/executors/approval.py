@@ -64,6 +64,7 @@ class ApprovalExecutor(BaseStepExecutor):
         # Build context snapshot (includes _ticket_data for resume)
         snapshot = dict(context.variables)
         snapshot["_ticket_data"] = context.ticket_data
+        snapshot["_workflow_stack"] = list(context.workflow_stack)
 
         # Determine workflow name from stack
         workflow_name = (
