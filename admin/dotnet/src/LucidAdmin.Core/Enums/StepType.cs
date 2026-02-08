@@ -39,5 +39,8 @@ public enum StepType
     SubWorkflow,
 
     /// <summary>Human-in-the-loop approval checkpoint.</summary>
-    Approval
+    Approval,
+
+    /// <summary>Ask the user a clarifying question and suspend until reply.</summary>
+    Clarify
 }

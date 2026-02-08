@@ -27,5 +27,8 @@ public enum TicketType
     MultipleRequests,
 
     /// <summary>Request is outside agent's capabilities.</summary>
-    OutOfScope
+    OutOfScope,
+
+    /// <summary>Request to install software on a workstation.</summary>
+    SoftwareInstall
 }

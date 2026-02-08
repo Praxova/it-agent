@@ -24,6 +24,8 @@ public class ExampleSetSeeder
         await SeedPasswordResetExamples();
         await SeedGroupAccessExamples();
         await SeedDispatcherClassificationExamples();
+        await SeedSoftwareInstallExamples();
+        await SeedSoftwareCatalogExamples();
         await _context.SaveChangesAsync();
     }
 
@@ -309,6 +311,291 @@ public class ExampleSetSeeder
                     ExpectedTargetGroup = "IT-Admins",
                     Notes = "Urgent group membership removal",
                     SortOrder = 5,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                }
+            };
+
+            exampleSet.Examples = examples;
+            _context.ExampleSets.Add(exampleSet);
+            _logger.LogInformation("Seeded built-in example set: {ExampleSetName} with {ExampleCount} examples",
+                setName, examples.Count);
+        }
+        else
+        {
+            // Add software install examples if they don't exist yet
+            if (!existing.Examples.Any(e => e.Name.StartsWith("software-install-")))
+            {
+                var newExamples = new List<Example>
+                {
+                    new Example
+                    {
+                        Name = "software-install-standard",
+                        TicketShortDescription = "Install software on my computer",
+                        TicketDescription = "I need Google Chrome installed on my workstation WS-HR-015.",
+                        ExpectedTicketType = TicketType.SoftwareInstall,
+                        ExpectedConfidence = 0.92m,
+                        Notes = "Standard software install request for dispatcher routing",
+                        SortOrder = 10,
+                        IsActive = true,
+                        ExampleSet = existing
+                    },
+                    new Example
+                    {
+                        Name = "software-install-vague",
+                        TicketShortDescription = "Need new software",
+                        TicketDescription = "I need some new software for my job. Can someone help me get it installed?",
+                        ExpectedTicketType = TicketType.SoftwareInstall,
+                        ExpectedConfidence = 0.70m,
+                        Notes = "Vague software install - lower confidence, still routes to software-install workflow",
+                        SortOrder = 11,
+                        IsActive = true,
+                        ExampleSet = existing
+                    }
+                };
+
+                _context.Examples.AddRange(newExamples);
+                _logger.LogInformation("Added software install examples to existing set: {ExampleSetName}", setName);
+            }
+            else
+            {
+                _logger.LogDebug("Built-in example set already exists: {ExampleSetName}", setName);
+            }
+        }
+    }
+
+    private async Task SeedSoftwareInstallExamples()
+    {
+        const string setName = "software-install-examples";
+
+        var existing = await _context.ExampleSets
+            .Include(e => e.Examples)
+            .FirstOrDefaultAsync(e => e.Name == setName);
+
+        if (existing == null)
+        {
+            var exampleSet = new ExampleSet
+            {
+                Name = setName,
+                DisplayName = "Software Install Examples",
+                Description = "Examples for classifying software installation requests",
+                TargetTicketType = TicketType.SoftwareInstall,
+                IsBuiltIn = true,
+                IsActive = true
+            };
+
+            var examples = new List<Example>
+            {
+                new Example
+                {
+                    Name = "install-chrome-clear",
+                    TicketShortDescription = "Need Google Chrome installed",
+                    TicketDescription = "I need Google Chrome installed on my laptop YOURPC01. My current browser isn't working well for our web apps.",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.95m,
+                    Notes = "Clear request with both software and computer identified",
+                    SortOrder = 0,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "install-vscode-no-computer",
+                    TicketShortDescription = "Please install Visual Studio Code",
+                    TicketDescription = "I'm a new developer and need VS Code installed. Can you help?",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.90m,
+                    Notes = "Software identified but computer name missing — triggers clarification",
+                    SortOrder = 1,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "install-ambiguous-software",
+                    TicketShortDescription = "Need a PDF reader",
+                    TicketDescription = "I need to be able to read PDF files on my computer YOURPC02.",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.75m,
+                    Notes = "Computer identified but software ambiguous — multiple catalog matches, triggers clarification",
+                    SortOrder = 2,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "install-unauthorized-software",
+                    TicketShortDescription = "Install BitTorrent client",
+                    TicketDescription = "I need a BitTorrent client installed on YOURPC03 for downloading files.",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.85m,
+                    ExpectedShouldEscalate = true,
+                    ExpectedEscalationReason = "Requested software not in approved catalog",
+                    Notes = "Software not in catalog — should be denied/escalated",
+                    SortOrder = 3,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "install-multiple-missing-info",
+                    TicketShortDescription = "Software installation request",
+                    TicketDescription = "I need some software installed on my machine.",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.65m,
+                    Notes = "Both software and computer missing — needs clarification for both",
+                    SortOrder = 4,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "install-from-catalog-exact",
+                    TicketShortDescription = "Install 7-Zip on my workstation",
+                    TicketDescription = "Please install 7-Zip on workstation WS-DEV-042. I need it for extracting archive files.",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 0.95m,
+                    Notes = "Exact catalog match with computer — happy path, no clarification needed",
+                    SortOrder = 5,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                }
+            };
+
+            exampleSet.Examples = examples;
+            _context.ExampleSets.Add(exampleSet);
+            _logger.LogInformation("Seeded built-in example set: {ExampleSetName} with {ExampleCount} examples",
+                setName, examples.Count);
+        }
+        else
+        {
+            _logger.LogDebug("Built-in example set already exists: {ExampleSetName}", setName);
+        }
+    }
+
+    private async Task SeedSoftwareCatalogExamples()
+    {
+        const string setName = "approved-software-catalog";
+
+        var existing = await _context.ExampleSets
+            .Include(e => e.Examples)
+            .FirstOrDefaultAsync(e => e.Name == setName);
+
+        if (existing == null)
+        {
+            var exampleSet = new ExampleSet
+            {
+                Name = setName,
+                DisplayName = "Approved Software Catalog",
+                Description = "Catalog of approved software available for automated installation. Used by the software install workflow to validate and match software requests.",
+                TargetTicketType = TicketType.SoftwareInstall,
+                IsBuiltIn = true,
+                IsActive = true
+            };
+
+            var examples = new List<Example>
+            {
+                new Example
+                {
+                    Name = "chrome",
+                    TicketShortDescription = "Google Chrome",
+                    TicketDescription = "Google Chrome web browser. Aliases: chrome, google chrome, web browser",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install googlechrome -y",
+                    Notes = "Enterprise web browser",
+                    SortOrder = 0,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "firefox",
+                    TicketShortDescription = "Mozilla Firefox",
+                    TicketDescription = "Mozilla Firefox web browser. Aliases: firefox, mozilla",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install firefox -y",
+                    Notes = "Alternative web browser",
+                    SortOrder = 1,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "vscode",
+                    TicketShortDescription = "Visual Studio Code",
+                    TicketDescription = "Visual Studio Code editor. Aliases: vscode, vs code, code editor",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install vscode -y",
+                    Notes = "Code editor for developers",
+                    SortOrder = 2,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "7zip",
+                    TicketShortDescription = "7-Zip",
+                    TicketDescription = "7-Zip file archiver. Aliases: 7zip, 7-zip, archive tool, zip tool",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install 7zip -y",
+                    Notes = "File compression utility",
+                    SortOrder = 3,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "notepadplusplus",
+                    TicketShortDescription = "Notepad++",
+                    TicketDescription = "Notepad++ text editor. Aliases: notepad++, npp, text editor",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install notepadplusplus -y",
+                    Notes = "Advanced text editor",
+                    SortOrder = 4,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "putty",
+                    TicketShortDescription = "PuTTY",
+                    TicketDescription = "PuTTY SSH client. Aliases: putty, ssh client, terminal",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install putty -y",
+                    Notes = "SSH and telnet client",
+                    SortOrder = 5,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "adobereader",
+                    TicketShortDescription = "Adobe Acrobat Reader",
+                    TicketDescription = "Adobe Acrobat Reader PDF viewer. Aliases: adobe reader, acrobat, pdf reader, pdf viewer",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install adobereader -y",
+                    Notes = "PDF document viewer",
+                    SortOrder = 6,
+                    IsActive = true,
+                    ExampleSet = exampleSet
+                },
+                new Example
+                {
+                    Name = "vlc",
+                    TicketShortDescription = "VLC Media Player",
+                    TicketDescription = "VLC media player. Aliases: vlc, media player, video player",
+                    ExpectedTicketType = TicketType.SoftwareInstall,
+                    ExpectedConfidence = 1.0m,
+                    ExpectedTargetResource = "choco install vlc -y",
+                    Notes = "Media player",
+                    SortOrder = 7,
                     IsActive = true,
                     ExampleSet = exampleSet
                 }

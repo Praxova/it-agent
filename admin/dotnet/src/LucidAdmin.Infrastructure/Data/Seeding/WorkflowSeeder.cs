@@ -28,11 +28,12 @@ public class WorkflowSeeder
         var pwResetSub = await SeedPasswordResetSubWorkflow();
         var groupMembershipSub = await SeedGroupMembershipSubWorkflow();
         var filePermissionsSub = await SeedFilePermissionsSubWorkflow();
+        var softwareInstallSub = await SeedSoftwareInstallSubWorkflow();
 
         // Dispatcher workflow (routes to sub-workflows)
         if (pwResetSub != null && groupMembershipSub != null && filePermissionsSub != null)
         {
-            await SeedDispatcherWorkflow(pwResetSub, groupMembershipSub, filePermissionsSub);
+            await SeedDispatcherWorkflow(pwResetSub, groupMembershipSub, filePermissionsSub, softwareInstallSub);
         }
 
         await FixTransitionOutputIndexes();
@@ -511,7 +512,8 @@ public class WorkflowSeeder
     private async Task SeedDispatcherWorkflow(
         WorkflowDefinition pwResetSub,
         WorkflowDefinition groupMembershipSub,
-        WorkflowDefinition filePermissionsSub)
+        WorkflowDefinition filePermissionsSub,
+        WorkflowDefinition? softwareInstallSub)
     {
         const string name = "it-dispatch";
 
@@ -619,13 +621,31 @@ public class WorkflowSeeder
             WorkflowDefinitionId = workflow.Id
         };
 
+        WorkflowStep? subSoftwareInstall = null;
+        if (softwareInstallSub != null)
+        {
+            subSoftwareInstall = new WorkflowStep
+            {
+                Name = "sub-software-install",
+                DisplayName = "Software Install",
+                StepType = StepType.SubWorkflow,
+                ConfigurationJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    workflow_id = softwareInstallSub.Id.ToString(),
+                    workflow_name = softwareInstallSub.Name
+                }),
+                PositionX = 800, PositionY = 600, SortOrder = 7,
+                WorkflowDefinitionId = workflow.Id
+            };
+        }
+
         var escalate = new WorkflowStep
         {
             Name = "escalate-unknown",
             DisplayName = "Escalate Unknown",
             StepType = StepType.Escalate,
             ConfigurationJson = """{"targetGroup": "Level 2 Support", "reason": "Unrecognized ticket type"}""",
-            PositionX = 800, PositionY = 600, SortOrder = 7,
+            PositionX = 800, PositionY = 750, SortOrder = 8,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -635,7 +655,7 @@ public class WorkflowSeeder
             DisplayName = "Resolved",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "resolved"}""",
-            PositionX = 1100, PositionY = 300, SortOrder = 8,
+            PositionX = 1100, PositionY = 300, SortOrder = 9,
             WorkflowDefinitionId = workflow.Id
         };
 
@@ -645,16 +665,20 @@ public class WorkflowSeeder
             DisplayName = "Escalated",
             StepType = StepType.End,
             ConfigurationJson = """{"status": "pending"}""",
-            PositionX = 1100, PositionY = 600, SortOrder = 9,
+            PositionX = 1100, PositionY = 750, SortOrder = 10,
             WorkflowDefinitionId = workflow.Id
         };
 
-        _context.WorkflowSteps.AddRange(new[]
+        var stepsToAdd = new List<WorkflowStep>
         {
             trigger, classify, approveClassification,
             subPwReset, subGroupMembership, subFilePermissions,
             escalate, endSuccess, endEscalated
-        });
+        };
+        if (subSoftwareInstall != null)
+            stepsToAdd.Insert(6, subSoftwareInstall); // before escalate
+
+        _context.WorkflowSteps.AddRange(stepsToAdd);
         await _context.SaveChangesAsync();
 
         // === Transitions ===
@@ -718,6 +742,29 @@ public class WorkflowSeeder
             new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id,
                     Label = "escalated", OutputIndex = 0 },
         };
+
+        // Add software install routing if sub-workflow exists
+        if (subSoftwareInstall != null)
+        {
+            transitions.Add(new StepTransition
+            {
+                FromStepId = approveClassification.Id, ToStepId = subSoftwareInstall.Id,
+                Condition = "outcome == 'approved' and ticket_type == 'software-install'",
+                Label = "software-install", OutputIndex = 0
+            });
+            transitions.Add(new StepTransition
+            {
+                FromStepId = subSoftwareInstall.Id, ToStepId = endSuccess.Id,
+                Condition = "outcome == 'completed'",
+                Label = "completed", OutputIndex = 0
+            });
+            transitions.Add(new StepTransition
+            {
+                FromStepId = subSoftwareInstall.Id, ToStepId = endEscalated.Id,
+                Condition = "outcome == 'escalated'",
+                Label = "escalated", OutputIndex = 1
+            });
+        }
 
         _context.StepTransitions.AddRange(transitions);
 
@@ -1132,6 +1179,268 @@ public class WorkflowSeeder
 
         await _context.SaveChangesAsync();
         _logger.LogInformation("Seeded sub-workflow: {Name} with 6 steps", name);
+        return workflow;
+    }
+
+    private async Task<WorkflowDefinition?> SeedSoftwareInstallSubWorkflow()
+    {
+        const string name = "software-install-sub";
+
+        var existing = await _context.WorkflowDefinitions
+            .FirstOrDefaultAsync(w => w.Name == name);
+        if (existing != null) return existing;
+
+        var exampleSet = await _context.ExampleSets
+            .FirstOrDefaultAsync(e => e.Name == "software-install-examples");
+
+        var workflow = new WorkflowDefinition
+        {
+            Name = name,
+            DisplayName = "Software Install (Sub-Workflow)",
+            Description = "Automated software installation with catalog validation and user clarification. Verifies software against approved catalog, resolves computer name, and executes remote install.",
+            Version = "1.0.0",
+            ExampleSetId = exampleSet?.Id,
+            IsActive = true,
+            IsBuiltIn = true
+        };
+
+        _context.WorkflowDefinitions.Add(workflow);
+        await _context.SaveChangesAsync();
+
+        // Steps
+        var queryUserInfo = new WorkflowStep
+        {
+            Name = "query-user-info",
+            DisplayName = "Query User Info",
+            StepType = StepType.Query,
+            ConfigurationJson = """{"query_type": "ad_user", "store_as": "user_info"}""",
+            PositionX = 100, PositionY = 200, SortOrder = 1,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var classifyRequest = new WorkflowStep
+        {
+            Name = "classify-request",
+            DisplayName = "Classify Request",
+            StepType = StepType.Classify,
+            ConfigurationJson = """{"use_example_set": "software-install-examples", "extract_fields": ["software_name", "computer_name", "confidence"]}""",
+            PositionX = 300, PositionY = 200, SortOrder = 2,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var resolveSoftware = new WorkflowStep
+        {
+            Name = "resolve-software",
+            DisplayName = "Resolve Software",
+            StepType = StepType.Classify,
+            ConfigurationJson = """{"use_example_set": "approved-software-catalog", "extract_fields": ["matched_software", "install_command", "match_confidence"], "query_prompt": "Match the requested software '{{software_name}}' against the approved catalog. Return the best match or 'no_match' if not found."}""",
+            PositionX = 500, PositionY = 200, SortOrder = 3,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var clarifySoftware = new WorkflowStep
+        {
+            Name = "clarify-software",
+            DisplayName = "Clarify Software",
+            StepType = StepType.Clarify,
+            ConfigurationJson = """{"question_template": "I'd like to help install software for you. Could you please specify which software you need? Here are some options from our approved catalog:\n\n• Google Chrome\n• Mozilla Firefox\n• Visual Studio Code\n• 7-Zip\n• Notepad++\n• PuTTY\n• Adobe Acrobat Reader\n• VLC Media Player\n\nPlease let me know which one you'd like installed.", "set_ticket_state": "awaiting_info", "store_reply_as": "software_clarification"}""",
+            PositionX = 500, PositionY = 400, SortOrder = 4,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var resolveComputer = new WorkflowStep
+        {
+            Name = "resolve-computer",
+            DisplayName = "Resolve Computer",
+            StepType = StepType.Classify,
+            ConfigurationJson = """{"query_prompt": "Extract the computer name from the ticket. The user info shows: {{user_info}}. The ticket mentions: {{computer_name}}. If no computer name is provided, return 'unknown'.", "extract_fields": ["resolved_computer", "computer_confidence"]}""",
+            PositionX = 700, PositionY = 200, SortOrder = 5,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var clarifyComputer = new WorkflowStep
+        {
+            Name = "clarify-computer",
+            DisplayName = "Clarify Computer",
+            StepType = StepType.Clarify,
+            ConfigurationJson = """{"question_template": "I can help install {{matched_software}} for you. Could you please provide the name of the computer where you'd like it installed? You can find your computer name by right-clicking 'This PC' and selecting 'Properties'.", "set_ticket_state": "awaiting_info", "store_reply_as": "computer_clarification"}""",
+            PositionX = 700, PositionY = 400, SortOrder = 6,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var lookupComputer = new WorkflowStep
+        {
+            Name = "lookup-computer",
+            DisplayName = "Lookup Computer",
+            StepType = StepType.Query,
+            ConfigurationJson = """{"query_type": "custom", "endpoint": "ad-computer-lookup", "params": {"computer_name": "{{resolved_computer}}"}, "store_as": "computer_info"}""",
+            PositionX = 900, PositionY = 200, SortOrder = 7,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var validateInstall = new WorkflowStep
+        {
+            Name = "validate-install",
+            DisplayName = "Validate Install",
+            StepType = StepType.Validate,
+            ConfigurationJson = """{"checks": ["software_in_catalog", "computer_exists", "computer_reachable"]}""",
+            PositionX = 1100, PositionY = 200, SortOrder = 8,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var approveInstall = new WorkflowStep
+        {
+            Name = "approve-install",
+            DisplayName = "Approve Install",
+            StepType = StepType.Approval,
+            ConfigurationJson = """{"description_template": "Install {{matched_software}} on {{resolved_computer}} for {{affected_user}}. Command: {{install_command}}", "auto_approve_threshold": 0.95, "timeout_minutes": 60, "timeout_action": "escalate", "context_fields_to_display": ["matched_software", "resolved_computer", "affected_user", "install_command"]}""",
+            PositionX = 1300, PositionY = 200, SortOrder = 9,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var executeInstall = new WorkflowStep
+        {
+            Name = "execute-install",
+            DisplayName = "Execute Install",
+            StepType = StepType.Execute,
+            ConfigurationJson = """{"capability": "remote-software-install", "param_mapping": {"computer_name": "resolved_computer", "install_command": "install_command", "software_name": "matched_software", "ticket_number": "ticket_id"}}""",
+            PositionX = 1500, PositionY = 200, SortOrder = 10,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var notifyUser = new WorkflowStep
+        {
+            Name = "notify-user",
+            DisplayName = "Notify User",
+            StepType = StepType.Notify,
+            ConfigurationJson = """{"template": "software-install-success", "channel": "ticket-comment"}""",
+            PositionX = 1700, PositionY = 200, SortOrder = 11,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var escalate = new WorkflowStep
+        {
+            Name = "escalate",
+            DisplayName = "Escalate",
+            StepType = StepType.Escalate,
+            ConfigurationJson = """{"targetGroup": "Level 2 Support", "preserveWorkNotes": true}""",
+            PositionX = 1100, PositionY = 500, SortOrder = 12,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endSuccess = new WorkflowStep
+        {
+            Name = "end-success",
+            DisplayName = "Completed",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "resolved", "resolution_code": "Automated - Software Install"}""",
+            PositionX = 1900, PositionY = 200, SortOrder = 13,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        var endEscalated = new WorkflowStep
+        {
+            Name = "end-escalated",
+            DisplayName = "Escalated",
+            StepType = StepType.End,
+            ConfigurationJson = """{"status": "pending", "resolution_code": "Escalated"}""",
+            PositionX = 1300, PositionY = 500, SortOrder = 14,
+            WorkflowDefinitionId = workflow.Id
+        };
+
+        _context.WorkflowSteps.AddRange(new[]
+        {
+            queryUserInfo, classifyRequest, resolveSoftware, clarifySoftware,
+            resolveComputer, clarifyComputer, lookupComputer, validateInstall,
+            approveInstall, executeInstall, notifyUser, escalate,
+            endSuccess, endEscalated
+        });
+        await _context.SaveChangesAsync();
+
+        // Transitions
+        var transitions = new List<StepTransition>
+        {
+            // query-user-info → classify-request
+            new() { FromStepId = queryUserInfo.Id, ToStepId = classifyRequest.Id,
+                    Label = "start", OutputIndex = 0 },
+
+            // classify-request → resolve-software (confidence >= 0.7)
+            new() { FromStepId = classifyRequest.Id, ToStepId = resolveSoftware.Id,
+                    Condition = "confidence >= 0.7", Label = "identified", OutputIndex = 0 },
+
+            // classify-request → clarify-software (confidence < 0.7)
+            new() { FromStepId = classifyRequest.Id, ToStepId = clarifySoftware.Id,
+                    Condition = "confidence < 0.7", Label = "need-clarification", OutputIndex = 1 },
+
+            // clarify-software → resolve-software
+            new() { FromStepId = clarifySoftware.Id, ToStepId = resolveSoftware.Id,
+                    Label = "clarified", OutputIndex = 0 },
+
+            // resolve-software → resolve-computer (match_confidence >= 0.7)
+            new() { FromStepId = resolveSoftware.Id, ToStepId = resolveComputer.Id,
+                    Condition = "match_confidence >= 0.7", Label = "software-matched", OutputIndex = 0 },
+
+            // resolve-software → clarify-software (match_confidence < 0.7)
+            new() { FromStepId = resolveSoftware.Id, ToStepId = clarifySoftware.Id,
+                    Condition = "match_confidence < 0.7", Label = "no-match", OutputIndex = 1 },
+
+            // resolve-computer → lookup-computer (computer_confidence >= 0.7)
+            new() { FromStepId = resolveComputer.Id, ToStepId = lookupComputer.Id,
+                    Condition = "computer_confidence >= 0.7", Label = "computer-identified", OutputIndex = 0 },
+
+            // resolve-computer → clarify-computer (computer_confidence < 0.7)
+            new() { FromStepId = resolveComputer.Id, ToStepId = clarifyComputer.Id,
+                    Condition = "computer_confidence < 0.7", Label = "need-computer", OutputIndex = 1 },
+
+            // clarify-computer → lookup-computer
+            new() { FromStepId = clarifyComputer.Id, ToStepId = lookupComputer.Id,
+                    Label = "computer-clarified", OutputIndex = 0 },
+
+            // lookup-computer → validate-install (computer found)
+            new() { FromStepId = lookupComputer.Id, ToStepId = validateInstall.Id,
+                    Condition = "computer_info.found == true", Label = "computer-found", OutputIndex = 0 },
+
+            // lookup-computer → escalate (computer not found)
+            new() { FromStepId = lookupComputer.Id, ToStepId = escalate.Id,
+                    Condition = "computer_info.found == false", Label = "computer-not-found", OutputIndex = 1 },
+
+            // validate-install → approve-install (valid)
+            new() { FromStepId = validateInstall.Id, ToStepId = approveInstall.Id,
+                    Condition = "valid == true", Label = "valid", OutputIndex = 0 },
+
+            // validate-install → escalate (invalid)
+            new() { FromStepId = validateInstall.Id, ToStepId = escalate.Id,
+                    Condition = "valid == false", Label = "invalid", OutputIndex = 1 },
+
+            // approve-install → execute-install (approved)
+            new() { FromStepId = approveInstall.Id, ToStepId = executeInstall.Id,
+                    Condition = "outcome == 'approved'", Label = "approved", OutputIndex = 0 },
+
+            // approve-install → escalate (rejected)
+            new() { FromStepId = approveInstall.Id, ToStepId = escalate.Id,
+                    Condition = "outcome == 'rejected'", Label = "rejected", OutputIndex = 1 },
+
+            // execute-install → notify-user (success)
+            new() { FromStepId = executeInstall.Id, ToStepId = notifyUser.Id,
+                    Condition = "success == true", Label = "success", OutputIndex = 0 },
+
+            // execute-install → escalate (failed)
+            new() { FromStepId = executeInstall.Id, ToStepId = escalate.Id,
+                    Condition = "success == false", Label = "failed", OutputIndex = 1 },
+
+            // notify-user → end-success
+            new() { FromStepId = notifyUser.Id, ToStepId = endSuccess.Id,
+                    Label = "done", OutputIndex = 0 },
+
+            // escalate → end-escalated
+            new() { FromStepId = escalate.Id, ToStepId = endEscalated.Id,
+                    Label = "escalated", OutputIndex = 0 },
+        };
+
+        _context.StepTransitions.AddRange(transitions);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 14 steps and 20 transitions", name);
         return workflow;
     }
 
