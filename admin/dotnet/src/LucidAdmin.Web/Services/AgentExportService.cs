@@ -85,10 +85,9 @@ public class AgentExportService : IAgentExportService
     private async Task<AgentExportResponse> BuildExportResponseAsync(Agent agent, CancellationToken ct)
     {
         var rulesets = CollectAllRulesets(agent);
-        var exampleSets = CollectExampleSets(agent);
         var requiredCapabilities = CollectRequiredCapabilities(agent);
 
-        // Collect sub-workflow definitions referenced by SubWorkflow steps
+        // Collect sub-workflow definitions (must happen before example set collection)
         var subWorkflows = new Dictionary<string, WorkflowExportInfo>();
         if (agent.WorkflowDefinition != null)
         {
@@ -96,6 +95,9 @@ public class AgentExportService : IAgentExportService
             await CollectSubWorkflowsRecursiveAsync(
                 agent.WorkflowDefinition, subWorkflows, visited, rulesets, ct);
         }
+
+        // Collect ALL example sets (main workflow + sub-workflows + step-referenced)
+        var exampleSets = await CollectAllExampleSetsAsync(agent, subWorkflows, ct);
 
         return new AgentExportResponse
         {
@@ -294,35 +296,119 @@ public class AgentExportService : IAgentExportService
         };
     }
 
-    private Dictionary<string, ExampleSetExportInfo> CollectExampleSets(Agent agent)
+    private async Task<Dictionary<string, ExampleSetExportInfo>> CollectAllExampleSetsAsync(
+        Agent agent,
+        Dictionary<string, WorkflowExportInfo> subWorkflows,
+        CancellationToken ct)
     {
         var exampleSets = new Dictionary<string, ExampleSetExportInfo>();
+        var referencedSetNames = new HashSet<string>();
 
-        // Add workflow's example set
-        var workflowExampleSet = agent.WorkflowDefinition?.ExampleSet;
-        if (workflowExampleSet != null)
+        // 1. Main workflow's linked example set
+        var mainExampleSet = agent.WorkflowDefinition?.ExampleSet;
+        if (mainExampleSet != null)
         {
-            exampleSets[workflowExampleSet.Name] = new ExampleSetExportInfo
-            {
-                Id = workflowExampleSet.Id,
-                Name = workflowExampleSet.Name,
-                DisplayName = workflowExampleSet.DisplayName,
-                Examples = workflowExampleSet.Examples
-                    .OrderBy(e => e.SortOrder)
-                    .Select(e => new ExampleExportInfo
-                    {
-                        Id = e.Id,
-                        InputText = BuildInputText(e),
-                        ExpectedOutputJson = BuildExpectedOutputJson(e),
-                        Notes = e.Notes
-                    })
-                    .ToList()
-            };
+            exampleSets[mainExampleSet.Name] = MapExampleSetInfo(mainExampleSet);
         }
 
-        // TODO: If steps can reference their own example sets, collect those too
+        // 2. Scan main workflow steps for use_example_set references
+        if (agent.WorkflowDefinition != null)
+        {
+            CollectStepExampleSetReferences(agent.WorkflowDefinition.Steps, referencedSetNames);
+        }
+
+        // 3. Collect sub-workflow example sets and scan their steps for references
+        foreach (var subWfName in subWorkflows.Keys)
+        {
+            var subWfDef = await _db.WorkflowDefinitions
+                .Include(w => w.ExampleSet)
+                    .ThenInclude(e => e!.Examples.OrderBy(ex => ex.SortOrder))
+                .Include(w => w.Steps)
+                .FirstOrDefaultAsync(w => w.Name == subWfName, ct);
+
+            if (subWfDef?.ExampleSet != null && !exampleSets.ContainsKey(subWfDef.ExampleSet.Name))
+            {
+                exampleSets[subWfDef.ExampleSet.Name] = MapExampleSetInfo(subWfDef.ExampleSet);
+            }
+
+            if (subWfDef != null)
+            {
+                CollectStepExampleSetReferences(subWfDef.Steps, referencedSetNames);
+            }
+        }
+
+        // 4. Load any step-referenced example sets not yet collected
+        var missingSetNames = referencedSetNames
+            .Where(name => !exampleSets.ContainsKey(name))
+            .ToList();
+
+        if (missingSetNames.Any())
+        {
+            _logger.LogInformation("Loading {Count} step-referenced example sets: {Names}",
+                missingSetNames.Count, string.Join(", ", missingSetNames));
+
+            var additionalSets = await _db.ExampleSets
+                .Include(es => es.Examples.OrderBy(e => e.SortOrder))
+                .Where(es => missingSetNames.Contains(es.Name))
+                .ToListAsync(ct);
+
+            foreach (var set in additionalSets)
+            {
+                exampleSets[set.Name] = MapExampleSetInfo(set);
+            }
+
+            var foundNames = additionalSets.Select(s => s.Name).ToHashSet();
+            var notFound = missingSetNames.Where(n => !foundNames.Contains(n)).ToList();
+            if (notFound.Any())
+            {
+                _logger.LogWarning("Example sets referenced in step configs but not found in DB: {Names}",
+                    string.Join(", ", notFound));
+            }
+        }
 
         return exampleSets;
+    }
+
+    private void CollectStepExampleSetReferences(
+        IEnumerable<WorkflowStep> steps,
+        HashSet<string> referencedNames)
+    {
+        foreach (var step in steps)
+        {
+            if (string.IsNullOrEmpty(step.ConfigurationJson)) continue;
+
+            var config = ParseConfigJsonAsObject(step.ConfigurationJson);
+            if (config == null) continue;
+
+            if (config.TryGetValue("use_example_set", out var setNameObj) && setNameObj != null)
+            {
+                var setName = setNameObj.ToString();
+                if (!string.IsNullOrEmpty(setName))
+                {
+                    referencedNames.Add(setName);
+                }
+            }
+        }
+    }
+
+    private ExampleSetExportInfo MapExampleSetInfo(ExampleSet exampleSet)
+    {
+        return new ExampleSetExportInfo
+        {
+            Id = exampleSet.Id,
+            Name = exampleSet.Name,
+            DisplayName = exampleSet.DisplayName,
+            Examples = exampleSet.Examples
+                .OrderBy(e => e.SortOrder)
+                .Select(e => new ExampleExportInfo
+                {
+                    Id = e.Id,
+                    InputText = BuildInputText(e),
+                    ExpectedOutputJson = BuildExpectedOutputJson(e),
+                    Notes = e.Notes
+                })
+                .ToList()
+        };
     }
 
     private List<string> CollectRequiredCapabilities(Agent agent)
@@ -525,6 +611,7 @@ public class AgentExportService : IAgentExportService
         TicketType.Unknown => "unknown",
         TicketType.MultipleRequests => "unknown",
         TicketType.OutOfScope => "unknown",
+        TicketType.SoftwareInstall => "software-install",
         _ => "unknown"
     };
 }
