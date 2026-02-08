@@ -116,6 +116,8 @@ public static class DependencyInjection
         services.AddSingleton<ICapabilityProvider, ServiceNowConnectorCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, AzureUserLookupCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, AzureVmLookupCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, AdComputerLookupCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, RemoteSoftwareInstallCapabilityProvider>();
 
         // Capability Registry
         services.AddSingleton<ICapabilityRegistry, CapabilityRegistry>();

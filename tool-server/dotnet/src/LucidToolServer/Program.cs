@@ -26,6 +26,7 @@ builder.Services.Configure<ToolServerSettings>(
 // Add services
 builder.Services.AddScoped<IActiveDirectoryService, ActiveDirectoryService>();
 builder.Services.AddScoped<IFilePermissionService, FilePermissionService>();
+builder.Services.AddScoped<IRemoteManagementService, RemoteManagementService>();
 
 // Azure service (conditional — only if configured)
 var azureConfig = builder.Configuration.GetSection("ToolServer:Azure");
@@ -299,6 +300,34 @@ api.MapGet("/permissions/{*path}", (
         Path: path,
         Permissions: permissions
     ));
+});
+
+// User Computer Lookup
+api.MapGet("/user/{username}/computers", async (string username, IActiveDirectoryService adService) =>
+{
+    if (string.IsNullOrWhiteSpace(username))
+        return Results.BadRequest(new ErrorResponse("ValidationError", "Username is required", null));
+
+    var result = await adService.GetUserComputersAsync(username);
+    return Results.Ok(result);
+});
+
+// Remote Software Install
+api.MapPost("/software/install", async (SoftwareInstallRequest request, IRemoteManagementService remoteService) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ComputerName))
+        return Results.BadRequest(new ErrorResponse("ValidationError", "ComputerName is required", null));
+
+    if (string.IsNullOrWhiteSpace(request.PackagePath))
+        return Results.BadRequest(new ErrorResponse("ValidationError", "PackagePath is required", null));
+
+    var result = await remoteService.InstallSoftwareAsync(
+        request.ComputerName,
+        request.PackagePath,
+        request.Arguments,
+        request.TicketNumber);
+
+    return result.Success ? Results.Ok(result) : Results.UnprocessableEntity(result);
 });
 
 // Azure User Lookup

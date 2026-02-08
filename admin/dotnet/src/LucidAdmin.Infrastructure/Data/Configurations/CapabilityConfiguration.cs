@@ -182,6 +182,37 @@ public class CapabilityConfiguration : IEntityTypeConfiguration<Capability>
                 IsEnabled = true,
                 CreatedAt = now,
                 UpdatedAt = now
+            },
+            // Workstation Management Capabilities
+            new Capability
+            {
+                Id = new Guid("a1b2c3d4-0010-0000-0000-000000000001"),
+                CapabilityId = "ad-computer-lookup",
+                Version = "1.0.0",
+                Category = "active-directory",
+                DisplayName = "Look up user's assigned computer(s)",
+                Description = "Query Active Directory for computer objects assigned to a user via managedBy attribute",
+                RequiresServiceAccount = true,
+                RequiredProvidersJson = "[\"windows-ad\"]",
+                IsBuiltIn = true,
+                IsEnabled = true,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            new Capability
+            {
+                Id = new Guid("a1b2c3d4-0011-0000-0000-000000000001"),
+                CapabilityId = "remote-software-install",
+                Version = "1.0.0",
+                Category = "workstation-management",
+                DisplayName = "Install software on remote computer",
+                Description = "Install software packages on remote Windows computers via PowerShell Remoting (WinRM)",
+                RequiresServiceAccount = true,
+                RequiredProvidersJson = "[\"windows-ad\"]",
+                IsBuiltIn = true,
+                IsEnabled = true,
+                CreatedAt = now,
+                UpdatedAt = now
             }
         );
     }

@@ -1,3 +1,4 @@
+using System.DirectoryServices;
 using System.DirectoryServices.AccountManagement;
 using LucidToolServer.Configuration;
 using LucidToolServer.Exceptions;
@@ -565,6 +566,101 @@ public class ActiveDirectoryService : IActiveDirectoryService
                 throw new AdOperationException($"Failed to search groups: {ex.Message}", ex);
             }
         });
+    }
+
+    /// <inheritdoc />
+    public async Task<UserComputersResponse> GetUserComputersAsync(string username)
+    {
+        return await Task.Run(() =>
+        {
+            _logger.LogInformation("Looking up computers for user: {Username}", username);
+
+            using var context = string.IsNullOrEmpty(_settings.DomainName)
+                ? new PrincipalContext(ContextType.Domain)
+                : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+
+            using var user = FindUserByMultipleStrategies(context, username);
+            if (user == null)
+                throw new UserNotFoundException($"User not found: {username}");
+
+            var userDn = user.DistinguishedName;
+            var computers = new List<ComputerInfo>();
+
+            // Search for computers managed by this user
+            using var directoryEntry = new DirectoryEntry($"LDAP://{_settings.DomainName}");
+            using var searcher = new DirectorySearcher(directoryEntry)
+            {
+                Filter = $"(&(objectCategory=computer)(managedBy={EscapeLdapFilter(userDn)}))",
+                PropertiesToLoad = { "cn", "dNSHostName", "operatingSystem",
+                                     "operatingSystemVersion", "lastLogonTimestamp",
+                                     "description", "distinguishedName" }
+            };
+
+            foreach (SearchResult result in searcher.FindAll())
+            {
+                computers.Add(new ComputerInfo(
+                    Name: GetProperty(result, "cn"),
+                    DnsHostName: GetPropertyOrNull(result, "dNSHostName"),
+                    OperatingSystem: GetPropertyOrNull(result, "operatingSystem"),
+                    OperatingSystemVersion: GetPropertyOrNull(result, "operatingSystemVersion"),
+                    LastLogon: GetFileTimeProperty(result, "lastLogonTimestamp"),
+                    Description: GetPropertyOrNull(result, "description"),
+                    DistinguishedName: GetProperty(result, "distinguishedName")
+                ));
+            }
+
+            _logger.LogInformation("Found {Count} computers for user {Username}",
+                computers.Count, username);
+
+            return new UserComputersResponse(
+                Success: true,
+                Username: username,
+                DisplayName: user.DisplayName ?? username,
+                Computers: computers,
+                Count: computers.Count,
+                Message: computers.Count > 0
+                    ? $"Found {computers.Count} computer(s) assigned to {user.DisplayName ?? username}"
+                    : $"No computers found assigned to {user.DisplayName ?? username}"
+            );
+        });
+    }
+
+    private static string GetProperty(SearchResult result, string propertyName)
+    {
+        return result.Properties[propertyName].Count > 0
+            ? result.Properties[propertyName][0]?.ToString() ?? ""
+            : "";
+    }
+
+    private static string? GetPropertyOrNull(SearchResult result, string propertyName)
+    {
+        return result.Properties[propertyName].Count > 0
+            ? result.Properties[propertyName][0]?.ToString()
+            : null;
+    }
+
+    private static string? GetFileTimeProperty(SearchResult result, string propertyName)
+    {
+        if (result.Properties[propertyName].Count == 0) return null;
+        try
+        {
+            var fileTime = (long)result.Properties[propertyName][0];
+            return DateTime.FromFileTimeUtc(fileTime).ToString("o");
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Escape special characters in LDAP filter values to prevent injection.
+    /// </summary>
+    private static string EscapeLdapFilter(string value)
+    {
+        return value
+            .Replace("\\", "\\5c")
+            .Replace("*", "\\2a")
+            .Replace("(", "\\28")
+            .Replace(")", "\\29")
+            .Replace("\0", "\\00");
     }
 
     /// <summary>

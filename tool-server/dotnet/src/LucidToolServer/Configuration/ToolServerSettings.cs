@@ -33,6 +33,13 @@ public class ToolServerSettings
     public string? DomainName { get; set; }
 
     /// <summary>
+    /// Allowed UNC paths for software installation packages.
+    /// Supports wildcards (e.g., "\\\\fileserver\\software\\*").
+    /// If empty, remote software install is disabled.
+    /// </summary>
+    public string[] AllowedSoftwarePaths { get; set; } = Array.Empty<string>();
+
+    /// <summary>
     /// Azure / Entra ID configuration for cloud operations.
     /// </summary>
     public AzureSettings? Azure { get; set; }

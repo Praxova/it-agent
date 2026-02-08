@@ -74,4 +74,12 @@ public interface IActiveDirectoryService
     /// <param name="query">Search query string.</param>
     /// <returns>Group list response with matching results.</returns>
     Task<GroupListResponse> SearchGroupsAsync(string query);
+
+    /// <summary>
+    /// Gets computer objects associated with a user.
+    /// Searches by managedBy attribute and description field.
+    /// </summary>
+    /// <param name="username">The username (sAMAccountName) of the user.</param>
+    /// <returns>List of computers assigned to this user.</returns>
+    Task<UserComputersResponse> GetUserComputersAsync(string username);
 }
