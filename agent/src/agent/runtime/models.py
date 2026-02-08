@@ -20,6 +20,7 @@ class StepType(str, Enum):
     END = "End"
     SUB_WORKFLOW = "SubWorkflow"  # Phase C2 will add executor
     APPROVAL = "Approval"
+    CLARIFY = "Clarify"
 
 
 class CredentialReference(BaseModel):

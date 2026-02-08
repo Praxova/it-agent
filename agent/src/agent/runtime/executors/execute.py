@@ -1,6 +1,7 @@
 """Execute step executor - calls Tool Server."""
 from __future__ import annotations
 import logging
+import re as _re
 from typing import Any
 
 import httpx
@@ -165,28 +166,39 @@ class ExecuteExecutor(BaseStepExecutor):
         params: dict[str, Any],
     ) -> dict[str, Any]:
         """Call the Tool Server API."""
-        # Map capability to endpoint
+        # Map capability to (method, endpoint)
         endpoint_map = {
-            "ad-password-reset": "/api/v1/password/reset",
-            "ad-group-add": "/api/v1/groups/add-member",
-            "ad-group-remove": "/api/v1/groups/remove-member",
-            "ntfs-permission-grant": "/api/v1/permissions/grant",
-            "ntfs-permission-revoke": "/api/v1/permissions/revoke",
+            "ad-password-reset": ("POST", "/api/v1/password/reset"),
+            "ad-group-add": ("POST", "/api/v1/groups/add-member"),
+            "ad-group-remove": ("POST", "/api/v1/groups/remove-member"),
+            "ntfs-permission-grant": ("POST", "/api/v1/permissions/grant"),
+            "ntfs-permission-revoke": ("POST", "/api/v1/permissions/revoke"),
+            "ad-computer-lookup": ("GET", "/api/v1/user/{username}/computers"),
+            "remote-software-install": ("POST", "/api/v1/software/install"),
         }
 
-        endpoint = endpoint_map.get(capability, f"/api/v1/{capability}")
+        method, endpoint = endpoint_map.get(capability, ("POST", f"/api/v1/{capability}"))
+
+        # Replace path parameters like {username} from params dict
+        remaining_params = dict(params)
+        path_params = _re.findall(r'\{(\w+)\}', endpoint)
+        for param_name in path_params:
+            if param_name in remaining_params:
+                endpoint = endpoint.replace(f'{{{param_name}}}', str(remaining_params.pop(param_name)))
+            else:
+                return {"success": False, "message": f"Missing required path parameter: {param_name}"}
+
         url = f"{tool_server_url.rstrip('/')}{endpoint}"
 
-        logger.info(f"Calling Tool Server: POST {url}")
-        logger.debug(f"Parameters: {params}")
+        logger.info(f"Calling Tool Server: {method} {url}")
+        logger.debug(f"Parameters: {remaining_params}")
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    json=params,
-                    timeout=30.0,
-                )
+                if method == "GET":
+                    response = await client.get(url, params=remaining_params, timeout=30.0)
+                else:
+                    response = await client.post(url, json=remaining_params, timeout=30.0)
 
                 if response.status_code >= 400:
                     return {

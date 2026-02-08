@@ -212,3 +212,71 @@ class ServiceNowClient:
     async def assign_to_group(self, sys_id: str, group: str) -> bool:
         """Assign ticket to a different group."""
         return await self.update_ticket(sys_id, {"assignment_group": group})
+
+    async def get_customer_comments(
+        self,
+        sys_id: str,
+        since: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get customer-visible comments (journal entries) for a ticket.
+
+        Queries the sys_journal_field table for entries where:
+        - element_id = sys_id (the ticket)
+        - element = "comments" (customer-visible, not "work_notes")
+        - Optionally filtered by sys_created_on > since
+
+        Args:
+            sys_id: The ticket's sys_id
+            since: ISO datetime string — only return comments after this time
+                   Format: "2026-02-08 15:30:00" (ServiceNow format)
+
+        Returns:
+            List of dicts with keys: sys_id, sys_created_on, value (comment text),
+            sys_created_by (username who posted)
+
+        The returned list is ordered by sys_created_on ascending (oldest first).
+        """
+        url = f"{self.base_url}/api/now/table/sys_journal_field"
+
+        query = f"element_id={sys_id}^element=comments"
+        if since:
+            # Convert ISO format to ServiceNow format if needed
+            sn_since = since.replace("T", " ").split(".")[0].split("+")[0]
+            query += f"^sys_created_on>{sn_since}"
+
+        params = {
+            "sysparm_query": query,
+            "sysparm_fields": "sys_id,sys_created_on,value,sys_created_by",
+            "sysparm_limit": "20",
+            "sysparm_orderby": "sys_created_on",
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    params=params,
+                    auth=self._auth,
+                    headers={"Accept": "application/json"},
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                results = data.get("result", [])
+
+                # Filter out comments posted by our own service account
+                results = [
+                    r for r in results
+                    if r.get("sys_created_by") != self.credentials.username
+                ]
+
+                logger.info(
+                    f"Found {len(results)} customer comments for ticket {sys_id}"
+                )
+                return results
+
+        except Exception as e:
+            logger.error(f"Failed to get customer comments for {sys_id}: {e}")
+            return []

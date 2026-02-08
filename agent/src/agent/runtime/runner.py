@@ -386,6 +386,8 @@ class AgentRunner:
             logger.debug("No new work items")
             # Still poll for approval decisions even when no new tickets
             await self._poll_approvals()
+            # Poll for clarification replies
+            await self._poll_clarifications()
             return
 
         logger.info(f"Found {len(items)} new work items")
@@ -395,6 +397,8 @@ class AgentRunner:
 
         # Poll for approval decisions
         await self._poll_approvals()
+        # Poll for clarification replies
+        await self._poll_clarifications()
 
     async def _process_work_item(self, item: WorkItem):
         """Process a single work item through the workflow."""
@@ -659,6 +663,172 @@ class AgentRunner:
             requester=ticket_data.get("caller_id", ""),
             display_id=ticket_id,
         )
+
+    async def _poll_clarifications(self):
+        """Poll for resolved clarifications (user replied on ServiceNow ticket)."""
+        if not self._engine or not self._snow_client:
+            return
+
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.admin_portal_url}/api/clarifications/pending"
+                params = {"agentName": self.agent_name}
+                response = await client.get(url, params=params, timeout=10.0)
+
+                if response.status_code == 404:
+                    return  # Endpoint not available
+                response.raise_for_status()
+                clarifications = response.json()
+
+            if not clarifications:
+                return
+
+            logger.info(f"Checking {len(clarifications)} pending clarifications for replies")
+
+            for clarification in clarifications:
+                await self._check_clarification_reply(clarification)
+
+        except Exception as e:
+            logger.debug(f"Clarification poll error: {e}")
+
+    async def _check_clarification_reply(self, clarification: dict):
+        """Check if user has replied to a clarification on ServiceNow."""
+        ticket_sys_id = clarification.get("ticketSysId")
+        posted_at = clarification.get("postedAt")
+        clarification_id = clarification.get("id")
+
+        if not ticket_sys_id or not posted_at:
+            return
+
+        # Query ServiceNow for customer comments after our question was posted
+        comments = await self._snow_client.get_customer_comments(
+            sys_id=ticket_sys_id,
+            since=posted_at,
+        )
+
+        if not comments:
+            return  # No reply yet
+
+        # Take the first reply (oldest customer comment after our question)
+        user_reply = comments[0].get("value", "")
+
+        logger.info(f"Got clarification reply for ticket "
+                    f"{clarification.get('ticketId')}: {user_reply[:100]}...")
+
+        # Resolve the clarification in portal
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/resolve"
+                response = await client.post(
+                    url,
+                    json={"userReply": user_reply},
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Failed to resolve clarification {clarification_id}: {e}")
+            return
+
+        # Resume the workflow
+        await self._resume_from_clarification(clarification, user_reply)
+
+    async def _resume_from_clarification(self, clarification: dict, user_reply: str):
+        """Resume a workflow after user replied to clarification."""
+        import json as _json
+
+        clarification_id = clarification.get("id")
+        ticket_id = clarification.get("ticketId")
+        resume_after = clarification.get("resumeAfterStep", "")
+        workflow_name = clarification.get("workflowName", "")
+        context_json = clarification.get("contextSnapshotJson", "{}")
+
+        if isinstance(context_json, str):
+            context_snapshot = _json.loads(context_json)
+        else:
+            context_snapshot = context_json
+
+        ticket_data = context_snapshot.get("_ticket_data", {})
+
+        # Inject user reply into context
+        context_snapshot["user_reply"] = user_reply
+        context_snapshot["clarification_resolved"] = True
+
+        try:
+            logger.info(f"Resuming workflow for ticket {ticket_id} after clarification reply")
+
+            # Use same engine selection logic as approval resume
+            engine = self._get_resume_engine(workflow_name, context_snapshot)
+
+            context = await engine.resume(
+                context_snapshot=context_snapshot,
+                ticket_id=ticket_id,
+                ticket_data=ticket_data,
+                resume_after_step=resume_after,
+                outcome="resolved",
+            )
+
+            # Track stats and handle result
+            self._tickets_processed += 1
+            work_item = self._build_work_item_from_clarification(clarification)
+
+            if context.status == ExecutionStatus.COMPLETED:
+                self._tickets_succeeded += 1
+                logger.info(f"{ticket_id} completed after clarification")
+                await self._trigger.complete(work_item, context)
+            elif context.status == ExecutionStatus.SUSPENDED:
+                logger.info(f"{ticket_id} suspended again after clarification")
+            elif context.status == ExecutionStatus.ESCALATED:
+                self._tickets_escalated += 1
+                await self._trigger.escalate(work_item, context)
+            else:
+                self._tickets_failed += 1
+                await self._trigger.fail(work_item, f"Failed after clarification: {context.status}")
+
+            # Acknowledge clarification
+            await self._acknowledge_clarification(clarification_id)
+
+        except Exception as e:
+            logger.error(f"Failed to resume from clarification {clarification_id}: {e}", exc_info=True)
+            self._tickets_failed += 1
+
+    def _build_work_item_from_clarification(self, clarification: dict) -> WorkItem:
+        """Reconstruct a WorkItem from a clarification for trigger callbacks."""
+        import json as _json
+
+        ticket_id = clarification.get("ticketId", "")
+        context_json = clarification.get("contextSnapshotJson", "{}")
+        if isinstance(context_json, str):
+            context_snapshot = _json.loads(context_json)
+        else:
+            context_snapshot = context_json
+
+        ticket_data = context_snapshot.get("_ticket_data", {})
+
+        return WorkItem(
+            id=ticket_data.get("sys_id", ticket_id),
+            source_type=self._trigger.trigger_type if self._trigger else "servicenow",
+            data=ticket_data,
+            raw=None,
+            title=ticket_data.get("short_description", ""),
+            description=ticket_data.get("description", ""),
+            requester=ticket_data.get("caller_id", ""),
+            display_id=ticket_id,
+        )
+
+    async def _acknowledge_clarification(self, clarification_id: str):
+        """Acknowledge a clarification so it won't be returned again."""
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/acknowledge"
+                response = await client.post(
+                    url,
+                    json={"agentName": self.agent_name},
+                    timeout=10.0,
+                )
+                if response.status_code < 400:
+                    logger.debug(f"Acknowledged clarification {clarification_id}")
+        except Exception as e:
+            logger.warning(f"Failed to acknowledge clarification {clarification_id}: {e}")
 
     def stop(self):
         """Stop the agent."""
