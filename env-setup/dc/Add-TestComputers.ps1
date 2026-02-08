@@ -26,7 +26,7 @@ if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$ouPath'" -Er
 # Define test computers with user assignments
 $computers = @(
     @{ Name = "DESK-LSKYWALKER"; Description = "Luke Skywalker's Workstation"; ManagedBy = "luke.skywalker"; OS = "Windows 11 Enterprise"; OSVersion = "10.0 (22631)" },
-    @{ Name = "DESK-HSOLO";      Description = "Han Solo's Workstation";       ManagedBy = "hsolo";          OS = "Windows 11 Enterprise"; OSVersion = "10.0 (22631)" },
+    @{ Name = "DESK-HSOLO";      Description = "Han Solo's Workstation";       ManagedBy = "han.solo";          OS = "Windows 11 Enterprise"; OSVersion = "10.0 (22631)" },
     @{ Name = "DESK-LORGANA";    Description = "Leia Organa's Workstation";    ManagedBy = "leia.organa";    OS = "Windows 10 Enterprise"; OSVersion = "10.0 (19045)" },
     @{ Name = "DESK-OKENOBI";    Description = "Obi-Wan Kenobi's Workstation"; ManagedBy = "obi-wan.kenobi"; OS = "Windows 11 Enterprise"; OSVersion = "10.0 (22631)" },
     @{ Name = "LAPTOP-LSKYWALKER"; Description = "Luke Skywalker's Laptop";    ManagedBy = "luke.skywalker"; OS = "Windows 11 Enterprise"; OSVersion = "10.0 (22631)" }

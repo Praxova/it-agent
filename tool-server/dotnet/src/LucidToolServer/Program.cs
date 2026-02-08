@@ -78,11 +78,12 @@ app.Use(async (context, next) =>
 var api = app.MapGroup("/api/v1");
 
 // Health endpoint
-api.MapGet("/health", async (IActiveDirectoryService adService, IAzureService? azureService) =>
+api.MapGet("/health", async (IActiveDirectoryService adService, HttpContext httpContext) =>
 {
     var adConnected = await adService.TestConnectionAsync();
 
     bool? azureConnected = null;
+    var azureService = httpContext.RequestServices.GetService<IAzureService>();
     if (azureService != null)
     {
         azureConnected = await azureService.TestConnectionAsync();
@@ -330,35 +331,33 @@ api.MapPost("/software/install", async (SoftwareInstallRequest request, IRemoteM
     return result.Success ? Results.Ok(result) : Results.UnprocessableEntity(result);
 });
 
-// Azure User Lookup
-api.MapGet("/azure/user/{upn}", async (string upn, IAzureService? azureService) =>
+// Azure endpoints (only registered when Azure is configured)
+if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azureConfig["ClientId"]))
 {
-    if (azureService == null)
-        return Results.BadRequest(new ErrorResponse("NotConfigured", "Azure is not configured on this tool server", null));
+    // Azure User Lookup
+    api.MapGet("/azure/user/{upn}", async (string upn, IAzureService azureService) =>
+    {
+        if (string.IsNullOrWhiteSpace(upn))
+            return Results.BadRequest(new ErrorResponse("ValidationError", "User principal name or ID is required", null));
 
-    if (string.IsNullOrWhiteSpace(upn))
-        return Results.BadRequest(new ErrorResponse("ValidationError", "User principal name or ID is required", null));
+        var result = await azureService.GetUserAsync(upn);
+        return Results.Ok(result);
+    });
 
-    var result = await azureService.GetUserAsync(upn);
-    return Results.Ok(result);
-});
+    // Azure VM Lookup
+    api.MapGet("/azure/vm/{vmName}", async (
+        string vmName,
+        string? resourceGroup,
+        string? subscriptionId,
+        IAzureService azureService) =>
+    {
+        if (string.IsNullOrWhiteSpace(vmName))
+            return Results.BadRequest(new ErrorResponse("ValidationError", "VM name is required", null));
 
-// Azure VM Lookup
-api.MapGet("/azure/vm/{vmName}", async (
-    string vmName,
-    string? resourceGroup,
-    string? subscriptionId,
-    IAzureService? azureService) =>
-{
-    if (azureService == null)
-        return Results.BadRequest(new ErrorResponse("NotConfigured", "Azure is not configured on this tool server", null));
-
-    if (string.IsNullOrWhiteSpace(vmName))
-        return Results.BadRequest(new ErrorResponse("ValidationError", "VM name is required", null));
-
-    var result = await azureService.GetVmAsync(vmName, resourceGroup, subscriptionId);
-    return Results.Ok(result);
-});
+        var result = await azureService.GetVmAsync(vmName, resourceGroup, subscriptionId);
+        return Results.Ok(result);
+    });
+}
 
 // Map health check endpoints
 app.MapHealthEndpoints();
