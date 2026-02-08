@@ -31,4 +31,9 @@ public class ToolServerSettings
     /// If not specified, uses the default domain context.
     /// </summary>
     public string? DomainName { get; set; }
+
+    /// <summary>
+    /// Azure / Entra ID configuration for cloud operations.
+    /// </summary>
+    public AzureSettings? Azure { get; set; }
 }

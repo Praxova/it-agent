@@ -27,6 +27,13 @@ builder.Services.Configure<ToolServerSettings>(
 builder.Services.AddScoped<IActiveDirectoryService, ActiveDirectoryService>();
 builder.Services.AddScoped<IFilePermissionService, FilePermissionService>();
 
+// Azure service (conditional — only if configured)
+var azureConfig = builder.Configuration.GetSection("ToolServer:Azure");
+if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azureConfig["ClientId"]))
+{
+    builder.Services.AddScoped<IAzureService, AzureService>();
+}
+
 var app = builder.Build();
 
 // Global exception handler
@@ -70,18 +77,30 @@ app.Use(async (context, next) =>
 var api = app.MapGroup("/api/v1");
 
 // Health endpoint
-api.MapGet("/health", async (IActiveDirectoryService adService) =>
+api.MapGet("/health", async (IActiveDirectoryService adService, IAzureService? azureService) =>
 {
     var adConnected = await adService.TestConnectionAsync();
+
+    bool? azureConnected = null;
+    if (azureService != null)
+    {
+        azureConnected = await azureService.TestConnectionAsync();
+    }
 
     var status = adConnected ? "healthy" : "unhealthy";
     var message = adConnected
         ? "Successfully connected to Active Directory"
         : "Failed to connect to Active Directory";
 
+    if (azureConnected == true)
+        message += ". Azure connected.";
+    else if (azureConnected == false)
+        message += ". Azure connection failed.";
+
     return new HealthResponse(
         Status: status,
         AdConnected: adConnected,
+        AzureConnected: azureConnected,
         Message: message
     );
 });
@@ -280,6 +299,36 @@ api.MapGet("/permissions/{*path}", (
         Path: path,
         Permissions: permissions
     ));
+});
+
+// Azure User Lookup
+api.MapGet("/azure/user/{upn}", async (string upn, IAzureService? azureService) =>
+{
+    if (azureService == null)
+        return Results.BadRequest(new ErrorResponse("NotConfigured", "Azure is not configured on this tool server", null));
+
+    if (string.IsNullOrWhiteSpace(upn))
+        return Results.BadRequest(new ErrorResponse("ValidationError", "User principal name or ID is required", null));
+
+    var result = await azureService.GetUserAsync(upn);
+    return Results.Ok(result);
+});
+
+// Azure VM Lookup
+api.MapGet("/azure/vm/{vmName}", async (
+    string vmName,
+    string? resourceGroup,
+    string? subscriptionId,
+    IAzureService? azureService) =>
+{
+    if (azureService == null)
+        return Results.BadRequest(new ErrorResponse("NotConfigured", "Azure is not configured on this tool server", null));
+
+    if (string.IsNullOrWhiteSpace(vmName))
+        return Results.BadRequest(new ErrorResponse("ValidationError", "VM name is required", null));
+
+    var result = await azureService.GetVmAsync(vmName, resourceGroup, subscriptionId);
+    return Results.Ok(result);
 });
 
 // Map health check endpoints

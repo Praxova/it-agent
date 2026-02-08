@@ -93,6 +93,11 @@ public static class DependencyInjection
                 sp.GetRequiredService<ICredentialService>(),
                 sp.GetRequiredService<ILogger<WindowsAdProvider>>()));
 
+        services.AddScoped<IServiceAccountProvider>(sp =>
+            new AzureProvider(
+                sp.GetRequiredService<ICredentialService>(),
+                sp.GetRequiredService<ILogger<AzureProvider>>()));
+
         // Providers that don't need credential service (changed to Scoped for lifetime consistency)
         services.AddScoped<IServiceAccountProvider, LinuxProvider>();
         services.AddScoped<IServiceAccountProvider, AwsProvider>();
@@ -109,6 +114,8 @@ public static class DependencyInjection
         services.AddSingleton<ICapabilityProvider, AdGroupManagementCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, FilePermissionsCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, ServiceNowConnectorCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, AzureUserLookupCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, AzureVmLookupCapabilityProvider>();
 
         // Capability Registry
         services.AddSingleton<ICapabilityRegistry, CapabilityRegistry>();

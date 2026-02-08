@@ -151,6 +151,37 @@ public class CapabilityConfiguration : IEntityTypeConfiguration<Capability>
                 IsEnabled = true,
                 CreatedAt = now,
                 UpdatedAt = now
+            },
+            // Azure Capabilities
+            new Capability
+            {
+                Id = new Guid("a1b2c3d4-0008-0000-0000-000000000001"),
+                CapabilityId = "azure-user-lookup",
+                Version = "1.0.0",
+                Category = "azure",
+                DisplayName = "Look up user in Azure AD / Entra ID",
+                Description = "Query Microsoft Entra ID for user details via Microsoft Graph API",
+                RequiresServiceAccount = true,
+                RequiredProvidersJson = "[\"azure\"]",
+                IsBuiltIn = true,
+                IsEnabled = true,
+                CreatedAt = now,
+                UpdatedAt = now
+            },
+            new Capability
+            {
+                Id = new Guid("a1b2c3d4-0009-0000-0000-000000000001"),
+                CapabilityId = "azure-vm-lookup",
+                Version = "1.0.0",
+                Category = "azure",
+                DisplayName = "Look up virtual machine in Azure",
+                Description = "Query Azure Resource Manager for VM details including status, size, and IPs",
+                RequiresServiceAccount = true,
+                RequiredProvidersJson = "[\"azure\"]",
+                IsBuiltIn = true,
+                IsEnabled = true,
+                CreatedAt = now,
+                UpdatedAt = now
             }
         );
     }
