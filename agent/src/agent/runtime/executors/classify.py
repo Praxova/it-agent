@@ -10,6 +10,7 @@ from griptape.rules import Rule, Ruleset
 
 from ..models import WorkflowStepExportInfo, RulesetExportInfo, StepType, ExampleSetExportInfo
 from ..execution_context import ExecutionContext, StepResult, ExecutionStatus
+from ..utils import resolve_template
 from .base import BaseStepExecutor
 
 logger = logging.getLogger(__name__)
@@ -19,10 +20,10 @@ class ClassifyExecutor(BaseStepExecutor):
     """
     Executes Classify steps - uses LLM to classify tickets.
 
-    Builds prompts with:
-    - Rulesets (classification rules, security rules)
-    - Few-shot examples from example sets
-    - Ticket data to classify
+    Supports two modes:
+    1. Classification mode (default): Few-shot classification of tickets
+    2. Catalog matching mode: Match user input against catalog entries
+       (triggered by ``query_prompt`` in step config)
     """
 
     @property
@@ -30,6 +31,24 @@ class ClassifyExecutor(BaseStepExecutor):
         return StepType.CLASSIFY.value
 
     async def execute(
+        self,
+        step: WorkflowStepExportInfo,
+        context: ExecutionContext,
+        rulesets: dict[str, RulesetExportInfo],
+    ) -> StepResult:
+        """Execute classification or catalog matching step."""
+        config = step.configuration or {}
+
+        if config.get("query_prompt"):
+            return await self._execute_catalog_match(step, context, rulesets)
+        else:
+            return await self._execute_classification(step, context, rulesets)
+
+    # ------------------------------------------------------------------ #
+    # Classification mode (existing behaviour)
+    # ------------------------------------------------------------------ #
+
+    async def _execute_classification(
         self,
         step: WorkflowStepExportInfo,
         context: ExecutionContext,
@@ -98,6 +117,189 @@ class ClassifyExecutor(BaseStepExecutor):
             result.fail(str(e))
 
         return result
+
+    # ------------------------------------------------------------------ #
+    # Catalog matching mode (new)
+    # ------------------------------------------------------------------ #
+
+    async def _execute_catalog_match(
+        self,
+        step: WorkflowStepExportInfo,
+        context: ExecutionContext,
+        rulesets: dict[str, RulesetExportInfo],
+    ) -> StepResult:
+        """
+        Execute catalog matching step.
+
+        Uses example set entries as catalog reference data and the LLM
+        to match the user's request against them.
+
+        Configuration options:
+        - use_example_set: Name of example set to use as catalog
+        - query_prompt: Template for user prompt (triggers catalog mode)
+        - extract_fields: Fields to extract from LLM response
+        """
+        result = StepResult(
+            step_name=step.name,
+            step_type=self.step_type,
+            status=ExecutionStatus.RUNNING,
+        )
+
+        if not context.llm_driver:
+            result.fail("No LLM driver configured")
+            return result
+
+        config = step.configuration or {}
+        query_prompt_template = config.get("query_prompt", "")
+        extract_fields = config.get("extract_fields", [])
+        example_set_name = config.get("use_example_set")
+
+        # Resolve the example set (catalog data)
+        example_set = self._resolve_example_set(example_set_name, context)
+        if not example_set:
+            result.fail(f"Example set '{example_set_name}' not found for catalog matching")
+            return result
+
+        # Resolve template variables in the query prompt
+        user_prompt = resolve_template(query_prompt_template, context)
+
+        # Build catalog matching prompt
+        step_rulesets = self.get_step_rulesets(step, rulesets)
+        prompt = self._build_catalog_matching_prompt(
+            example_set=example_set,
+            user_prompt=user_prompt,
+            extract_fields=extract_fields,
+            rulesets=step_rulesets,
+        )
+
+        # Create Griptape agent with rules
+        griptape_rules = self._build_griptape_rules(step_rulesets)
+
+        try:
+            agent = Agent(
+                prompt_driver=context.llm_driver,
+                rules=griptape_rules,
+            )
+
+            logger.debug(f"Catalog matching prompt:\n{prompt[:500]}...")
+            response = agent.run(prompt)
+            response_text = response.output_task.output.value
+
+            logger.debug(f"Catalog matching response:\n{response_text}")
+
+            # Parse the JSON response
+            match_result = self._parse_json_response(response_text)
+
+            # Store extracted fields in context
+            for key, value in match_result.items():
+                context.set_variable(key, value)
+
+            result.complete(match_result)
+            logger.info(
+                f"Catalog match result: {match_result.get('matched_software', 'N/A')} "
+                f"(confidence: {match_result.get('match_confidence', 'N/A')})"
+            )
+
+        except Exception as e:
+            logger.error(f"Catalog matching failed: {e}")
+            result.fail(str(e))
+
+        return result
+
+    def _build_catalog_matching_prompt(
+        self,
+        example_set: ExampleSetExportInfo,
+        user_prompt: str,
+        extract_fields: list[str],
+        rulesets: list[RulesetExportInfo],
+    ) -> str:
+        """Build the catalog matching prompt."""
+        system = (
+            "You are a catalog matching assistant. Match the user's request "
+            "against the available catalog entries.\n\n"
+            "Your response MUST be valid JSON with these fields:\n"
+        )
+        for field in extract_fields:
+            system += f"- {field}\n"
+        system += (
+            '\nIf no catalog entry matches, set matched_software to "no_match", '
+            "install_command to an empty string, and match_confidence to 0.0.\n"
+            "Respond with ONLY the JSON object, no other text."
+        )
+
+        # Build catalog entries section
+        catalog_parts = ["## Available Catalog Entries\n"]
+        for example in example_set.examples:
+            # input_text = "ShortDescription\nDescription"
+            lines = (example.input_text or "").split("\n", 1)
+            short_desc = lines[0] if lines else ""
+            description = lines[1] if len(lines) > 1 else ""
+
+            # Parse expected_output_json for install command and package ID
+            install_command = ""
+            package_id = ""
+            if example.expected_output_json:
+                try:
+                    output = json.loads(example.expected_output_json)
+                    install_command = output.get("target_resource", "") or ""
+                    # Derive package ID from notes or short desc
+                except json.JSONDecodeError:
+                    pass
+
+            catalog_parts.append(f"CATALOG ENTRY: {short_desc}")
+            if description:
+                catalog_parts.append(f"Description: {description}")
+            if install_command:
+                catalog_parts.append(f"Install Command: {install_command}")
+            catalog_parts.append("---")
+
+        catalog_section = "\n".join(catalog_parts)
+
+        # Combine
+        parts = [system]
+        rules_text = self.build_rules_prompt(rulesets)
+        if rules_text:
+            parts.append(rules_text)
+        parts.append(catalog_section)
+        parts.append(f"## User Request\n\n{user_prompt}")
+
+        return "\n\n".join(parts)
+
+    def _parse_json_response(self, response: str) -> dict[str, Any]:
+        """Parse a JSON response from the LLM, handling code blocks."""
+        # Remove markdown code blocks if present
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'\{[\s\S]*\}', response)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                logger.warning(f"Could not parse JSON response: {response[:200]}")
+                return {
+                    "matched_software": "no_match",
+                    "install_command": "",
+                    "match_confidence": 0.0,
+                }
+
+        try:
+            parsed = json.loads(json_str)
+            # Normalise confidence to float if present
+            if "match_confidence" in parsed:
+                parsed["match_confidence"] = float(parsed["match_confidence"])
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON parse error: {e}")
+            return {
+                "matched_software": "no_match",
+                "install_command": "",
+                "match_confidence": 0.0,
+            }
+
+    # ------------------------------------------------------------------ #
+    # Shared helpers
+    # ------------------------------------------------------------------ #
 
     def _build_classification_prompt(
         self,

@@ -2,13 +2,13 @@
 from __future__ import annotations
 import json
 import logging
-import re
 from typing import Any, TYPE_CHECKING
 
 import httpx
 
 from .base import BaseStepExecutor
 from ..execution_context import ExecutionStatus, StepResult
+from ..utils import resolve_template
 
 if TYPE_CHECKING:
     from ..execution_context import ExecutionContext
@@ -44,7 +44,7 @@ class ClarifyExecutor(BaseStepExecutor):
         set_ticket_state = config.get("set_ticket_state")
 
         # Render question from template
-        rendered_question = self._render_template(question_template, context)
+        rendered_question = resolve_template(question_template, context)
 
         if not rendered_question:
             return StepResult(
@@ -157,26 +157,3 @@ class ClarifyExecutor(BaseStepExecutor):
                 error=f"Clarification submission failed: {e}",
             )
 
-    def _render_template(
-        self, template: str, context: ExecutionContext
-    ) -> str:
-        """Render a mustache-style template with context values.
-
-        Substitutes {{key}} placeholders. Missing variables are left
-        as literal {{key}} placeholders.
-        """
-        if not template:
-            return ""
-
-        # Build values dict from variables + ticket_data
-        values: dict[str, Any] = {}
-        values.update(context.ticket_data)
-        values.update(context.variables)
-
-        def replacer(match: re.Match) -> str:
-            key = match.group(1)
-            if key in values:
-                return str(values[key])
-            return match.group(0)  # Leave as {{key}}
-
-        return re.sub(r"\{\{(\w+)\}\}", replacer, template)

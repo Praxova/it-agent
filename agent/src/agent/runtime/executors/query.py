@@ -1,12 +1,14 @@
 """Query step executor - queries external systems."""
 from __future__ import annotations
 import logging
+import re as _re
 from typing import Any
 
 import httpx
 
 from ..models import WorkflowStepExportInfo, RulesetExportInfo, StepType
 from ..execution_context import ExecutionContext, StepResult, ExecutionStatus
+from ..utils import resolve_template
 from .base import BaseStepExecutor
 
 logger = logging.getLogger(__name__)
@@ -118,15 +120,50 @@ class QueryExecutor(BaseStepExecutor):
         context: ExecutionContext,
         config: dict[str, Any],
     ) -> Any:
-        """Execute custom query."""
-        endpoint = config.get("endpoint")
+        """Execute custom query via capability routing.
 
-        if not endpoint:
+        Supports two modes:
+        1. ``endpoint`` is a capability key (e.g. ``"ad-computer-lookup"``)
+           — resolved via the execute executor's endpoint map + Tool Server
+             capability routing.
+        2. ``endpoint`` is a full URL — used directly (legacy behaviour).
+
+        Path parameters like ``{computer_name}`` are substituted from
+        ``params`` (after template resolution).
+        """
+        from .execute import ExecuteExecutor
+
+        endpoint_key = config.get("endpoint")
+        if not endpoint_key:
             return {"error": "No endpoint configured"}
 
-        params = config.get("params", {})
+        raw_params = config.get("params", {})
+        store_as = config.get("store_as", "query_result")
 
+        # Resolve {{variable}} templates in param values
+        resolved_params: dict[str, Any] = {}
+        for key, value in raw_params.items():
+            if isinstance(value, str) and "{{" in value:
+                resolved_params[key] = resolve_template(value, context)
+            else:
+                resolved_params[key] = value
+
+        # Check if endpoint_key is a capability name in the execute executor's map
+        exec_executor = ExecuteExecutor()
+        tool_server_url = await exec_executor._get_tool_server_url(endpoint_key, context)
+
+        if tool_server_url:
+            # Use capability routing — look up method/path from endpoint_map
+            result = await exec_executor._call_tool_server(
+                tool_server_url=tool_server_url,
+                capability=endpoint_key,
+                params=resolved_params,
+            )
+            return result
+
+        # Fallback: treat endpoint as a raw URL (legacy)
+        logger.info(f"Custom query falling back to raw URL: {endpoint_key}")
         async with httpx.AsyncClient() as client:
-            response = await client.get(endpoint, params=params, timeout=30.0)
+            response = await client.get(endpoint_key, params=resolved_params, timeout=30.0)
             response.raise_for_status()
             return response.json()
