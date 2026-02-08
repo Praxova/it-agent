@@ -1440,7 +1440,38 @@ public class WorkflowSeeder
         _context.StepTransitions.AddRange(transitions);
         await _context.SaveChangesAsync();
 
-        _logger.LogInformation("Seeded sub-workflow: {Name} with 14 steps and 20 transitions", name);
+        // Step-level ruleset mappings
+        var softwareInstallRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "software-install-rules");
+        var securityRules = await _context.Rulesets
+            .FirstOrDefaultAsync(r => r.Name == "security-rules");
+
+        if (softwareInstallRules != null)
+        {
+            _context.StepRulesetMappings.AddRange(new[]
+            {
+                new StepRulesetMapping { WorkflowStepId = classifyRequest.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = resolveSoftware.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = clarifySoftware.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = clarifyComputer.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = validateInstall.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = executeInstall.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = notifyUser.Id, RulesetId = softwareInstallRules.Id, Priority = 100, IsEnabled = true },
+            });
+        }
+
+        if (securityRules != null)
+        {
+            _context.StepRulesetMappings.AddRange(new[]
+            {
+                new StepRulesetMapping { WorkflowStepId = validateInstall.Id, RulesetId = securityRules.Id, Priority = 200, IsEnabled = true },
+                new StepRulesetMapping { WorkflowStepId = executeInstall.Id, RulesetId = securityRules.Id, Priority = 200, IsEnabled = true },
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Seeded sub-workflow: {Name} with 14 steps and 19 transitions", name);
         return workflow;
     }
 

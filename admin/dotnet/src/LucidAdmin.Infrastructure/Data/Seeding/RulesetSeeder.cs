@@ -27,6 +27,7 @@ public class RulesetSeeder
         await SeedSecurityRulesRuleset();
         await SeedCommunicationRuleset();
         await SeedAuditRuleset();
+        await SeedSoftwareInstallRuleset();
         await _context.SaveChangesAsync();
     }
 
@@ -82,6 +83,7 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
@@ -143,6 +145,7 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
@@ -213,6 +216,7 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
@@ -283,6 +287,7 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
@@ -353,6 +358,7 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
@@ -423,6 +429,96 @@ public class RulesetSeeder
             };
 
             _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
+            _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
+                rulesetName, rules.Count);
+        }
+        else
+        {
+            _logger.LogDebug("Built-in ruleset already exists: {RulesetName}", rulesetName);
+        }
+    }
+
+    private async Task SeedSoftwareInstallRuleset()
+    {
+        const string rulesetName = "software-install-rules";
+
+        var existing = await _context.Rulesets
+            .Include(r => r.Rules)
+            .FirstOrDefaultAsync(r => r.Name == rulesetName);
+
+        if (existing == null)
+        {
+            var ruleset = new Ruleset
+            {
+                Name = rulesetName,
+                DisplayName = "Software Install Rules",
+                Description = "Rules governing automated software installation behavior",
+                Category = RulesetCategory.Validation,
+                IsBuiltIn = true,
+                IsActive = true
+            };
+
+            var rules = new List<Rule>
+            {
+                new Rule
+                {
+                    Name = "catalog-enforcement",
+                    RuleText = "Only install software that exists in the approved software catalog. If the requested software does not match any catalog entry, inform the user and escalate to a human operator.",
+                    Description = "Restrict installations to approved catalog",
+                    Priority = 100,
+                    IsActive = true,
+                    Ruleset = ruleset
+                },
+                new Rule
+                {
+                    Name = "computer-verification",
+                    RuleText = "Before installing software, verify the target computer exists in Active Directory and is reachable on the network. Never attempt installation on a computer that cannot be verified.",
+                    Description = "Verify computer before install",
+                    Priority = 200,
+                    IsActive = true,
+                    Ruleset = ruleset
+                },
+                new Rule
+                {
+                    Name = "no-server-installs",
+                    RuleText = "Do not install software on servers or domain controllers. Only install on workstation-class computers (computer objects in standard workstation OUs).",
+                    Description = "Prevent server installations",
+                    Priority = 300,
+                    IsActive = true,
+                    Ruleset = ruleset
+                },
+                new Rule
+                {
+                    Name = "single-package-per-request",
+                    RuleText = "Process one software installation per ticket. If the user requests multiple packages, install the first identified package and advise them to submit separate tickets for additional software.",
+                    Description = "One package per ticket",
+                    Priority = 400,
+                    IsActive = true,
+                    Ruleset = ruleset
+                },
+                new Rule
+                {
+                    Name = "clarification-courtesy",
+                    RuleText = "When asking the user for clarification, be polite and helpful. Provide specific options from the approved catalog when possible. Include instructions on how to find their computer name if needed.",
+                    Description = "Polite clarification guidance",
+                    Priority = 500,
+                    IsActive = true,
+                    Ruleset = ruleset
+                },
+                new Rule
+                {
+                    Name = "installation-verification",
+                    RuleText = "After executing a software installation, report the outcome clearly to the user. Include the software name, target computer, and whether the installation succeeded or failed.",
+                    Description = "Report install outcomes clearly",
+                    Priority = 600,
+                    IsActive = true,
+                    Ruleset = ruleset
+                }
+            };
+
+            _context.Rulesets.Add(ruleset);
+            _context.Rules.AddRange(rules);
             _logger.LogInformation("Seeded built-in ruleset: {RulesetName} with {RuleCount} rules",
                 rulesetName, rules.Count);
         }
