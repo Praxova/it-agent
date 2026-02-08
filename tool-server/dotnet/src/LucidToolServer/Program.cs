@@ -91,6 +91,15 @@ api.MapPost("/password/reset", async (
     PasswordResetRequest request,
     IActiveDirectoryService adService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Username))
+    {
+        return Results.BadRequest(new ErrorResponse(
+            Error: "ValidationError",
+            Message: "Username is required",
+            Detail: null
+        ));
+    }
+
     // Generate secure temp password if none provided
     var password = string.IsNullOrWhiteSpace(request.NewPassword)
         ? GenerateSecurePassword()
@@ -107,6 +116,15 @@ api.MapPost("/groups/add-member", async (
     GroupMembershipRequest request,
     IActiveDirectoryService adService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.GroupName))
+    {
+        return Results.BadRequest(new ErrorResponse(
+            Error: "ValidationError",
+            Message: "Username and GroupName are required",
+            Detail: null
+        ));
+    }
+
     var result = await adService.AddUserToGroupAsync(request.Username, request.GroupName);
 
     // Include ticket number in response
@@ -118,6 +136,15 @@ api.MapPost("/groups/remove-member", async (
     GroupMembershipRequest request,
     IActiveDirectoryService adService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.GroupName))
+    {
+        return Results.BadRequest(new ErrorResponse(
+            Error: "ValidationError",
+            Message: "Username and GroupName are required",
+            Detail: null
+        ));
+    }
+
     var result = await adService.RemoveUserFromGroupAsync(request.Username, request.GroupName);
 
     // Include ticket number in response
@@ -188,6 +215,15 @@ api.MapPost("/permissions/grant", (
     FilePermissionRequest request,
     IFilePermissionService fileService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Path) || string.IsNullOrWhiteSpace(request.Permission))
+    {
+        return Results.BadRequest(new ErrorResponse(
+            Error: "ValidationError",
+            Message: "Username, Path, and Permission are required",
+            Detail: null
+        ));
+    }
+
     var permissionLevel = request.Permission.ToLowerInvariant() switch
     {
         "read" => PermissionLevel.Read,
@@ -212,6 +248,15 @@ api.MapPost("/permissions/revoke", (
     FilePermissionRevokeRequest request,
     IFilePermissionService fileService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Path))
+    {
+        return Results.BadRequest(new ErrorResponse(
+            Error: "ValidationError",
+            Message: "Username and Path are required",
+            Detail: null
+        ));
+    }
+
     fileService.RevokePermission(request.Path, request.Username);
 
     return Results.Ok(new FilePermissionResponse(

@@ -403,7 +403,7 @@ public class WorkflowSeeder
         {
             Name = "execute-reset",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "ad-password-reset", "generateTempPassword": true}""",
+            ConfigurationJson = """{"capability": "ad-password-reset", "param_mapping": {"username": "affected_user", "ticket_number": "ticket_id"}}""",
             PositionX = 700,
             PositionY = 200,
             SortOrder = 4,
@@ -810,7 +810,7 @@ public class WorkflowSeeder
             Name = "execute-reset",
             DisplayName = "Reset Password",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "ad-password-reset", "generateTempPassword": true}""",
+            ConfigurationJson = """{"capability": "ad-password-reset", "param_mapping": {"username": "affected_user", "ticket_number": "ticket_id"}}""",
             PositionX = 450, PositionY = 200, SortOrder = 3,
             WorkflowDefinitionId = workflow.Id
         };
@@ -934,7 +934,7 @@ public class WorkflowSeeder
             Name = "execute-group-change",
             DisplayName = "Modify Group Membership",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "ad-group-add", "action": "add"}""",
+            ConfigurationJson = """{"capability": "ad-group-add", "param_mapping": {"username": "affected_user", "group_name": "target_group", "ticket_number": "ticket_id"}}""",
             PositionX = 350, PositionY = 200, SortOrder = 2,
             WorkflowDefinitionId = workflow.Id
         };
@@ -1055,7 +1055,7 @@ public class WorkflowSeeder
             Name = "execute-permissions",
             DisplayName = "Set File Permissions",
             StepType = StepType.Execute,
-            ConfigurationJson = """{"capability": "ntfs-permission-grant", "permission": "read"}""",
+            ConfigurationJson = """{"capability": "ntfs-permission-grant", "action_params": {"permission": "read"}, "param_mapping": {"username": "affected_user", "path": "target_resource", "ticket_number": "ticket_id"}}""",
             PositionX = 350, PositionY = 200, SortOrder = 2,
             WorkflowDefinitionId = workflow.Id
         };

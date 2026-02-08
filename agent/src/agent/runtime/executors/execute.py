@@ -127,6 +127,7 @@ class ExecuteExecutor(BaseStepExecutor):
         context: ExecutionContext,
     ) -> dict[str, Any]:
         """Build action parameters from config and context."""
+        # Start with explicit action_params
         params = dict(config.get("action_params", {}))
 
         # Map context variables to parameters
@@ -135,12 +136,25 @@ class ExecuteExecutor(BaseStepExecutor):
             "user": "affected_user",
             "group_name": "target_group",
             "path": "target_resource",
+            "ticket_number": "ticket_id",
         })
 
         for param_name, var_name in param_mapping.items():
             value = context.get_variable(var_name)
             if value is not None:
                 params[param_name] = value
+
+        # Pull fallback values from top-level config keys
+        # (e.g., "permission": "read" alongside "capability": "...")
+        _META_KEYS = {
+            "capability", "action_params", "param_mapping",
+            "description_template", "auto_approve_threshold",
+            "timeout_minutes", "timeout_action",
+            "context_fields_to_display", "use_example_set", "checks",
+        }
+        for key, value in config.items():
+            if key not in _META_KEYS and key not in params:
+                params[key] = value
 
         return params
 
