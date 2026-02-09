@@ -4,44 +4,38 @@ using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Web.Services;
 using Microsoft.AspNetCore.Authentication;
+using IAuthenticationService = LucidAdmin.Web.Services.IAuthenticationService;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LucidAdmin.Web.Controllers;
 
-/// <summary>
-/// Controller for account management (login/logout/change-password).
-/// </summary>
 [Route("account")]
 public class AccountController : Controller
 {
+    private readonly IAuthenticationService _authService;
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IAuditEventRepository _auditRepository;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
+        IAuthenticationService authService,
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         IAuditEventRepository auditRepository,
         ILogger<AccountController> logger)
     {
-        ArgumentNullException.ThrowIfNull(userRepository);
-        ArgumentNullException.ThrowIfNull(passwordHasher);
-        ArgumentNullException.ThrowIfNull(auditRepository);
-        ArgumentNullException.ThrowIfNull(logger);
-
+        _authService = authService;
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _auditRepository = auditRepository;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Handles user login.
-    /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login(
@@ -56,36 +50,41 @@ public class AccountController : Controller
                 return Redirect($"/login?error={Uri.EscapeDataString("Username and password are required.")}&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
             }
 
-            var user = await _userRepository.GetByUsernameAsync(username);
+            var result = await _authService.AuthenticateAsync(username, password);
 
-            if (user == null || !_passwordHasher.VerifyPassword(password, user.PasswordHash))
+            if (!result.Success)
             {
-                _logger.LogWarning("Failed login attempt for username: {Username}", username);
-                return Redirect($"/login?error={Uri.EscapeDataString("Invalid username or password.")}&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
+                await _auditRepository.AddAsync(new AuditEvent
+                {
+                    Action = AuditAction.UserLogin,
+                    PerformedBy = username,
+                    TargetResource = username,
+                    Success = false,
+                    ErrorMessage = result.ErrorMessage
+                });
+
+                return Redirect($"/login?error={Uri.EscapeDataString(result.ErrorMessage ?? "Authentication failed")}&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
             }
 
-            if (!user.IsEnabled)
-            {
-                _logger.LogWarning("Login attempt for disabled user: {Username}", username);
-                return Redirect($"/login?error={Uri.EscapeDataString("Your account has been disabled.")}&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
-            }
-
-            // Check for lockout
-            if (user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTime.UtcNow)
-            {
-                _logger.LogWarning("Login attempt for locked out user: {Username}", username);
-                return Redirect($"/login?error={Uri.EscapeDataString($"Your account is locked until {user.LockoutEnd.Value:g}.")}&returnUrl={Uri.EscapeDataString(returnUrl ?? "")}");
-            }
-
-            // Create claims
+            // Build claims from AuthenticationResult
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role.ToString()),
-                new Claim("MustChangePassword", user.MustChangePassword.ToString())
+                new Claim(ClaimTypes.Name, result.Username!),
+                new Claim(ClaimTypes.Email, result.Email ?? ""),
+                new Claim(ClaimTypes.Role, result.Role.ToString()),
+                new Claim("MustChangePassword", result.MustChangePassword.ToString()),
+                new Claim("AuthenticationMethod", result.AuthenticationMethod)
             };
+
+            if (result.UserId.HasValue)
+            {
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, result.UserId.Value.ToString()));
+            }
+
+            if (!string.IsNullOrEmpty(result.DisplayName))
+            {
+                claims.Add(new Claim("DisplayName", result.DisplayName));
+            }
 
             var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var authProperties = new AuthenticationProperties
@@ -99,21 +98,23 @@ public class AccountController : Controller
                 new ClaimsPrincipal(claimsIdentity),
                 authProperties);
 
-            // Update last login
-            await _userRepository.UpdateLastLoginAsync(user.Id);
+            await _auditRepository.AddAsync(new AuditEvent
+            {
+                Action = AuditAction.UserLogin,
+                PerformedBy = result.Username!,
+                TargetResource = result.Username!,
+                Success = true,
+                DetailsJson = $"{{\"method\":\"{result.AuthenticationMethod}\"}}"
+            });
 
-            // Reset failed login attempts
-            await _userRepository.ResetFailedLoginAsync(user.Id);
+            _logger.LogInformation("User {Username} logged in via {Method}", result.Username, result.AuthenticationMethod);
 
-            _logger.LogInformation("User {Username} logged in successfully", username);
-
-            // Force password change if required
-            if (user.MustChangePassword)
+            // Force password change if required (local accounts only)
+            if (result.MustChangePassword)
             {
                 return Redirect("/change-password");
             }
 
-            // Redirect to return URL or home
             if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
             {
                 return Redirect(returnUrl);
@@ -128,9 +129,6 @@ public class AccountController : Controller
         }
     }
 
-    /// <summary>
-    /// Handles password change (Blazor cookie-auth flow).
-    /// </summary>
     [HttpPost("change-password")]
     [Authorize]
     public async Task<IActionResult> ChangePassword(
@@ -138,6 +136,13 @@ public class AccountController : Controller
         [FromForm] string newPassword,
         [FromForm] string confirmPassword)
     {
+        // AD users cannot change password through the portal
+        var authMethod = User.FindFirstValue("AuthenticationMethod");
+        if (string.Equals(authMethod, "ActiveDirectory", StringComparison.OrdinalIgnoreCase))
+        {
+            return Redirect("/change-password?error=" + Uri.EscapeDataString("Active Directory users must change their password through AD."));
+        }
+
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
         {
@@ -150,37 +155,31 @@ public class AccountController : Controller
             return Redirect("/change-password?error=" + Uri.EscapeDataString("User not found."));
         }
 
-        // Verify current password
         if (!_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
         {
             return Redirect("/change-password?error=" + Uri.EscapeDataString("Current password is incorrect."));
         }
 
-        // Verify passwords match
         if (newPassword != confirmPassword)
         {
             return Redirect("/change-password?error=" + Uri.EscapeDataString("New passwords do not match."));
         }
 
-        // Verify new != current
         if (currentPassword == newPassword)
         {
             return Redirect("/change-password?error=" + Uri.EscapeDataString("New password must be different from current password."));
         }
 
-        // Enforce password policy
         var policyError = ValidatePasswordPolicy(newPassword, user.Username);
         if (policyError != null)
         {
             return Redirect("/change-password?error=" + Uri.EscapeDataString(policyError));
         }
 
-        // Update password
         user.PasswordHash = _passwordHasher.HashPassword(newPassword);
         user.MustChangePassword = false;
         await _userRepository.UpdateAsync(user);
 
-        // Audit
         await _auditRepository.AddAsync(new AuditEvent
         {
             Action = AuditAction.PasswordChanged,
@@ -191,14 +190,15 @@ public class AccountController : Controller
 
         _logger.LogInformation("User {Username} changed their password", user.Username);
 
-        // Re-sign-in with updated claims (MustChangePassword = false)
+        // Re-sign-in with updated claims
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Role, user.Role.ToString()),
-            new Claim("MustChangePassword", "False")
+            new Claim("MustChangePassword", "False"),
+            new Claim("AuthenticationMethod", "Local")
         };
 
         var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -216,9 +216,6 @@ public class AccountController : Controller
         return Redirect("/");
     }
 
-    /// <summary>
-    /// Handles user logout.
-    /// </summary>
     [HttpGet("logout")]
     [HttpPost("logout")]
     [Authorize]
@@ -233,7 +230,7 @@ public class AccountController : Controller
         return Redirect("/login");
     }
 
-    private static string? ValidatePasswordPolicy(string password, string username)
+    internal static string? ValidatePasswordPolicy(string password, string username)
     {
         if (password.Length < 12)
             return "Password must be at least 12 characters long.";

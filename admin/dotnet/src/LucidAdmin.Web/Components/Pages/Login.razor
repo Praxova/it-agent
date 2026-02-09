@@ -3,6 +3,7 @@
 @layout LoginLayout
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@inject IOptions<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
 
 <PageTitle>Login - Lucid Admin Portal</PageTitle>
 
@@ -54,9 +55,18 @@
                 </MudButton>
             </form>
 
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3" Dense="true">
-                First-time login? Use the default credentials configured during installation.
-            </MudAlert>
+            @if (AdOptions.Value.Enabled)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3" Dense="true">
+                    You can sign in with your domain credentials (user@@@AdOptions.Value.Domain)
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3" Dense="true">
+                    First-time login? Use the default credentials configured during installation.
+                </MudAlert>
+            }
         </MudCardContent>
     </MudCard>
 </MudContainer>

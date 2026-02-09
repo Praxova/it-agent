@@ -9,6 +9,7 @@ using LucidAdmin.Infrastructure.Data.Seeding;
 using LucidAdmin.Web.Authentication;
 using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Endpoints;
+using LucidAdmin.Web.Models;
 using LucidAdmin.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -190,6 +191,15 @@ builder.Services.AddScoped<IAgentService, LucidAdmin.Web.Services.AgentService>(
 builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.CapabilityMappingService>();
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
 builder.Services.AddSingleton<WorkflowRequirementsService>();
+
+// Active Directory options
+builder.Services.Configure<ActiveDirectoryOptions>(
+    builder.Configuration.GetSection(ActiveDirectoryOptions.SectionName));
+
+// Authentication providers
+builder.Services.AddScoped<LocalAuthenticationProvider>();
+builder.Services.AddScoped<LdapAuthenticationProvider>();
+builder.Services.AddScoped<LucidAdmin.Web.Services.IAuthenticationService, LucidAdmin.Web.Services.AuthenticationService>();
 
 // MVC Controllers for Account management
 builder.Services.AddControllers();

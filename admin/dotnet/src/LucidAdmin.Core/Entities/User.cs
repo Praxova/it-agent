@@ -10,6 +10,7 @@ public class User : BaseEntity
     public UserRole Role { get; set; } = UserRole.Viewer;
     public bool IsEnabled { get; set; } = true;
     public bool MustChangePassword { get; set; } = false;
+    public string AuthenticationSource { get; set; } = "Local";
     public DateTime? LastLogin { get; set; }
     public int FailedLoginAttempts { get; set; } = 0;
     public DateTime? LockoutEnd { get; set; }

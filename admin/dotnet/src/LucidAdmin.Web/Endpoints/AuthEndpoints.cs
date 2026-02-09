@@ -1,10 +1,15 @@
+using System.Diagnostics;
+using System.DirectoryServices.Protocols;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Exceptions;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Web.Models;
+using LucidAdmin.Web.Services;
 using Microsoft.AspNetCore.Mvc;
+using IAuthenticationService = LucidAdmin.Web.Services.IAuthenticationService;
+using Microsoft.Extensions.Options;
 
 namespace LucidAdmin.Web.Endpoints;
 
@@ -16,13 +21,13 @@ public static class AuthEndpoints
 
         group.MapPost("/login", async (
             [FromBody] LoginRequest request,
-            IUserRepository userRepository,
-            IPasswordHasher passwordHasher,
+            IAuthenticationService authService,
             ITokenService tokenService,
             IAuditEventRepository auditRepository) =>
         {
-            var user = await userRepository.GetByUsernameAsync(request.Username);
-            if (user == null || !passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+            var result = await authService.AuthenticateAsync(request.Username, request.Password);
+
+            if (!result.Success)
             {
                 await auditRepository.AddAsync(new AuditEvent
                 {
@@ -30,36 +35,39 @@ public static class AuthEndpoints
                     PerformedBy = request.Username,
                     TargetResource = request.Username,
                     Success = false,
-                    ErrorMessage = "Invalid username or password"
+                    ErrorMessage = result.ErrorMessage
                 });
 
                 return Results.Unauthorized();
             }
 
-            if (!user.IsEnabled)
-            {
-                return Results.Problem("Account is disabled", statusCode: 403);
-            }
-
-            await userRepository.UpdateLastLoginAsync(user.Id);
-            await userRepository.ResetFailedLoginAsync(user.Id);
-
-            var token = tokenService.GenerateToken(user);
-            var expiresAt = DateTime.UtcNow.AddMinutes(60);
-
             await auditRepository.AddAsync(new AuditEvent
             {
                 Action = AuditAction.UserLogin,
-                PerformedBy = user.Username,
-                TargetResource = user.Username,
-                Success = true
+                PerformedBy = result.Username!,
+                TargetResource = result.Username!,
+                Success = true,
+                DetailsJson = $"{{\"method\":\"{result.AuthenticationMethod}\"}}"
             });
+
+            // Build a User object for token generation
+            var tokenUser = new User
+            {
+                Id = result.UserId ?? Guid.Empty,
+                Username = result.Username!,
+                Email = result.Email ?? "",
+                PasswordHash = "",
+                Role = result.Role,
+                IsEnabled = true
+            };
+            var token = tokenService.GenerateToken(tokenUser);
+            var expiresAt = DateTime.UtcNow.AddMinutes(60);
 
             return Results.Ok(new LoginResponse(
                 Token: token,
-                Username: user.Username,
-                Email: user.Email,
-                Role: user.Role.ToString(),
+                Username: result.Username!,
+                Email: result.Email ?? "",
+                Role: result.Role.ToString(),
                 ExpiresAt: expiresAt
             ));
         });
@@ -124,6 +132,64 @@ public static class AuthEndpoints
                 LastLogin: u.LastLogin,
                 CreatedAt: u.CreatedAt
             )));
+        }).RequireAuthorization();
+
+        group.MapGet("/ad-status", async (IOptions<ActiveDirectoryOptions> adOptions) =>
+        {
+            var config = adOptions.Value;
+
+            if (!config.Enabled)
+            {
+                return Results.Ok(new
+                {
+                    enabled = false,
+                    server = config.LdapServer,
+                    domain = config.Domain,
+                    reachable = false,
+                    latencyMs = 0
+                });
+            }
+
+            var sw = Stopwatch.StartNew();
+            bool reachable;
+            try
+            {
+                await Task.Run(() =>
+                {
+                    using var connection = new LdapConnection(
+                        new LdapDirectoryIdentifier(config.LdapServer, config.LdapPort));
+                    connection.AuthType = AuthType.Anonymous;
+                    connection.SessionOptions.ProtocolVersion = 3;
+
+                    if (config.UseLdaps)
+                    {
+                        connection.SessionOptions.SecureSocketLayer = true;
+                    }
+
+                    // Anonymous RootDSE query to test connectivity
+                    var searchRequest = new SearchRequest(
+                        "",
+                        "(objectClass=*)",
+                        SearchScope.Base,
+                        "defaultNamingContext");
+                    connection.SendRequest(searchRequest);
+                });
+                reachable = true;
+            }
+            catch
+            {
+                reachable = false;
+            }
+            sw.Stop();
+
+            return Results.Ok(new
+            {
+                enabled = true,
+                server = config.LdapServer,
+                domain = config.Domain,
+                reachable,
+                latencyMs = sw.ElapsedMilliseconds
+            });
         }).RequireAuthorization();
     }
 }
