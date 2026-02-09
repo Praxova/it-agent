@@ -1,0 +1,356 @@
+@page "/settings/users"
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Repositories
+@using LucidAdmin.Core.Interfaces.Services
+@inject IUserRepository UserRepository
+@inject IPasswordHasher PasswordHasher
+@inject IAuditEventRepository AuditRepository
+@inject IOptions<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Users - Lucid Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Users</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        Manage local and Active Directory user accounts.
+    </MudText>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_error != null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+    else
+    {
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" sm="6" md="4">
+                <MudTextField @bind-Value="_searchText"
+                              Label="Search"
+                              Placeholder="Search by username or email..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true"
+                              DebounceInterval="300"
+                              OnDebounceIntervalElapsed="@(() => StateHasChanged())" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect @bind-Value="_sourceFilter"
+                           Label="Auth Source"
+                           T="string?"
+                           Clearable="true"
+                           OnClearButtonClick="@(() => { _sourceFilter = null; StateHasChanged(); })">
+                    <MudSelectItem Value="@((string?)"Local")">Local</MudSelectItem>
+                    <MudSelectItem Value="@((string?)"ActiveDirectory")">Active Directory</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd"
+                           OnClick="OpenCreateDialog">
+                    Add Local User
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+
+        <MudTable Items="@FilteredUsers" Dense="true" Hover="true" Elevation="2">
+            <HeaderContent>
+                <MudTh>Username</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh>Role</MudTh>
+                <MudTh>Auth Source</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Last Login</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Username">
+                    <MudText Typo="Typo.body2"><strong>@context.Username</strong></MudText>
+                </MudTd>
+                <MudTd DataLabel="Email">@context.Email</MudTd>
+                <MudTd DataLabel="Role">
+                    <MudChip T="string" Color="@GetRoleColor(context.Role)" Size="Size.Small">@context.Role</MudChip>
+                    @if (context.AuthenticationSource == "ActiveDirectory")
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">from AD</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Auth Source">
+                    @if (context.AuthenticationSource == "ActiveDirectory")
+                    {
+                        <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Domain">AD</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Default" Size="Size.Small" Icon="@Icons.Material.Filled.Key">Local</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.IsEnabled)
+                    {
+                        <MudChip T="string" Color="Color.Success" Size="Size.Small">Enabled</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Disabled</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Last Login">
+                    @(context.LastLogin?.ToString("g") ?? "Never")
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    @if (context.AuthenticationSource == "ActiveDirectory")
+                    {
+                        <MudTooltip Text="Toggle portal access for this AD user">
+                            <MudIconButton Icon="@(context.IsEnabled ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                           Color="@(context.IsEnabled ? Color.Warning : Color.Success)"
+                                           Size="Size.Small"
+                                           OnClick="@(() => ToggleEnabled(context))" />
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        @if (!IsBuiltInAdmin(context))
+                        {
+                            <MudTooltip Text="Toggle enabled">
+                                <MudIconButton Icon="@(context.IsEnabled ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                               Color="@(context.IsEnabled ? Color.Warning : Color.Success)"
+                                               Size="Size.Small"
+                                               OnClick="@(() => ToggleEnabled(context))" />
+                            </MudTooltip>
+                            <MudTooltip Text="Delete user">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                               Color="Color.Error"
+                                               Size="Size.Small"
+                                               OnClick="@(() => DeleteUser(context))" />
+                            </MudTooltip>
+                        }
+                        else
+                        {
+                            <MudTooltip Text="Built-in admin account cannot be modified">
+                                <MudIconButton Icon="@Icons.Material.Filled.Shield"
+                                               Color="Color.Default"
+                                               Size="Size.Small"
+                                               Disabled="true" />
+                            </MudTooltip>
+                        }
+                    }
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>No users found.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    }
+</MudContainer>
+
+<!-- Create User Dialog -->
+<MudDialog @bind-Visible="_showCreateDialog" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Create Local User</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_newUsername" Label="Username" Required="true" Class="mb-3" />
+        <MudTextField @bind-Value="_newEmail" Label="Email" Required="true" Class="mb-3" />
+        <MudTextField @bind-Value="_newPassword" Label="Password" InputType="InputType.Password" Required="true" Class="mb-3" />
+        <MudSelect @bind-Value="_newRole" Label="Role" T="UserRole" Class="mb-3">
+            <MudSelectItem Value="UserRole.Admin">Admin</MudSelectItem>
+            <MudSelectItem Value="UserRole.Operator">Operator</MudSelectItem>
+            <MudSelectItem Value="UserRole.Viewer">Viewer</MudSelectItem>
+        </MudSelect>
+        @if (!string.IsNullOrEmpty(_createError))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">@_createError</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _showCreateDialog = false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateUser">Create</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<User> _users = new();
+    private bool _loading = true;
+    private string? _error;
+    private string? _searchText;
+    private string? _sourceFilter;
+
+    // Create dialog
+    private bool _showCreateDialog = false;
+    private string _newUsername = "";
+    private string _newEmail = "";
+    private string _newPassword = "";
+    private UserRole _newRole = UserRole.Viewer;
+    private string? _createError;
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    private IEnumerable<User> FilteredUsers => _users.Where(u =>
+    {
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            var search = _searchText.Trim();
+            if (!u.Username.Contains(search, StringComparison.OrdinalIgnoreCase) &&
+                !u.Email.Contains(search, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        if (!string.IsNullOrEmpty(_sourceFilter) && u.AuthenticationSource != _sourceFilter)
+            return false;
+        return true;
+    }).OrderBy(u => u.Username);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var users = await UserRepository.GetAllAsync();
+            _users = users.ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load users: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static bool IsBuiltInAdmin(User user) =>
+        user.Username.Equals("admin", StringComparison.OrdinalIgnoreCase) &&
+        user.AuthenticationSource == "Local";
+
+    private static Color GetRoleColor(UserRole role) => role switch
+    {
+        UserRole.Admin => Color.Error,
+        UserRole.Operator => Color.Warning,
+        UserRole.Viewer => Color.Info,
+        _ => Color.Default
+    };
+
+    private void OpenCreateDialog()
+    {
+        _newUsername = "";
+        _newEmail = "";
+        _newPassword = "";
+        _newRole = UserRole.Viewer;
+        _createError = null;
+        _showCreateDialog = true;
+    }
+
+    private async Task CreateUser()
+    {
+        _createError = null;
+
+        if (string.IsNullOrWhiteSpace(_newUsername) || string.IsNullOrWhiteSpace(_newEmail) || string.IsNullOrWhiteSpace(_newPassword))
+        {
+            _createError = "All fields are required.";
+            return;
+        }
+
+        var existing = await UserRepository.GetByUsernameAsync(_newUsername);
+        if (existing != null)
+        {
+            _createError = $"Username '{_newUsername}' already exists.";
+            return;
+        }
+
+        var user = new User
+        {
+            Username = _newUsername,
+            Email = _newEmail,
+            PasswordHash = PasswordHasher.HashPassword(_newPassword),
+            Role = _newRole,
+            IsEnabled = true,
+            AuthenticationSource = "Local"
+        };
+
+        await UserRepository.AddAsync(user);
+
+        await AuditRepository.AddAsync(new AuditEvent
+        {
+            Action = AuditAction.UserCreated,
+            PerformedBy = "Admin",
+            TargetResource = user.Username,
+            Success = true
+        });
+
+        Snackbar.Add($"User '{user.Username}' created.", Severity.Success);
+        _showCreateDialog = false;
+        await LoadUsers();
+    }
+
+    private async Task ToggleEnabled(User user)
+    {
+        if (IsBuiltInAdmin(user))
+        {
+            Snackbar.Add("The built-in administrator account cannot be disabled.", Severity.Warning);
+            return;
+        }
+
+        user.IsEnabled = !user.IsEnabled;
+        await UserRepository.UpdateAsync(user);
+
+        var action = user.IsEnabled ? "enabled" : "disabled";
+        Snackbar.Add($"User '{user.Username}' {action}.", Severity.Info);
+
+        await AuditRepository.AddAsync(new AuditEvent
+        {
+            Action = AuditAction.UserUpdated,
+            PerformedBy = "Admin",
+            TargetResource = user.Username,
+            Success = true,
+            DetailsJson = $"{{\"action\":\"{action}\"}}"
+        });
+
+        await LoadUsers();
+    }
+
+    private async Task DeleteUser(User user)
+    {
+        if (IsBuiltInAdmin(user))
+        {
+            Snackbar.Add("The built-in administrator account cannot be deleted.", Severity.Warning);
+            return;
+        }
+
+        if (user.AuthenticationSource == "ActiveDirectory")
+        {
+            Snackbar.Add("AD user shadow records cannot be deleted. Disable portal access instead.", Severity.Warning);
+            return;
+        }
+
+        var result = await DialogService.ShowMessageBox(
+            "Delete User",
+            $"Are you sure you want to delete user '{user.Username}'? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (result != true) return;
+
+        await UserRepository.DeleteAsync(user.Id);
+
+        await AuditRepository.AddAsync(new AuditEvent
+        {
+            Action = AuditAction.UserDeleted,
+            PerformedBy = "Admin",
+            TargetResource = user.Username,
+            Success = true
+        });
+
+        Snackbar.Add($"User '{user.Username}' deleted.", Severity.Success);
+        await LoadUsers();
+    }
+}

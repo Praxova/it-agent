@@ -40,6 +40,7 @@ public record UserResponse(
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("role")] string Role,
     [property: JsonPropertyName("is_enabled")] bool IsEnabled,
+    [property: JsonPropertyName("authentication_source")] string AuthenticationSource,
     [property: JsonPropertyName("last_login")] DateTime? LastLogin,
     [property: JsonPropertyName("created_at")] DateTime CreatedAt
 );

@@ -36,6 +36,14 @@
         Audit Log
     </MudNavLink>
     <MudDivider Class="my-2" />
+    <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="false">
+        <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
+            Users
+        </MudNavLink>
+        <MudNavLink Href="/settings/active-directory" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Domain">
+            Active Directory
+        </MudNavLink>
+    </MudNavGroup>
     <MudNavLink Href="/change-password" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.VpnKey">
         Change Password
     </MudNavLink>

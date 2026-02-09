@@ -14,10 +14,21 @@
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
+                @{
+                    var authMethod = context.User.FindFirst("AuthenticationMethod")?.Value ?? "Local";
+                    var isAd = string.Equals(authMethod, "ActiveDirectory", StringComparison.OrdinalIgnoreCase);
+                }
+                <MudChip T="string" Size="Size.Small" Color="@(isAd ? Color.Info : Color.Default)" Class="mr-2"
+                         Icon="@(isAd ? Icons.Material.Filled.Domain : Icons.Material.Filled.Key)">
+                    @(isAd ? "AD" : "Local")
+                </MudChip>
                 <MudMenu Icon="@Icons.Material.Filled.Person" Color="Color.Inherit">
                     <MudMenuItem>@context.User.Identity?.Name</MudMenuItem>
                     <MudDivider />
-                    <MudMenuItem Href="/change-password" Icon="@Icons.Material.Filled.VpnKey">Change Password</MudMenuItem>
+                    @if (!isAd)
+                    {
+                        <MudMenuItem Href="/change-password" Icon="@Icons.Material.Filled.VpnKey">Change Password</MudMenuItem>
+                    }
                     <MudMenuItem Href="/logout" Icon="@Icons.Material.Filled.Logout">Logout</MudMenuItem>
                 </MudMenu>
             </Authorized>

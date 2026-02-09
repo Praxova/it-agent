@@ -115,6 +115,7 @@ public static class AuthEndpoints
                 Email: user.Email,
                 Role: user.Role.ToString(),
                 IsEnabled: user.IsEnabled,
+                AuthenticationSource: user.AuthenticationSource,
                 LastLogin: user.LastLogin,
                 CreatedAt: user.CreatedAt
             ));
@@ -129,6 +130,7 @@ public static class AuthEndpoints
                 Email: u.Email,
                 Role: u.Role.ToString(),
                 IsEnabled: u.IsEnabled,
+                AuthenticationSource: u.AuthenticationSource,
                 LastLogin: u.LastLogin,
                 CreatedAt: u.CreatedAt
             )));

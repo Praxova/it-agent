@@ -14,6 +14,7 @@ public class ActiveDirectoryOptions
     public string BindPasswordEnvVar { get; set; } = "LUCID_AD_BIND_PASSWORD";
     public RoleMappingOptions RoleMapping { get; set; } = new();
     public string DefaultRole { get; set; } = "Viewer";
+    public bool RequireRoleGroup { get; set; } = false;
 }
 
 public class RoleMappingOptions

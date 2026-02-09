@@ -78,7 +78,26 @@ public class LdapAuthenticationProvider : IAuthenticationProvider
                 var memberOf = GetAttributes(entry, "memberOf");
 
                 // Step 3: Resolve role from group membership
-                var role = ResolveRole(memberOf, config.RoleMapping, config.DefaultRole);
+                var (role, matchedGroup) = ResolveRole(memberOf, config.RoleMapping, config.DefaultRole);
+
+                if (!matchedGroup && config.RequireRoleGroup)
+                {
+                    _logger.LogWarning(
+                        "AD user {Username} authenticated but is not a member of any LucidAdmin role group — denied by RequireRoleGroup policy",
+                        samAccountName);
+                    return new AuthenticationResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Your AD account is not authorized for the Lucid Admin Portal. Contact your administrator to be added to a LucidAdmin group."
+                    };
+                }
+
+                if (!matchedGroup)
+                {
+                    _logger.LogWarning(
+                        "AD user {Username} is not a member of any LucidAdmin role group — assigned default role {Role}",
+                        samAccountName, role);
+                }
 
                 _logger.LogInformation(
                     "AD authentication succeeded for {Username} (display: {DisplayName}, role: {Role})",
@@ -138,22 +157,23 @@ public class LdapAuthenticationProvider : IAuthenticationProvider
         return username;
     }
 
-    private static UserRole ResolveRole(
+    private static (UserRole role, bool matchedGroup) ResolveRole(
         IReadOnlyList<string> memberOfDns,
         RoleMappingOptions mapping,
         string defaultRole)
     {
         // Check highest privilege first
         if (memberOfDns.Any(dn => dn.Contains($"CN={mapping.AdminGroup}", StringComparison.OrdinalIgnoreCase)))
-            return UserRole.Admin;
+            return (UserRole.Admin, true);
 
         if (memberOfDns.Any(dn => dn.Contains($"CN={mapping.OperatorGroup}", StringComparison.OrdinalIgnoreCase)))
-            return UserRole.Operator;
+            return (UserRole.Operator, true);
 
         if (memberOfDns.Any(dn => dn.Contains($"CN={mapping.ViewerGroup}", StringComparison.OrdinalIgnoreCase)))
-            return UserRole.Viewer;
+            return (UserRole.Viewer, true);
 
-        return Enum.TryParse<UserRole>(defaultRole, ignoreCase: true, out var role) ? role : UserRole.Viewer;
+        var role = Enum.TryParse<UserRole>(defaultRole, ignoreCase: true, out var parsed) ? parsed : UserRole.Viewer;
+        return (role, false);
     }
 
     private static string? GetAttribute(SearchResultEntry entry, string attributeName)

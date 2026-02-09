@@ -1,0 +1,242 @@
+@page "/settings/active-directory"
+@inject IOptions<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<PageTitle>Active Directory Settings - Lucid Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Active Directory Settings</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        View the current Active Directory configuration and test connectivity.
+        Configuration is managed via <code>appsettings.json</code> and requires a portal restart to change.
+    </MudText>
+
+    @{
+        var config = AdOptions.Value;
+    }
+
+    <!-- Status Banner -->
+    @if (config.Enabled)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mb-4">
+            Active Directory authentication is <strong>enabled</strong> for domain <strong>@config.Domain</strong>.
+        </MudAlert>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mb-4">
+            Active Directory authentication is <strong>disabled</strong>. Only local accounts can sign in.
+        </MudAlert>
+    }
+
+    <MudGrid>
+        <!-- Connection Settings -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Connection Settings</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudChip T="string" Color="@(config.Enabled ? Color.Success : Color.Default)" Size="Size.Small">
+                            @(config.Enabled ? "Enabled" : "Disabled")
+                        </MudChip>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <tbody>
+                            <tr><td><strong>Domain</strong></td><td>@(string.IsNullOrEmpty(config.Domain) ? "—" : config.Domain)</td></tr>
+                            <tr><td><strong>LDAP Server</strong></td><td>@(string.IsNullOrEmpty(config.LdapServer) ? "—" : config.LdapServer)</td></tr>
+                            <tr><td><strong>LDAP Port</strong></td><td>@config.LdapPort</td></tr>
+                            <tr><td><strong>Use LDAPS</strong></td><td>@(config.UseLdaps ? "Yes (SSL)" : "No (Plain)")</td></tr>
+                            <tr><td><strong>Search Base</strong></td><td><code>@(string.IsNullOrEmpty(config.SearchBase) ? "—" : config.SearchBase)</code></td></tr>
+                            <tr><td><strong>Default Role</strong></td><td>@config.DefaultRole</td></tr>
+                            <tr><td><strong>Require Role Group</strong></td><td>@(config.RequireRoleGroup ? "Yes" : "No")</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Role Mapping -->
+        <MudItem xs="12" md="6">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Role Mapping</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudSimpleTable Dense="true" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>AD Group</th>
+                                <th>Portal Role</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>@config.RoleMapping.AdminGroup</code></td>
+                                <td><MudChip T="string" Color="Color.Error" Size="Size.Small">Admin</MudChip></td>
+                            </tr>
+                            <tr>
+                                <td><code>@config.RoleMapping.OperatorGroup</code></td>
+                                <td><MudChip T="string" Color="Color.Warning" Size="Size.Small">Operator</MudChip></td>
+                            </tr>
+                            <tr>
+                                <td><code>@config.RoleMapping.ViewerGroup</code></td>
+                                <td><MudChip T="string" Color="Color.Info" Size="Size.Small">Viewer</MudChip></td>
+                            </tr>
+                        </tbody>
+                    </MudSimpleTable>
+                    <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+                        Users not in any group receive the <strong>@config.DefaultRole</strong> role.
+                        @if (config.RequireRoleGroup)
+                        {
+                            <span> Access is <strong>denied</strong> for users without a matching group.</span>
+                        }
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Connection Test -->
+        <MudItem xs="12">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Connection Test</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (!config.Enabled)
+                    {
+                        <MudText Color="Color.Secondary">Enable Active Directory in <code>appsettings.json</code> to test connectivity.</MudText>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.NetworkCheck"
+                                   OnClick="TestConnection"
+                                   Disabled="_testing">
+                            @if (_testing)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Testing...</span>
+                            }
+                            else
+                            {
+                                <span>Test Connection</span>
+                            }
+                        </MudButton>
+
+                        @if (_testResult != null)
+                        {
+                            <MudAlert Severity="@(_testResult.Reachable ? Severity.Success : Severity.Error)"
+                                      Class="mt-3"
+                                      Variant="Variant.Outlined">
+                                @if (_testResult.Reachable)
+                                {
+                                    <span>Connected to <strong>@_testResult.Server</strong> (@_testResult.Domain) in <strong>@_testResult.LatencyMs ms</strong></span>
+                                }
+                                else
+                                {
+                                    <span>Cannot reach <strong>@_testResult.Server</strong> — verify the server address and ensure port @config.LdapPort is open.</span>
+                                }
+                            </MudAlert>
+                        }
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Setup Instructions -->
+        @if (!config.Enabled)
+        {
+            <MudItem xs="12">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">How to Enable Active Directory</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            1. Edit <code>appsettings.json</code> (or <code>appsettings.Development.json</code> for dev) and set <code>"Enabled": true</code> in the <code>ActiveDirectory</code> section.
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            2. Configure the LDAP server address, domain, and search base for your environment.
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            3. Run the <code>Setup-LucidAdminGroups.ps1</code> script on your domain controller to create the role mapping groups.
+                        </MudText>
+                        <MudText Typo="Typo.body2" Class="mb-2">
+                            4. Restart the portal for changes to take effect.
+                        </MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            The local "admin" account always works regardless of AD configuration (break-glass access).
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+
+        <!-- Session Behavior -->
+        <MudItem xs="12">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Role Refresh Behavior</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudText Typo="Typo.body2" Class="mb-1">
+                        When an AD user's group membership changes, their portal role updates on <strong>next login</strong>.
+                        Active sessions (up to 8 hours) retain the role assigned at login time.
+                    </MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        To force an immediate role update, the user must log out and log back in.
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private bool _testing = false;
+    private AdStatusResult? _testResult;
+
+    private async Task TestConnection()
+    {
+        _testing = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await Http.GetFromJsonAsync<AdStatusResult>("/api/auth/ad-status");
+            _testResult = response;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Connection test failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _testing = false;
+            StateHasChanged();
+        }
+    }
+
+    private record AdStatusResult
+    {
+        public bool Enabled { get; init; }
+        public string Server { get; init; } = "";
+        public string Domain { get; init; } = "";
+        public bool Reachable { get; init; }
+        public long LatencyMs { get; init; }
+    }
+}
