@@ -30,6 +30,7 @@ public enum AuditAction
     UserCreated,
     UserUpdated,
     UserDeleted,
+    PasswordChanged,
 
     // Agent operations
     AgentCreated,

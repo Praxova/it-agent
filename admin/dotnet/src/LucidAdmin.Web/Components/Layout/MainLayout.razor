@@ -17,6 +17,7 @@
                 <MudMenu Icon="@Icons.Material.Filled.Person" Color="Color.Inherit">
                     <MudMenuItem>@context.User.Identity?.Name</MudMenuItem>
                     <MudDivider />
+                    <MudMenuItem Href="/change-password" Icon="@Icons.Material.Filled.VpnKey">Change Password</MudMenuItem>
                     <MudMenuItem Href="/logout" Icon="@Icons.Material.Filled.Logout">Logout</MudMenuItem>
                 </MudMenu>
             </Authorized>
@@ -63,6 +64,25 @@
             DrawerBackground = "#1e1e1e",
         }
     };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var mustChange = authState.User.FindFirst("MustChangePassword")?.Value;
+
+            if (string.Equals(mustChange, "True", StringComparison.OrdinalIgnoreCase))
+            {
+                var uri = Navigation.ToBaseRelativePath(Navigation.Uri);
+                if (!uri.StartsWith("change-password", StringComparison.OrdinalIgnoreCase)
+                    && !uri.StartsWith("account/logout", StringComparison.OrdinalIgnoreCase))
+                {
+                    Navigation.NavigateTo("/change-password", forceLoad: true);
+                }
+            }
+        }
+    }
 
     private void ToggleDrawer()
     {

@@ -270,10 +270,18 @@ using (var scope = app.Services.CreateScope())
             Email = "admin@lucid.local",
             PasswordHash = passwordHasher.HashPassword("admin"),
             Role = UserRole.Admin,
-            IsEnabled = true
+            IsEnabled = true,
+            MustChangePassword = true
         };
         await userRepository.AddAsync(newAdmin);
-        Log.Information("Default admin user created (username: admin, password: admin)");
+        Log.Information("Default admin user created — password change required on first login");
+    }
+    else if (passwordHasher.VerifyPassword("admin", adminUser.PasswordHash))
+    {
+        // Existing DB with default password — retroactively force change
+        adminUser.MustChangePassword = true;
+        await userRepository.UpdateAsync(adminUser);
+        Log.Information("Admin user still has default password — MustChangePassword set to true");
     }
 
     // Seed built-in rulesets
