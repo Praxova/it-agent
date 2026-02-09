@@ -38,7 +38,7 @@ class RuleExportInfo(BaseModel):
     name: str
     rule_text: str = Field(alias="ruleText")
     priority: int
-    is_enabled: bool = Field(alias="isEnabled")
+    is_enabled: bool = Field(True, alias="isEnabled")
 
 
 class RulesetExportInfo(BaseModel):

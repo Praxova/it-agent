@@ -131,6 +131,7 @@ public record RuleExportInfo
     public required string Name { get; init; }
     public required string RuleText { get; init; }
     public int Priority { get; init; }
+    public bool IsEnabled { get; init; } = true;
 }
 
 public record ExampleSetExportInfo

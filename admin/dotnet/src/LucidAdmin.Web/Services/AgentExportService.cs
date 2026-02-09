@@ -290,7 +290,8 @@ public class AgentExportService : IAgentExportService
                     Id = r.Id,
                     Name = r.Name,
                     RuleText = r.RuleText,
-                    Priority = r.Priority
+                    Priority = r.Priority,
+                    IsEnabled = r.IsActive
                 })
                 .ToList()
         };
