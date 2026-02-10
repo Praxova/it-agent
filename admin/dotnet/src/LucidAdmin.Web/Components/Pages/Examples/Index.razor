@@ -1,11 +1,14 @@
 @page "/examples"
 @attribute [Authorize]
 @using LucidAdmin.Web.Api.Models.Responses
-@using LucidAdmin.Core.Enums
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject LucidDbContext Context
 
 <PageTitle>Example Sets - Lucid Admin Portal</PageTitle>
 
@@ -22,14 +25,17 @@
                           Immediate="true" />
         </MudItem>
         <MudItem xs="12" md="3">
-            <MudSelect @bind-Value="_filterTicketType"
-                       Label="Ticket Type"
+            <MudSelect @bind-Value="_filterCategoryId"
+                       Label="Category"
                        Clearable="true"
-                       T="TicketType?">
-                <MudSelectItem Value="@((TicketType?)null)">All Types</MudSelectItem>
-                @foreach (var type in Enum.GetValues<TicketType>())
+                       T="Guid?">
+                <MudSelectItem Value="@((Guid?)null)">All Categories</MudSelectItem>
+                @if (_categories != null)
                 {
-                    <MudSelectItem Value="@((TicketType?)type)">@type.ToString()</MudSelectItem>
+                    @foreach (var cat in _categories)
+                    {
+                        <MudSelectItem Value="@((Guid?)cat.Id)">@cat.DisplayName</MudSelectItem>
+                    }
                 }
             </MudSelect>
         </MudItem>
@@ -72,7 +78,7 @@ else if (_exampleSets != null)
               Elevation="2">
         <HeaderContent>
             <MudTh>Name</MudTh>
-            <MudTh>Target Type</MudTh>
+            <MudTh>Category</MudTh>
             <MudTh>Examples</MudTh>
             <MudTh>Status</MudTh>
             <MudTh>Type</MudTh>
@@ -90,10 +96,18 @@ else if (_exampleSets != null)
                     <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
                 }
             </MudTd>
-            <MudTd DataLabel="Target Type">
-                <MudChip T="string" Size="Size.Small" Color="@GetTicketTypeColor(context.TargetTicketType)">
-                    @context.TargetTicketType.ToString()
-                </MudChip>
+            <MudTd DataLabel="Category">
+                @{ var cat = GetCategory(context.TicketCategoryId); }
+                @if (cat != null)
+                {
+                    <MudChip T="string" Size="Size.Small" Style="@($"background-color: {cat.Color}; color: white;")">
+                        @cat.DisplayName
+                    </MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">None</MudText>
+                }
             </MudTd>
             <MudTd DataLabel="Examples">
                 <MudText Typo="Typo.body2">@context.ExampleCount</MudText>
@@ -156,9 +170,10 @@ else
 
 @code {
     private List<ExampleSetResponse>? _exampleSets;
+    private List<TicketCategory>? _categories;
     private bool _loading = true;
     private string _searchString = string.Empty;
-    private TicketType? _filterTicketType;
+    private Guid? _filterCategoryId;
     private string? _filterStatus;
 
     [CascadingParameter]
@@ -182,9 +197,9 @@ else
                     (e.Description?.ToLowerInvariant().Contains(search) ?? false));
             }
 
-            if (_filterTicketType.HasValue)
+            if (_filterCategoryId.HasValue)
             {
-                filtered = filtered.Where(e => e.TargetTicketType == _filterTicketType.Value);
+                filtered = filtered.Where(e => e.TicketCategoryId == _filterCategoryId.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(_filterStatus))
@@ -197,7 +212,7 @@ else
                 };
             }
 
-            return filtered.OrderBy(e => e.TargetTicketType).ThenBy(e => e.Name);
+            return filtered.OrderBy(e => e.TicketCategoryName).ThenBy(e => e.Name);
         }
     }
 
@@ -208,6 +223,13 @@ else
             var state = await AuthState;
             _isAdmin = state.User.IsInRole("Admin");
         }
+
+        _categories = await Context.TicketCategories
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.DisplayName)
+            .ToListAsync();
+
         await LoadExampleSets();
     }
 
@@ -227,6 +249,12 @@ else
         {
             _loading = false;
         }
+    }
+
+    private TicketCategory? GetCategory(Guid? categoryId)
+    {
+        if (categoryId == null || _categories == null) return null;
+        return _categories.FirstOrDefault(c => c.Id == categoryId.Value);
     }
 
     private void CreateExampleSet()
@@ -301,14 +329,4 @@ else
             }
         }
     }
-
-    private Color GetTicketTypeColor(TicketType type) => type switch
-    {
-        TicketType.PasswordReset => Color.Primary,
-        TicketType.GroupAccessAdd => Color.Success,
-        TicketType.GroupAccessRemove => Color.Warning,
-        TicketType.FilePermissionGrant => Color.Info,
-        TicketType.FilePermissionRevoke => Color.Secondary,
-        _ => Color.Default
-    };
 }

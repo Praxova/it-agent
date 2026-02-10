@@ -1,5 +1,3 @@
-using LucidAdmin.Core.Enums;
-
 namespace LucidAdmin.Core.Entities;
 
 /// <summary>
@@ -23,9 +21,14 @@ public class ExampleSet : BaseEntity
     public string? Description { get; set; }
 
     /// <summary>
-    /// Primary ticket type this example set is designed for.
+    /// Foreign key to the primary ticket category this example set is designed for.
     /// </summary>
-    public required TicketType TargetTicketType { get; set; }
+    public Guid? TicketCategoryId { get; set; }
+
+    /// <summary>
+    /// Primary ticket category this example set is designed for.
+    /// </summary>
+    public TicketCategory? TicketCategory { get; set; }
 
     /// <summary>
     /// Whether this example set ships with the product.

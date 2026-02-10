@@ -300,6 +300,12 @@ using (var scope = app.Services.CreateScope())
         scope.ServiceProvider.GetRequiredService<ILogger<LucidAdmin.Infrastructure.Data.Seeding.RulesetSeeder>>());
     await rulesetSeeder.SeedAsync();
 
+    // Seed built-in ticket categories (must run before example sets)
+    var ticketCategorySeeder = new LucidAdmin.Infrastructure.Data.Seeding.TicketCategorySeeder(
+        context,
+        scope.ServiceProvider.GetRequiredService<ILogger<LucidAdmin.Infrastructure.Data.Seeding.TicketCategorySeeder>>());
+    await ticketCategorySeeder.SeedAsync();
+
     // Seed built-in example sets
     var exampleSetSeeder = new LucidAdmin.Infrastructure.Data.Seeding.ExampleSetSeeder(
         context,
@@ -347,6 +353,7 @@ app.MapAuditEventEndpoints();
 app.MapCredentialEndpoints();
 app.MapApiKeyEndpoints();
 app.MapRulesetEndpoints();
+app.MapTicketCategoryEndpoints();
 app.MapExampleSetEndpoints();
 app.MapWorkflowEndpoints();
 app.MapManualSubmissionEndpoints();

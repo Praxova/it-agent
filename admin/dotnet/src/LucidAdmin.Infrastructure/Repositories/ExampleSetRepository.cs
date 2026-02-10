@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using LucidAdmin.Core.Entities;
-using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Infrastructure.Data;
 
@@ -13,14 +12,16 @@ public class ExampleSetRepository : Repository<ExampleSet>, IExampleSetRepositor
     public async Task<ExampleSet?> GetWithExamplesAsync(Guid id, CancellationToken ct = default)
     {
         return await _dbSet
+            .Include(e => e.TicketCategory)
             .Include(e => e.Examples.OrderBy(ex => ex.SortOrder))
+                .ThenInclude(ex => ex.TicketCategory)
             .FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
-    public async Task<IEnumerable<ExampleSet>> GetByTicketTypeAsync(TicketType ticketType, CancellationToken ct = default)
+    public async Task<IEnumerable<ExampleSet>> GetByCategoryIdAsync(Guid categoryId, CancellationToken ct = default)
     {
         return await _dbSet
-            .Where(e => e.TargetTicketType == ticketType)
+            .Where(e => e.TicketCategoryId == categoryId)
             .OrderBy(e => e.Name)
             .ToListAsync(ct);
     }
@@ -29,8 +30,10 @@ public class ExampleSetRepository : Repository<ExampleSet>, IExampleSetRepositor
     {
         return await _dbSet
             .Where(e => e.IsActive)
+            .Include(e => e.TicketCategory)
             .Include(e => e.Examples.Where(ex => ex.IsActive).OrderBy(ex => ex.SortOrder))
-            .OrderBy(e => e.TargetTicketType)
+                .ThenInclude(ex => ex.TicketCategory)
+            .OrderBy(e => e.TicketCategoryId)
             .ThenBy(e => e.Name)
             .ToListAsync(ct);
     }

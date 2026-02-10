@@ -24,10 +24,10 @@ public class ExampleConfiguration : IEntityTypeConfiguration<Example>
         builder.Property(e => e.CallerName)
             .HasMaxLength(200);
 
-        builder.Property(e => e.ExpectedTicketType)
-            .IsRequired()
-            .HasConversion<string>()
-            .HasMaxLength(50);
+        builder.HasOne(e => e.TicketCategory)
+            .WithMany(c => c.Examples)
+            .HasForeignKey(e => e.TicketCategoryId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.Property(e => e.ExpectedConfidence)
             .HasPrecision(3, 2);

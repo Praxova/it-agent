@@ -1,19 +1,17 @@
-using LucidAdmin.Core.Enums;
-
 namespace LucidAdmin.Web.Api.Models.Requests;
 
 public record CreateExampleSetRequest(
     string Name,
     string? DisplayName,
     string? Description,
-    TicketType TargetTicketType,
+    Guid? TicketCategoryId,
     bool IsActive = true
 );
 
 public record UpdateExampleSetRequest(
     string? DisplayName,
     string? Description,
-    TicketType? TargetTicketType,
+    Guid? TicketCategoryId,
     bool? IsActive
 );
 
@@ -22,7 +20,7 @@ public record CreateExampleRequest(
     string TicketShortDescription,
     string? TicketDescription,
     string? CallerName,
-    TicketType ExpectedTicketType,
+    Guid? TicketCategoryId,
     decimal ExpectedConfidence = 0.95m,
     string? ExpectedAffectedUser = null,
     string? ExpectedTargetGroup = null,
@@ -39,7 +37,7 @@ public record UpdateExampleRequest(
     string? TicketShortDescription,
     string? TicketDescription,
     string? CallerName,
-    TicketType? ExpectedTicketType,
+    Guid? TicketCategoryId,
     decimal? ExpectedConfidence,
     string? ExpectedAffectedUser,
     string? ExpectedTargetGroup,

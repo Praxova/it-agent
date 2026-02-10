@@ -1,5 +1,3 @@
-using LucidAdmin.Core.Enums;
-
 namespace LucidAdmin.Core.Entities;
 
 /// <summary>
@@ -42,9 +40,14 @@ public class Example : BaseEntity
     // === OUTPUT (expected classification) ===
 
     /// <summary>
-    /// The expected ticket type classification.
+    /// Foreign key to the expected ticket category.
     /// </summary>
-    public required TicketType ExpectedTicketType { get; set; }
+    public Guid? TicketCategoryId { get; set; }
+
+    /// <summary>
+    /// The expected ticket category classification.
+    /// </summary>
+    public TicketCategory? TicketCategory { get; set; }
 
     /// <summary>
     /// Expected confidence level (0.0 to 1.0).

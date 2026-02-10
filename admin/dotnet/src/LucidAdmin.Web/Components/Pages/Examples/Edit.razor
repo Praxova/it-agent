@@ -3,11 +3,14 @@
 @attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Web.Api.Models.Responses
 @using LucidAdmin.Web.Models
-@using LucidAdmin.Core.Enums
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject LucidDbContext Context
 
 <PageTitle>@(_isCreate ? "Create Example Set" : $"Edit Example Set: {_model.Name}") - Lucid Admin Portal</PageTitle>
 
@@ -29,30 +32,34 @@ else if (_model != null)
                                   Required="true"
                                   Disabled="@(!_isCreate || _model.IsBuiltIn)"
                                   HelperText="Unique identifier (cannot change after creation)" />
-                    
+
                     <MudTextField @bind-Value="_model.DisplayName"
                                   Label="Display Name"
                                   Disabled="@_model.IsBuiltIn"
                                   Class="mt-3" />
-                    
-                    <MudSelect @bind-Value="_model.TargetTicketType"
-                               Label="Target Ticket Type"
-                               Required="true"
+
+                    <MudSelect @bind-Value="_model.TicketCategoryId"
+                               Label="Ticket Category"
+                               Clearable="true"
                                Disabled="@_model.IsBuiltIn"
                                Class="mt-3"
-                               T="TicketType">
-                        @foreach (var type in Enum.GetValues<TicketType>())
+                               T="Guid?">
+                        <MudSelectItem Value="@((Guid?)null)">None</MudSelectItem>
+                        @if (_categories != null)
                         {
-                            <MudSelectItem Value="@type">@type.ToString()</MudSelectItem>
+                            @foreach (var cat in _categories)
+                            {
+                                <MudSelectItem Value="@((Guid?)cat.Id)">@(cat.DisplayName ?? cat.Name)</MudSelectItem>
+                            }
                         }
                     </MudSelect>
-                    
+
                     <MudTextField @bind-Value="_model.Description"
                                   Label="Description"
                                   Lines="3"
                                   Disabled="@_model.IsBuiltIn"
                                   Class="mt-3" />
-                    
+
                     <MudSwitch T="bool"
                                @bind-Checked="_model.IsActive"
                                Label="Active"
@@ -123,7 +130,10 @@ else if (_model != null)
                                     <MudDivider Class="my-2" />
 
                                     <MudText Typo="Typo.subtitle2" Class="mb-2">Expected Output:</MudText>
-                                    <MudChip T="string" Size="Size.Small" Class="mr-1">@example.ExpectedTicketType.ToString()</MudChip>
+                                    @{
+                                        var exCat = GetCategory(example.TicketCategoryId);
+                                    }
+                                    <MudChip T="string" Size="Size.Small" Class="mr-1">@(exCat?.DisplayName ?? exCat?.Name ?? "None")</MudChip>
                                     <MudChip T="string" Size="Size.Small" Class="mr-1">Confidence: @example.ExpectedConfidence.ToString("P0")</MudChip>
                                     @if (!string.IsNullOrEmpty(example.ExpectedAffectedUser))
                                     {
@@ -163,6 +173,7 @@ else if (_model != null)
     public Guid? Id { get; set; }
 
     private ExampleSetFormModel _model = new();
+    private List<TicketCategory>? _categories;
     private MudForm? _form;
     private bool _isValid;
     private bool _loading = true;
@@ -171,6 +182,12 @@ else if (_model != null)
 
     protected override async Task OnInitializedAsync()
     {
+        _categories = await Context.TicketCategories
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.DisplayName)
+            .ToListAsync();
+
         await LoadExampleSet();
     }
 
@@ -206,6 +223,12 @@ else if (_model != null)
         {
             _loading = false;
         }
+    }
+
+    private TicketCategory? GetCategory(Guid? categoryId)
+    {
+        if (categoryId == null || _categories == null) return null;
+        return _categories.FirstOrDefault(c => c.Id == categoryId.Value);
     }
 
     private async Task SaveExampleSet()

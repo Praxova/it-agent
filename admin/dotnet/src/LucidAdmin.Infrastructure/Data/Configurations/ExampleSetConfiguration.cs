@@ -23,10 +23,10 @@ public class ExampleSetConfiguration : IEntityTypeConfiguration<ExampleSet>
         builder.Property(e => e.Description)
             .HasMaxLength(1000);
 
-        builder.Property(e => e.TargetTicketType)
-            .IsRequired()
-            .HasConversion<string>()
-            .HasMaxLength(50);
+        builder.HasOne(e => e.TicketCategory)
+            .WithMany(c => c.ExampleSets)
+            .HasForeignKey(e => e.TicketCategoryId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(e => e.Examples)
             .WithOne(ex => ex.ExampleSet)

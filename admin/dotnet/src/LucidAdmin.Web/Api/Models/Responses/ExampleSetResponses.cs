@@ -1,5 +1,3 @@
-using LucidAdmin.Core.Enums;
-
 namespace LucidAdmin.Web.Api.Models.Responses;
 
 public record ExampleSetResponse(
@@ -7,7 +5,8 @@ public record ExampleSetResponse(
     string Name,
     string? DisplayName,
     string? Description,
-    TicketType TargetTicketType,
+    Guid? TicketCategoryId,
+    string? TicketCategoryName,
     bool IsBuiltIn,
     bool IsActive,
     int ExampleCount,
@@ -20,7 +19,8 @@ public record ExampleSetDetailResponse(
     string Name,
     string? DisplayName,
     string? Description,
-    TicketType TargetTicketType,
+    Guid? TicketCategoryId,
+    string? TicketCategoryName,
     bool IsBuiltIn,
     bool IsActive,
     List<ExampleResponse> Examples,
@@ -36,7 +36,8 @@ public record ExampleResponse(
     string? TicketDescription,
     string? CallerName,
     // Output
-    TicketType ExpectedTicketType,
+    Guid? TicketCategoryId,
+    string? TicketCategoryName,
     decimal ExpectedConfidence,
     string? ExpectedAffectedUser,
     string? ExpectedTargetGroup,

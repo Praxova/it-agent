@@ -467,14 +467,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0001-0000-0000-000000000001"),
                             CapabilityId = "ad-password-reset",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Reset Active Directory user passwords with validation",
                             DisplayName = "Reset user passwords in Active Directory",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -482,14 +482,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0002-0000-0000-000000000001"),
                             CapabilityId = "ad-group-add",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Add a user to an Active Directory security or distribution group",
                             DisplayName = "Add user to Active Directory group",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -497,14 +497,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0003-0000-0000-000000000001"),
                             CapabilityId = "ad-group-remove",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Remove a user from an Active Directory security or distribution group",
                             DisplayName = "Remove user from Active Directory group",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -512,14 +512,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0004-0000-0000-000000000001"),
                             CapabilityId = "ad-user-lookup",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Query Active Directory for user information and attributes",
                             DisplayName = "Look up user information in Active Directory",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -527,14 +527,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0005-0000-0000-000000000001"),
                             CapabilityId = "ad-user-unlock",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Unlock a locked Active Directory user account",
                             DisplayName = "Unlock a locked Active Directory account",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -542,14 +542,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0006-0000-0000-000000000001"),
                             CapabilityId = "ntfs-permission-grant",
                             Category = "file-system",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Grant NTFS permissions to users or groups for files and folders",
                             DisplayName = "Grant NTFS file/folder permissions",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -557,14 +557,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0007-0000-0000-000000000001"),
                             CapabilityId = "ntfs-permission-revoke",
                             Category = "file-system",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Revoke NTFS permissions from users or groups for files and folders",
                             DisplayName = "Revoke NTFS file/folder permissions",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -572,14 +572,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0008-0000-0000-000000000001"),
                             CapabilityId = "azure-user-lookup",
                             Category = "azure",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Query Microsoft Entra ID for user details via Microsoft Graph API",
                             DisplayName = "Look up user in Azure AD / Entra ID",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"azure\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -587,14 +587,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0009-0000-0000-000000000001"),
                             CapabilityId = "azure-vm-lookup",
                             Category = "azure",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Query Azure Resource Manager for VM details including status, size, and IPs",
                             DisplayName = "Look up virtual machine in Azure",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"azure\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -602,14 +602,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0010-0000-0000-000000000001"),
                             CapabilityId = "ad-computer-lookup",
                             Category = "active-directory",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Query Active Directory for computer objects assigned to a user via managedBy attribute",
                             DisplayName = "Look up user's assigned computer(s)",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         },
                         new
@@ -617,14 +617,14 @@ namespace LucidAdmin.Infrastructure.Migrations
                             Id = new Guid("a1b2c3d4-0011-0000-0000-000000000001"),
                             CapabilityId = "remote-software-install",
                             Category = "workstation-management",
-                            CreatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            CreatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Description = "Install software packages on remote Windows computers via PowerShell Remoting (WinRM)",
                             DisplayName = "Install software on remote computer",
                             IsBuiltIn = true,
                             IsEnabled = true,
                             RequiredProvidersJson = "[\"windows-ad\"]",
                             RequiresServiceAccount = true,
-                            UpdatedAt = new DateTime(2026, 2, 9, 15, 2, 41, 630, DateTimeKind.Utc).AddTicks(2746),
+                            UpdatedAt = new DateTime(2026, 2, 10, 8, 37, 5, 600, DateTimeKind.Utc).AddTicks(5323),
                             Version = "1.0.0"
                         });
                 });
@@ -815,11 +815,6 @@ namespace LucidAdmin.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ExpectedTicketType")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -835,6 +830,9 @@ namespace LucidAdmin.Infrastructure.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("TicketCategoryId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("TicketDescription")
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
@@ -848,6 +846,8 @@ namespace LucidAdmin.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TicketCategoryId");
 
                     b.HasIndex("ExampleSetId", "Name")
                         .IsUnique();
@@ -883,9 +883,7 @@ namespace LucidAdmin.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TargetTicketType")
-                        .IsRequired()
-                        .HasMaxLength(50)
+                    b.Property<Guid?>("TicketCategoryId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -895,6 +893,8 @@ namespace LucidAdmin.Infrastructure.Migrations
 
                     b.HasIndex("Name")
                         .IsUnique();
+
+                    b.HasIndex("TicketCategoryId");
 
                     b.ToTable("ExampleSets");
                 });
@@ -1215,6 +1215,52 @@ namespace LucidAdmin.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("StepTransitions");
+                });
+
+            modelBuilder.Entity("LucidAdmin.Core.Entities.TicketCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsBuiltIn")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("TicketCategories");
                 });
 
             modelBuilder.Entity("LucidAdmin.Core.Entities.ToolServer", b =>
@@ -1605,7 +1651,24 @@ namespace LucidAdmin.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("LucidAdmin.Core.Entities.TicketCategory", "TicketCategory")
+                        .WithMany("Examples")
+                        .HasForeignKey("TicketCategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("ExampleSet");
+
+                    b.Navigation("TicketCategory");
+                });
+
+            modelBuilder.Entity("LucidAdmin.Core.Entities.ExampleSet", b =>
+                {
+                    b.HasOne("LucidAdmin.Core.Entities.TicketCategory", "TicketCategory")
+                        .WithMany("ExampleSets")
+                        .HasForeignKey("TicketCategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("TicketCategory");
                 });
 
             modelBuilder.Entity("LucidAdmin.Core.Entities.ManualSubmission", b =>
@@ -1733,6 +1796,13 @@ namespace LucidAdmin.Infrastructure.Migrations
             modelBuilder.Entity("LucidAdmin.Core.Entities.ServiceAccount", b =>
                 {
                     b.Navigation("CapabilityMappings");
+                });
+
+            modelBuilder.Entity("LucidAdmin.Core.Entities.TicketCategory", b =>
+                {
+                    b.Navigation("ExampleSets");
+
+                    b.Navigation("Examples");
                 });
 
             modelBuilder.Entity("LucidAdmin.Core.Entities.ToolServer", b =>

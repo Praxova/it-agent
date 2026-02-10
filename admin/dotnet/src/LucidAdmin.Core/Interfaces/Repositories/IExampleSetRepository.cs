@@ -1,5 +1,4 @@
 using LucidAdmin.Core.Entities;
-using LucidAdmin.Core.Enums;
 
 namespace LucidAdmin.Core.Interfaces.Repositories;
 
@@ -11,9 +10,9 @@ public interface IExampleSetRepository : IRepository<ExampleSet>
     Task<ExampleSet?> GetWithExamplesAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>
-    /// Get all example sets for a specific ticket type.
+    /// Get all example sets for a specific ticket category.
     /// </summary>
-    Task<IEnumerable<ExampleSet>> GetByTicketTypeAsync(TicketType ticketType, CancellationToken ct = default);
+    Task<IEnumerable<ExampleSet>> GetByCategoryIdAsync(Guid categoryId, CancellationToken ct = default);
 
     /// <summary>
     /// Get all active example sets with their examples for classifier training.

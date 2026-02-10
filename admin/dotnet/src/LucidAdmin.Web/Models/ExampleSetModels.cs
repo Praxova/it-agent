@@ -1,4 +1,3 @@
-using LucidAdmin.Core.Enums;
 using LucidAdmin.Web.Api.Models.Requests;
 using LucidAdmin.Web.Api.Models.Responses;
 
@@ -10,7 +9,7 @@ public class ExampleSetFormModel
     public string Name { get; set; } = "";
     public string? DisplayName { get; set; }
     public string? Description { get; set; }
-    public TicketType TargetTicketType { get; set; } = TicketType.PasswordReset;
+    public Guid? TicketCategoryId { get; set; }
     public bool IsBuiltIn { get; set; }
     public bool IsActive { get; set; } = true;
     public List<ExampleFormModel> Examples { get; set; } = new();
@@ -19,14 +18,14 @@ public class ExampleSetFormModel
         Name: Name,
         DisplayName: DisplayName,
         Description: Description,
-        TargetTicketType: TargetTicketType,
+        TicketCategoryId: TicketCategoryId,
         IsActive: IsActive
     );
 
     public UpdateExampleSetRequest ToUpdateRequest() => new(
         DisplayName: DisplayName,
         Description: Description,
-        TargetTicketType: TargetTicketType,
+        TicketCategoryId: TicketCategoryId,
         IsActive: IsActive
     );
 
@@ -36,7 +35,7 @@ public class ExampleSetFormModel
         Name = response.Name,
         DisplayName = response.DisplayName,
         Description = response.Description,
-        TargetTicketType = response.TargetTicketType,
+        TicketCategoryId = response.TicketCategoryId,
         IsBuiltIn = response.IsBuiltIn,
         IsActive = response.IsActive,
         Examples = response.Examples?.Select(ExampleFormModel.FromResponse).ToList() ?? new()
@@ -50,7 +49,7 @@ public class ExampleFormModel
     public string TicketShortDescription { get; set; } = "";
     public string? TicketDescription { get; set; }
     public string? CallerName { get; set; }
-    public TicketType ExpectedTicketType { get; set; } = TicketType.PasswordReset;
+    public Guid? TicketCategoryId { get; set; }
     public decimal ExpectedConfidence { get; set; } = 0.95m;
     public string? ExpectedAffectedUser { get; set; }
     public string? ExpectedTargetGroup { get; set; }
@@ -69,7 +68,7 @@ public class ExampleFormModel
         TicketShortDescription = response.TicketShortDescription,
         TicketDescription = response.TicketDescription,
         CallerName = response.CallerName,
-        ExpectedTicketType = response.ExpectedTicketType,
+        TicketCategoryId = response.TicketCategoryId,
         ExpectedConfidence = response.ExpectedConfidence,
         ExpectedAffectedUser = response.ExpectedAffectedUser,
         ExpectedTargetGroup = response.ExpectedTargetGroup,

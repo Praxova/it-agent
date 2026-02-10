@@ -26,6 +26,7 @@ public class LucidDbContext : DbContext
     public DbSet<AgentServiceAccountBinding> AgentServiceAccountBindings { get; set; } = null!;
     public DbSet<ApprovalRequest> ApprovalRequests { get; set; } = null!;
     public DbSet<Clarification> Clarifications { get; set; } = null!;
+    public DbSet<TicketCategory> TicketCategories { get; set; } = null!;
 
     public LucidDbContext(DbContextOptions<LucidDbContext> options) : base(options) { }
 

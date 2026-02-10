@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using LucidAdmin.Core.Entities;
-using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Web.Api.Models.Requests;
 using LucidAdmin.Web.Api.Models.Responses;
@@ -19,28 +19,20 @@ public static class ExampleSetEndpoints
 
         // List all example sets
         group.MapGet("/", async (
-            [FromQuery] TicketType? ticketType,
+            [FromQuery] Guid? categoryId,
             IExampleSetRepository repo) =>
         {
-            var sets = ticketType.HasValue
-                ? await repo.GetByTicketTypeAsync(ticketType.Value)
+            var sets = categoryId.HasValue
+                ? await repo.GetByCategoryIdAsync(categoryId.Value)
                 : await repo.GetAllAsync();
 
             var response = sets.Select(e => new ExampleSetResponse(
-                e.Id, e.Name, e.DisplayName, e.Description, e.TargetTicketType,
+                e.Id, e.Name, e.DisplayName, e.Description, e.TicketCategoryId, e.TicketCategory?.Name,
                 e.IsBuiltIn, e.IsActive, e.Examples.Count,
                 e.CreatedAt, e.UpdatedAt
             ));
 
             return Results.Ok(response);
-        });
-
-        // Get ticket types enum values
-        group.MapGet("/ticket-types", () =>
-        {
-            var types = Enum.GetValues<TicketType>()
-                .Select(t => new { Value = t, Name = t.ToString() });
-            return Results.Ok(types);
         });
 
         // Get single example set with examples
@@ -53,12 +45,12 @@ public static class ExampleSetEndpoints
                 return Results.NotFound(new { error = "ExampleSetNotFound" });
 
             var response = new ExampleSetDetailResponse(
-                set.Id, set.Name, set.DisplayName, set.Description, set.TargetTicketType,
+                set.Id, set.Name, set.DisplayName, set.Description, set.TicketCategoryId, set.TicketCategory?.Name,
                 set.IsBuiltIn, set.IsActive,
                 set.Examples.Select(e => new ExampleResponse(
                     e.Id, e.Name,
                     e.TicketShortDescription, e.TicketDescription, e.CallerName,
-                    e.ExpectedTicketType, e.ExpectedConfidence,
+                    e.TicketCategoryId, e.TicketCategory?.Name, e.ExpectedConfidence,
                     e.ExpectedAffectedUser, e.ExpectedTargetGroup,
                     e.ExpectedTargetResource, e.ExpectedPermissionLevel,
                     e.ExpectedShouldEscalate, e.ExpectedEscalationReason,
@@ -103,7 +95,7 @@ public static class ExampleSetEndpoints
                 Name = request.Name,
                 DisplayName = request.DisplayName,
                 Description = request.Description,
-                TargetTicketType = request.TargetTicketType,
+                TicketCategoryId = request.TicketCategoryId,
                 IsActive = request.IsActive,
                 IsBuiltIn = false
             };
@@ -111,7 +103,7 @@ public static class ExampleSetEndpoints
             await repo.AddAsync(set);
 
             return Results.Created($"/api/v1/example-sets/{set.Id}", new ExampleSetResponse(
-                set.Id, set.Name, set.DisplayName, set.Description, set.TargetTicketType,
+                set.Id, set.Name, set.DisplayName, set.Description, set.TicketCategoryId, set.TicketCategory?.Name,
                 set.IsBuiltIn, set.IsActive, 0,
                 set.CreatedAt, set.UpdatedAt
             ));
@@ -132,13 +124,13 @@ public static class ExampleSetEndpoints
 
             if (request.DisplayName is not null) set.DisplayName = request.DisplayName;
             if (request.Description is not null) set.Description = request.Description;
-            if (request.TargetTicketType.HasValue) set.TargetTicketType = request.TargetTicketType.Value;
+            if (request.TicketCategoryId.HasValue) set.TicketCategoryId = request.TicketCategoryId.Value;
             if (request.IsActive.HasValue) set.IsActive = request.IsActive.Value;
 
             await repo.UpdateAsync(set);
 
             return Results.Ok(new ExampleSetResponse(
-                set.Id, set.Name, set.DisplayName, set.Description, set.TargetTicketType,
+                set.Id, set.Name, set.DisplayName, set.Description, set.TicketCategoryId, set.TicketCategory?.Name,
                 set.IsBuiltIn, set.IsActive, set.Examples.Count,
                 set.CreatedAt, set.UpdatedAt
             ));
@@ -178,7 +170,7 @@ public static class ExampleSetEndpoints
                 Name = newName,
                 DisplayName = $"{source.DisplayName} (Copy)",
                 Description = source.Description,
-                TargetTicketType = source.TargetTicketType,
+                TicketCategoryId = source.TicketCategoryId,
                 IsActive = true,
                 IsBuiltIn = false,
                 Examples = source.Examples.Select(e => new Example
@@ -187,7 +179,7 @@ public static class ExampleSetEndpoints
                     TicketShortDescription = e.TicketShortDescription,
                     TicketDescription = e.TicketDescription,
                     CallerName = e.CallerName,
-                    ExpectedTicketType = e.ExpectedTicketType,
+                    TicketCategoryId = e.TicketCategoryId,
                     ExpectedConfidence = e.ExpectedConfidence,
                     ExpectedAffectedUser = e.ExpectedAffectedUser,
                     ExpectedTargetGroup = e.ExpectedTargetGroup,
@@ -204,7 +196,7 @@ public static class ExampleSetEndpoints
             await repo.AddAsync(copy);
 
             return Results.Created($"/api/v1/example-sets/{copy.Id}", new ExampleSetResponse(
-                copy.Id, copy.Name, copy.DisplayName, copy.Description, copy.TargetTicketType,
+                copy.Id, copy.Name, copy.DisplayName, copy.Description, copy.TicketCategoryId, copy.TicketCategory?.Name,
                 copy.IsBuiltIn, copy.IsActive, copy.Examples.Count,
                 copy.CreatedAt, copy.UpdatedAt
             ));
@@ -238,7 +230,7 @@ public static class ExampleSetEndpoints
                 TicketShortDescription = request.TicketShortDescription,
                 TicketDescription = request.TicketDescription,
                 CallerName = request.CallerName,
-                ExpectedTicketType = request.ExpectedTicketType,
+                TicketCategoryId = request.TicketCategoryId,
                 ExpectedConfidence = request.ExpectedConfidence,
                 ExpectedAffectedUser = request.ExpectedAffectedUser,
                 ExpectedTargetGroup = request.ExpectedTargetGroup,
@@ -284,7 +276,7 @@ public static class ExampleSetEndpoints
             if (request.TicketShortDescription is not null) example.TicketShortDescription = request.TicketShortDescription;
             if (request.TicketDescription is not null) example.TicketDescription = request.TicketDescription;
             if (request.CallerName is not null) example.CallerName = request.CallerName;
-            if (request.ExpectedTicketType.HasValue) example.ExpectedTicketType = request.ExpectedTicketType.Value;
+            if (request.TicketCategoryId.HasValue) example.TicketCategoryId = request.TicketCategoryId.Value;
             if (request.ExpectedConfidence.HasValue) example.ExpectedConfidence = request.ExpectedConfidence.Value;
             if (request.ExpectedAffectedUser is not null) example.ExpectedAffectedUser = request.ExpectedAffectedUser;
             if (request.ExpectedTargetGroup is not null) example.ExpectedTargetGroup = request.ExpectedTargetGroup;
@@ -356,7 +348,7 @@ public static class ExampleSetEndpoints
     private static ExampleResponse MapToResponse(Example e) => new(
         e.Id, e.Name,
         e.TicketShortDescription, e.TicketDescription, e.CallerName,
-        e.ExpectedTicketType, e.ExpectedConfidence,
+        e.TicketCategoryId, e.TicketCategory?.Name, e.ExpectedConfidence,
         e.ExpectedAffectedUser, e.ExpectedTargetGroup,
         e.ExpectedTargetResource, e.ExpectedPermissionLevel,
         e.ExpectedShouldEscalate, e.ExpectedEscalationReason,
@@ -378,7 +370,7 @@ public static class ExampleSetEndpoints
     {
         var output = new Dictionary<string, object>
         {
-            ["ticket_type"] = e.ExpectedTicketType.ToString().ToLowerInvariant(),
+            ["ticket_type"] = e.TicketCategory?.Name ?? "unknown",
             ["confidence"] = e.ExpectedConfidence
         };
 

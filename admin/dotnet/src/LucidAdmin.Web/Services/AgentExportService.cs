@@ -78,6 +78,7 @@ public class AgentExportService : IAgentExportService
             .Include(a => a.WorkflowDefinition)
                 .ThenInclude(w => w!.ExampleSet)
                     .ThenInclude(e => e!.Examples.OrderBy(ex => ex.SortOrder))
+                        .ThenInclude(ex => ex.TicketCategory)
             .AsSplitQuery()  // Optimize for multiple includes
             .FirstOrDefaultAsync(a => a.Id == agentId, ct);
     }
@@ -324,6 +325,7 @@ public class AgentExportService : IAgentExportService
             var subWfDef = await _db.WorkflowDefinitions
                 .Include(w => w.ExampleSet)
                     .ThenInclude(e => e!.Examples.OrderBy(ex => ex.SortOrder))
+                        .ThenInclude(ex => ex.TicketCategory)
                 .Include(w => w.Steps)
                 .FirstOrDefaultAsync(w => w.Name == subWfName, ct);
 
@@ -350,6 +352,7 @@ public class AgentExportService : IAgentExportService
 
             var additionalSets = await _db.ExampleSets
                 .Include(es => es.Examples.OrderBy(e => e.SortOrder))
+                    .ThenInclude(e => e.TicketCategory)
                 .Where(es => missingSetNames.Contains(es.Name))
                 .ToListAsync(ct);
 
@@ -585,11 +588,11 @@ public class AgentExportService : IAgentExportService
 
     private string BuildExpectedOutputJson(Example example)
     {
-        // Build expected output as JSON with kebab-case ticket types
+        // Build expected output as JSON with ticket category name
         // matching dispatcher transition conditions
         var output = new Dictionary<string, object?>
         {
-            ["ticket_type"] = TicketTypeToClassificationString(example.ExpectedTicketType),
+            ["ticket_type"] = example.TicketCategory?.Name ?? "unknown",
             ["confidence"] = example.ExpectedConfidence,
             ["affected_user"] = example.ExpectedAffectedUser,
             ["target_group"] = example.ExpectedTargetGroup,
@@ -601,18 +604,4 @@ public class AgentExportService : IAgentExportService
 
         return JsonSerializer.Serialize(output);
     }
-
-    private static string TicketTypeToClassificationString(TicketType type) => type switch
-    {
-        TicketType.PasswordReset => "password-reset",
-        TicketType.GroupAccessAdd => "group-membership",
-        TicketType.GroupAccessRemove => "group-membership",
-        TicketType.FilePermissionGrant => "file-permissions",
-        TicketType.FilePermissionRevoke => "file-permissions",
-        TicketType.Unknown => "unknown",
-        TicketType.MultipleRequests => "unknown",
-        TicketType.OutOfScope => "unknown",
-        TicketType.SoftwareInstall => "software-install",
-        _ => "unknown"
-    };
 }
