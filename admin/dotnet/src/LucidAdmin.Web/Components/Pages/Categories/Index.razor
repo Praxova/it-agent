@@ -1,0 +1,293 @@
+@page "/categories"
+@attribute [Authorize]
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject LucidDbContext Context
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Ticket Categories - Lucid Admin Portal</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <div>
+        <MudText Typo="Typo.h4">Ticket Categories</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Manage the classification categories available to the agent. Categories map directly to workflow transitions.
+        </MudText>
+    </div>
+    @if (_isAdmin)
+    {
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddCategory">
+            Add Category
+        </MudButton>
+    }
+</div>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_categories != null)
+{
+    <MudTable Items="@_categories"
+              Hover="true"
+              Dense="false"
+              Striped="true"
+              Elevation="2">
+        <HeaderContent>
+            <MudTh>Color</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Display Name</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Examples</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Color">
+                <div style="width: 20px; height: 20px; border-radius: 50%; background-color: @context.Color; display: inline-block; border: 1px solid rgba(0,0,0,0.15);"></div>
+            </MudTd>
+            <MudTd DataLabel="Name">
+                <MudChip T="string" Size="Size.Small" Style="font-family: monospace;" Color="Color.Default">@context.Name</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Display Name">
+                <MudText Typo="Typo.body2"><strong>@context.DisplayName</strong></MudText>
+            </MudTd>
+            <MudTd DataLabel="Description">
+                @if (!string.IsNullOrWhiteSpace(context.Description))
+                {
+                    <MudText Typo="Typo.body2" Style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        @context.Description
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">-</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Examples">
+                <MudText Typo="Typo.body2">@context.ExampleCount</MudText>
+            </MudTd>
+            <MudTd DataLabel="Status">
+                @if (_isAdmin)
+                {
+                    <MudSwitch T="bool"
+                               Value="@context.IsActive"
+                               ValueChanged="@((bool v) => ToggleActive(context, v))"
+                               Color="Color.Success"
+                               Size="Size.Small" />
+                }
+                else
+                {
+                    @if (context.IsActive)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">Inactive</MudChip>
+                    }
+                }
+            </MudTd>
+            <MudTd DataLabel="Type">
+                @if (context.IsBuiltIn)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Built-in</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                @if (_isAdmin)
+                {
+                    <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       OnClick="@(() => EditCategory(context))"
+                                       title="Edit" />
+                        @if (!context.IsBuiltIn && context.ExampleCount == 0)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteCategory(context))"
+                                           title="Delete" />
+                        }
+                        else if (context.IsBuiltIn)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           Disabled="true"
+                                           title="Built-in categories cannot be deleted" />
+                        }
+                        else
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           Disabled="true"
+                                           title="@($"Remove or reassign {context.ExampleCount} examples before deleting this category")" />
+                        }
+                    </MudButtonGroup>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No ticket categories configured. Click 'Add Category' to create your first category.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else
+{
+    <MudAlert Severity="Severity.Error">Failed to load ticket categories</MudAlert>
+}
+
+@code {
+    private List<CategoryViewModel>? _categories;
+    private bool _loading = true;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
+        await LoadCategories();
+    }
+
+    private async Task LoadCategories()
+    {
+        _loading = true;
+        try
+        {
+            _categories = await Context.TicketCategories
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.DisplayName)
+                .Select(c => new CategoryViewModel
+                {
+                    Id = c.Id,
+                    Name = c.Name,
+                    DisplayName = c.DisplayName,
+                    Description = c.Description,
+                    Color = c.Color ?? "#9E9E9E",
+                    IsBuiltIn = c.IsBuiltIn,
+                    IsActive = c.IsActive,
+                    SortOrder = c.SortOrder,
+                    ExampleCount = c.Examples.Count
+                })
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load categories: {ex.Message}", Severity.Error);
+            _categories = null;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task AddCategory()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<CategoryDialog>("Add Category", new DialogParameters(), options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadCategories();
+        }
+    }
+
+    private async Task EditCategory(CategoryViewModel vm)
+    {
+        var entity = await Context.TicketCategories.FindAsync(vm.Id);
+        if (entity == null) { Snackbar.Add("Category not found", Severity.Error); return; }
+
+        var parameters = new DialogParameters { { nameof(CategoryDialog.Category), entity } };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<CategoryDialog>("Edit Category", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadCategories();
+        }
+    }
+
+    private async Task ToggleActive(CategoryViewModel vm, bool newValue)
+    {
+        if (!newValue && vm.ExampleCount > 0)
+        {
+            var confirm = await DialogService.ShowMessageBox(
+                "Deactivate Category",
+                "Deactivating this category will exclude it from future classifications. Existing examples will be preserved. Continue?",
+                yesText: "Deactivate",
+                cancelText: "Cancel");
+            if (confirm != true) return;
+        }
+
+        try
+        {
+            var entity = await Context.TicketCategories.FindAsync(vm.Id);
+            if (entity == null) return;
+            entity.IsActive = newValue;
+            await Context.SaveChangesAsync();
+            vm.IsActive = newValue;
+            Snackbar.Add($"Category '{vm.DisplayName}' {(newValue ? "activated" : "deactivated")}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update category: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteCategory(CategoryViewModel vm)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Category",
+            $"Are you sure you want to delete the category '{vm.DisplayName}'? This action cannot be undone.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirm == true)
+        {
+            try
+            {
+                var entity = await Context.TicketCategories.FindAsync(vm.Id);
+                if (entity == null) return;
+                Context.TicketCategories.Remove(entity);
+                await Context.SaveChangesAsync();
+                Snackbar.Add($"Category '{vm.DisplayName}' deleted successfully", Severity.Success);
+                await LoadCategories();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete category: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private class CategoryViewModel
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string? Description { get; set; }
+        public string Color { get; set; } = "#9E9E9E";
+        public bool IsBuiltIn { get; set; }
+        public bool IsActive { get; set; }
+        public int SortOrder { get; set; }
+        public int ExampleCount { get; set; }
+    }
+}

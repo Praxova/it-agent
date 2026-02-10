@@ -1,0 +1,183 @@
+@using MudBlazor
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject LucidDbContext Context
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField Value="@_displayName"
+                                  ValueChanged="@((string v) => OnDisplayNameChanged(v))"
+                                  Label="Display Name"
+                                  Required="true"
+                                  RequiredError="Display Name is required"
+                                  T="string" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_name"
+                                  Label="Name (slug)"
+                                  Required="true"
+                                  RequiredError="Name is required"
+                                  Disabled="@(_isEdit && _isBuiltIn)"
+                                  HelperText="Kebab-case slug used in workflow transitions and classification output"
+                                  Style="font-family: monospace;"
+                                  TextChanged="@(() => _nameManuallyEdited = true)"
+                                  T="string" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_description"
+                                  Label="Description"
+                                  Lines="2"
+                                  T="string" />
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    <MudTextField @bind-Value="_color"
+                                  Label="Color (hex)"
+                                  Placeholder="#9E9E9E"
+                                  HelperText="Hex color code for category display"
+                                  T="string" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <div style="width: 36px; height: 36px; border-radius: 4px; background-color: @(_color ?? "#9E9E9E"); border: 1px solid #ccc;"></div>
+                    <MudText Typo="Typo.caption" Class="ml-2">Preview</MudText>
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudSwitch T="bool" @bind-Value="_isActive" Label="Active" Color="Color.Success" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   Disabled="@(!_isValid || _saving)"
+                   OnClick="Save">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(_isEdit ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public TicketCategory? Category { get; set; }
+
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _saving;
+    private bool _isEdit => Category != null;
+    private bool _isBuiltIn => Category?.IsBuiltIn ?? false;
+    private bool _nameManuallyEdited;
+
+    private string _name = "";
+    private string _displayName = "";
+    private string? _description;
+    private string _color = "#9E9E9E";
+    private bool _isActive = true;
+
+    protected override void OnInitialized()
+    {
+        if (Category != null)
+        {
+            _name = Category.Name;
+            _displayName = Category.DisplayName ?? "";
+            _description = Category.Description;
+            _color = Category.Color ?? "#9E9E9E";
+            _isActive = Category.IsActive;
+            _nameManuallyEdited = true;
+        }
+    }
+
+    private void OnDisplayNameChanged(string value)
+    {
+        _displayName = value;
+        if (!_nameManuallyEdited)
+        {
+            _name = GenerateSlug(value);
+        }
+    }
+
+    private static string GenerateSlug(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+        return System.Text.RegularExpressions.Regex.Replace(
+            input.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-").Trim('-');
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Save()
+    {
+        if (_form != null) await _form.Validate();
+        if (!_isValid || _saving) return;
+
+        _saving = true;
+        try
+        {
+            // Validate uniqueness
+            var nameExists = await Context.TicketCategories
+                .AnyAsync(c => c.Name == _name && (_isEdit ? c.Id != Category!.Id : true));
+            if (nameExists)
+            {
+                Snackbar.Add($"A category with name '{_name}' already exists", Severity.Error);
+                return;
+            }
+
+            if (_isEdit)
+            {
+                var entity = await Context.TicketCategories.FindAsync(Category!.Id);
+                if (entity == null) { Snackbar.Add("Category not found", Severity.Error); return; }
+
+                if (!entity.IsBuiltIn) entity.Name = _name;
+                entity.DisplayName = _displayName;
+                entity.Description = _description;
+                entity.Color = _color;
+                entity.IsActive = _isActive;
+                await Context.SaveChangesAsync();
+                Snackbar.Add("Category updated successfully", Severity.Success);
+            }
+            else
+            {
+                var maxSort = await Context.TicketCategories.MaxAsync(c => (int?)c.SortOrder) ?? 0;
+                var entity = new TicketCategory
+                {
+                    Name = _name,
+                    DisplayName = _displayName,
+                    Description = _description,
+                    Color = _color,
+                    IsBuiltIn = false,
+                    IsActive = _isActive,
+                    SortOrder = maxSort + 10
+                };
+                Context.TicketCategories.Add(entity);
+                await Context.SaveChangesAsync();
+                Snackbar.Add("Category created successfully", Severity.Success);
+            }
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save category: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
