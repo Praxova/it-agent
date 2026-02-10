@@ -43,15 +43,18 @@
                 <MudSelectItem Value="@("inactive")">Inactive</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="2" Class="d-flex align-end">
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="CreateExampleSet"
-                       FullWidth="true">
-                Create
-            </MudButton>
-        </MudItem>
+        @if (_isAdmin)
+        {
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="CreateExampleSet"
+                           FullWidth="true">
+                    Create
+                </MudButton>
+            </MudItem>
+        }
     </MudGrid>
 </MudPaper>
 
@@ -116,26 +119,29 @@ else if (_exampleSets != null)
                 }
             </MudTd>
             <MudTd DataLabel="Actions">
-                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                   Color="Color.Primary"
-                                   Size="Size.Small"
-                                   OnClick="@(() => EditExampleSet(context.Id))"
-                                   title="Edit" />
-                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
-                                   Color="Color.Info"
-                                   Size="Size.Small"
-                                   OnClick="@(() => CopyExampleSet(context))"
-                                   title="Copy" />
-                    @if (!context.IsBuiltIn)
-                    {
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       Color="Color.Error"
+                @if (_isAdmin)
+                {
+                    <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Color="Color.Primary"
                                        Size="Size.Small"
-                                       OnClick="@(() => DeleteExampleSet(context))"
-                                       title="Delete" />
-                    }
-                </MudButtonGroup>
+                                       OnClick="@(() => EditExampleSet(context.Id))"
+                                       title="Edit" />
+                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                       Color="Color.Info"
+                                       Size="Size.Small"
+                                       OnClick="@(() => CopyExampleSet(context))"
+                                       title="Copy" />
+                        @if (!context.IsBuiltIn)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteExampleSet(context))"
+                                           title="Delete" />
+                        }
+                    </MudButtonGroup>
+                }
             </MudTd>
         </RowTemplate>
         <NoRecordsContent>
@@ -154,6 +160,10 @@ else
     private string _searchString = string.Empty;
     private TicketType? _filterTicketType;
     private string? _filterStatus;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
 
     private IEnumerable<ExampleSetResponse> FilteredExampleSets
     {
@@ -193,6 +203,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
         await LoadExampleSets();
     }
 

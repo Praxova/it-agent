@@ -5,6 +5,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Exceptions;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Models;
 using LucidAdmin.Web.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -119,7 +120,7 @@ public static class AuthEndpoints
                 LastLogin: user.LastLogin,
                 CreatedAt: user.CreatedAt
             ));
-        }).RequireAuthorization();
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapGet("/users", async (IUserRepository userRepository) =>
         {

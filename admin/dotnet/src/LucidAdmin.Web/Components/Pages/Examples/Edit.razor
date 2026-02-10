@@ -1,6 +1,6 @@
 @page "/examples/edit/{Id:guid}"
 @page "/examples/create"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Web.Api.Models.Responses
 @using LucidAdmin.Web.Models
 @using LucidAdmin.Core.Enums

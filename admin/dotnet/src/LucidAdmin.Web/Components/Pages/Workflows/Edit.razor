@@ -1,6 +1,6 @@
 @page "/workflows/edit/{Id:guid}"
 @page "/workflows/create"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Web.Api.Models.Requests
 @using LucidAdmin.Web.Api.Models.Responses
 @inject HttpClient Http

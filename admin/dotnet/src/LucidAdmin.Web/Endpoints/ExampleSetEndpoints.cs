@@ -5,6 +5,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Web.Api.Models.Requests;
 using LucidAdmin.Web.Api.Models.Responses;
+using LucidAdmin.Web.Authorization;
 
 namespace LucidAdmin.Web.Endpoints;
 
@@ -13,7 +14,8 @@ public static class ExampleSetEndpoints
     public static void MapExampleSetEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/example-sets")
-            .WithTags("Example Sets");
+            .WithTags("Example Sets")
+            .RequireAuthorization();
 
         // List all example sets
         group.MapGet("/", async (
@@ -113,7 +115,7 @@ public static class ExampleSetEndpoints
                 set.IsBuiltIn, set.IsActive, 0,
                 set.CreatedAt, set.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Update example set
         group.MapPut("/{id:guid}", async (
@@ -140,7 +142,7 @@ public static class ExampleSetEndpoints
                 set.IsBuiltIn, set.IsActive, set.Examples.Count,
                 set.CreatedAt, set.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Delete example set
         group.MapDelete("/{id:guid}", async (
@@ -156,7 +158,7 @@ public static class ExampleSetEndpoints
 
             await repo.DeleteAsync(id);
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Copy example set
         group.MapPost("/{id:guid}/copy", async (
@@ -206,7 +208,7 @@ public static class ExampleSetEndpoints
                 copy.IsBuiltIn, copy.IsActive, copy.Examples.Count,
                 copy.CreatedAt, copy.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // === Example endpoints (nested under example set) ===
 
@@ -256,7 +258,7 @@ public static class ExampleSetEndpoints
                 $"/api/v1/example-sets/{setId}/examples/{example.Id}",
                 MapToResponse(example)
             );
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Update example
         group.MapPut("/{setId:guid}/examples/{exampleId:guid}", async (
@@ -296,7 +298,7 @@ public static class ExampleSetEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(MapToResponse(example));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Delete example
         group.MapDelete("/{setId:guid}/examples/{exampleId:guid}", async (
@@ -320,7 +322,7 @@ public static class ExampleSetEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Reorder examples
         group.MapPost("/{setId:guid}/examples/reorder", async (
@@ -348,7 +350,7 @@ public static class ExampleSetEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { message = "Examples reordered successfully" });
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     private static ExampleResponse MapToResponse(Example e) => new(

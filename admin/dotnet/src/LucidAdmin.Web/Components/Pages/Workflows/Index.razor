@@ -19,12 +19,15 @@
                       IconSize="Size.Medium"
                       Class="mr-4"
                       Style="max-width: 400px;" />
-        <MudButton Variant="Variant.Filled"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Add"
-                   Href="/workflows/designer/create">
-            New Workflow
-        </MudButton>
+        @if (_isAdmin)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       Href="/workflows/designer/create">
+                New Workflow
+            </MudButton>
+        }
     </div>
 
     <MudTable Items="@FilteredWorkflows"
@@ -81,20 +84,23 @@
                 }
             </MudTd>
             <MudTd DataLabel="Actions" Style="text-align: right;">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                               Size="Size.Small"
-                               Href="@($"/workflows/designer/{context.Id}")"
-                               Color="Color.Primary" />
-                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
-                               Size="Size.Small"
-                               OnClick="@(() => CopyWorkflow(context))"
-                               Color="Color.Info" />
-                @if (!context.IsBuiltIn)
+                @if (_isAdmin)
                 {
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
                                    Size="Size.Small"
-                                   OnClick="@(() => DeleteWorkflow(context))"
-                                   Color="Color.Error" />
+                                   Href="@($"/workflows/designer/{context.Id}")"
+                                   Color="Color.Primary" />
+                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                   Size="Size.Small"
+                                   OnClick="@(() => CopyWorkflow(context))"
+                                   Color="Color.Info" />
+                    @if (!context.IsBuiltIn)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Size="Size.Small"
+                                       OnClick="@(() => DeleteWorkflow(context))"
+                                       Color="Color.Error" />
+                    }
                 }
             </MudTd>
         </RowTemplate>
@@ -106,6 +112,10 @@
     private string _searchString = "";
     private bool _loading = true;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
+
     private IEnumerable<WorkflowListResponse> FilteredWorkflows =>
         _workflows.Where(w =>
             string.IsNullOrWhiteSpace(_searchString) ||
@@ -116,6 +126,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
         await LoadWorkflows();
     }
 

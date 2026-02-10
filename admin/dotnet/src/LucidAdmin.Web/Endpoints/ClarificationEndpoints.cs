@@ -2,6 +2,7 @@ using System.Text.Json;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Infrastructure.Data;
+using LucidAdmin.Web.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -11,7 +12,8 @@ public static class ClarificationEndpoints
     public static void MapClarificationEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/clarifications")
-            .WithTags("Clarifications");
+            .WithTags("Clarifications")
+            .RequireAuthorization();
 
         // ================================================================
         // Agent-facing endpoints
@@ -41,7 +43,7 @@ public static class ClarificationEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/clarifications/{clarification.Id}", MapToResponse(clarification));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // GET /api/clarifications/pending?agentName={name} — Agent polls for pending clarifications
         group.MapGet("/pending", async (string agentName, LucidDbContext db) =>
@@ -72,7 +74,7 @@ public static class ClarificationEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(MapToResponse(clarification));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // POST /api/clarifications/{id}/acknowledge — Agent marks as consumed
         group.MapPost("/{id:guid}/acknowledge", async (Guid id, AcknowledgeClarificationRequest request, LucidDbContext db) =>
@@ -89,7 +91,7 @@ public static class ClarificationEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { id = clarification.Id, acknowledgedAt = clarification.AcknowledgedAt });
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // ================================================================
         // Portal-facing endpoints

@@ -1,6 +1,7 @@
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Exceptions;
 using LucidAdmin.Core.Interfaces.Repositories;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -86,7 +87,7 @@ public static class RulesetEndpoints
             await repository.AddAsync(ruleset);
 
             return Results.Created($"/api/rulesets/{ruleset.Id}", MapToResponse(ruleset));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // PUT /api/rulesets/{id} - Update ruleset
         group.MapPut("/{id:guid}", async (
@@ -114,7 +115,7 @@ public static class RulesetEndpoints
             await repository.UpdateAsync(ruleset);
 
             return Results.Ok(MapToResponse(ruleset));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // DELETE /api/rulesets/{id} - Delete ruleset
         group.MapDelete("/{id:guid}", async (
@@ -136,7 +137,7 @@ public static class RulesetEndpoints
             await repository.DeleteAsync(id);
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // ===== RULE ENDPOINTS =====
 
@@ -177,7 +178,7 @@ public static class RulesetEndpoints
             await context.SaveChangesAsync();
 
             return Results.Created($"/api/rules/{rule.Id}", MapRuleToResponse(rule));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // PUT /api/rules/{id} - Update rule
         ruleGroup.MapPut("/{id:guid}", async (
@@ -209,7 +210,7 @@ public static class RulesetEndpoints
             await context.SaveChangesAsync();
 
             return Results.Ok(MapRuleToResponse(rule));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // DELETE /api/rules/{id} - Delete rule
         ruleGroup.MapDelete("/{id:guid}", async (
@@ -234,7 +235,7 @@ public static class RulesetEndpoints
             await context.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     private static RulesetResponse MapToResponse(Ruleset ruleset) => new(

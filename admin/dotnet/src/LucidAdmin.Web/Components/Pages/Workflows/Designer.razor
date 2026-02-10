@@ -1,6 +1,6 @@
 @page "/workflows/designer/{Id:guid}"
 @page "/workflows/designer/create"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Web.Api.Models.Requests
 @using LucidAdmin.Web.Api.Models.Responses
 @using LucidAdmin.Core.Enums

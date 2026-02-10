@@ -2,6 +2,7 @@ using System.Text.Json;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Infrastructure.Data;
+using LucidAdmin.Web.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -11,7 +12,8 @@ public static class ManualSubmissionEndpoints
     public static void MapManualSubmissionEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/manual-submissions")
-            .WithTags("ManualSubmissions");
+            .WithTags("ManualSubmissions")
+            .RequireAuthorization();
 
         // POST /api/manual-submissions — Submit a new manual work item
         group.MapPost("/", async (SubmitManualRequest request, LucidDbContext db, IAgentRepository agentRepo) =>
@@ -45,7 +47,7 @@ public static class ManualSubmissionEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/manual-submissions/{submission.Id}", MapToResponse(submission, agent.Name));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // GET /api/manual-submissions — List all submissions (with filters)
         group.MapGet("/", async (
@@ -107,7 +109,7 @@ public static class ManualSubmissionEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { id = submission.Id, status = "InProgress" });
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // PATCH /api/manual-submissions/{id}/result — Report execution result
         group.MapPatch("/{id:guid}/result", async (Guid id, SubmitResultRequest request, LucidDbContext db) =>
@@ -132,7 +134,7 @@ public static class ManualSubmissionEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { id = submission.Id, status = submission.Status.ToString() });
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // Agent-scoped pending endpoint
         // GET /api/agents/{agentId}/manual-submissions/pending
@@ -144,7 +146,7 @@ public static class ManualSubmissionEndpoints
                 .ToListAsync();
 
             return Results.Ok(submissions.Select(MapToPendingResponse));
-        }).WithTags("ManualSubmissions");
+        }).WithTags("ManualSubmissions").RequireAuthorization();
 
         // GET /api/agents/by-name/{name}/manual-submissions/pending
         app.MapGet("/api/agents/by-name/{name}/manual-submissions/pending", async (
@@ -160,7 +162,7 @@ public static class ManualSubmissionEndpoints
                 .ToListAsync();
 
             return Results.Ok(submissions.Select(MapToPendingResponse));
-        }).WithTags("ManualSubmissions");
+        }).WithTags("ManualSubmissions").RequireAuthorization();
     }
 
     private static ManualSubmissionResponse MapToResponse(ManualSubmission s, string agentName)

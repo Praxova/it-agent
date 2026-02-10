@@ -4,6 +4,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Web.Api.Models.Requests;
 using LucidAdmin.Web.Api.Models.Responses;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Services;
 using LucidAdmin.Infrastructure.Data;
 
@@ -14,7 +15,8 @@ public static class WorkflowEndpoints
     public static void MapWorkflowEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/workflows")
-            .WithTags("Workflows");
+            .WithTags("Workflows")
+            .RequireAuthorization();
 
         // Get step types with metadata
         group.MapGet("/step-types", () =>
@@ -100,7 +102,7 @@ public static class WorkflowEndpoints
                 workflow.IsBuiltIn, workflow.IsActive, 0, null,
                 workflow.CreatedAt, workflow.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Update workflow
         group.MapPut("/{id:guid}", async (Guid id, UpdateWorkflowRequest request, IWorkflowDefinitionRepository repo) =>
@@ -125,7 +127,7 @@ public static class WorkflowEndpoints
                 workflow.IsBuiltIn, workflow.IsActive, workflow.Steps.Count, null,
                 workflow.CreatedAt, workflow.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Delete workflow
         group.MapDelete("/{id:guid}", async (Guid id, IWorkflowDefinitionRepository repo) =>
@@ -139,7 +141,7 @@ public static class WorkflowEndpoints
 
             await repo.DeleteAsync(id);
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Copy workflow
         group.MapPost("/{id:guid}/copy", async (
@@ -228,7 +230,7 @@ public static class WorkflowEndpoints
                 copy.IsBuiltIn, copy.IsActive, copy.Steps.Count, null,
                 copy.CreatedAt, copy.UpdatedAt
             ));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Save workflow layout (steps and transitions)
         group.MapPut("/{id:guid}/layout", async (
@@ -296,7 +298,7 @@ public static class WorkflowEndpoints
             // Reload and return
             workflow = await repo.GetFullWorkflowAsync(id);
             return Results.Ok(MapToDetailResponse(workflow!));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // === Workflow ruleset mappings ===
 
@@ -325,7 +327,7 @@ public static class WorkflowEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/v1/workflows/{id}/rulesets/{mapping.Id}", mapping);
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/{id:guid}/rulesets/{mappingId:guid}", async (
             Guid id,
@@ -348,7 +350,7 @@ public static class WorkflowEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     private static WorkflowDetailResponse MapToDetailResponse(WorkflowDefinition w)

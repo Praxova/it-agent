@@ -13,7 +13,8 @@ public static class CapabilityRoutingEndpoints
     public static void MapCapabilityRoutingEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/capabilities")
-            .WithTags("Capability Routing");
+            .WithTags("Capability Routing")
+            .RequireAuthorization();
 
         // GET /api/capabilities - List all capabilities
         group.MapGet("/", ListCapabilities)

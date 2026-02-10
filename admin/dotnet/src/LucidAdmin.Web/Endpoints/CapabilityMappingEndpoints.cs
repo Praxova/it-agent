@@ -3,6 +3,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Exceptions;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -155,7 +156,7 @@ public static class CapabilityMappingEndpoints
             });
 
             return Results.Created($"/api/capability-mappings/{mapping.Id}", MapToResponse(mapping));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/{id:guid}", async (
             Guid id,
@@ -202,7 +203,7 @@ public static class CapabilityMappingEndpoints
             });
 
             return Results.Ok(MapToResponse(mapping));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -227,7 +228,7 @@ public static class CapabilityMappingEndpoints
             });
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     private static CapabilityMappingResponse MapToResponse(CapabilityMapping mapping) => new(

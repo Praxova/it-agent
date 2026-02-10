@@ -1,5 +1,5 @@
 @page "/manual-submissions"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireOperator")]
 @using LucidAdmin.Web.Models
 @using System.Text.Json
 @inject HttpClient Http

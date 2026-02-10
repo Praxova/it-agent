@@ -1,23 +1,36 @@
 @page "/access-denied"
+@layout LoginLayout
 @inject NavigationManager Navigation
 
 <PageTitle>Access Denied - Lucid Admin Portal</PageTitle>
 
-<div class="login-container">
-    <div class="login-card">
-        <h1>Access Denied</h1>
-        <p>You do not have permission to access this resource.</p>
-
-        <div class="alert alert-warning" role="alert">
-            <strong>Insufficient Permissions</strong><br/>
-            Your account does not have the required permissions to view this page.
-            Please contact your administrator if you believe this is an error.
-        </div>
-
-        <button class="btn btn-primary" @onclick="GoHome">Return to Home</button>
-        <button class="btn btn-secondary" @onclick="GoToLogin">Login with Different Account</button>
-    </div>
-</div>
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center" Style="height: 100vh;">
+    <MudCard Class="pa-4" Elevation="4" Style="width: 100%;">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h4" Align="Align.Center">Access Denied</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-4">
+                You don't have permission to access this page. Contact your administrator if you believe this is an error.
+            </MudAlert>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Class="mb-2"
+                       OnClick="GoHome">
+                Go to Dashboard
+            </MudButton>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Default"
+                       FullWidth="true"
+                       OnClick="GoToLogin">
+                Login with Different Account
+            </MudButton>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
 
 @code {
     private void GoHome()

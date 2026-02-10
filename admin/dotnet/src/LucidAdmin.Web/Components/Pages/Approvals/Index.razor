@@ -1,5 +1,5 @@
 @page "/approvals"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireOperator")]
 @using System.Text.Json
 @inject HttpClient Http
 @inject ISnackbar Snackbar

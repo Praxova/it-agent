@@ -1,4 +1,6 @@
 @page "/settings/active-directory"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "RequireOperator")]
 @inject IOptions<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
 @inject HttpClient Http
 @inject ISnackbar Snackbar

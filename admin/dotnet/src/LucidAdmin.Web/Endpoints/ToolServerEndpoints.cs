@@ -3,6 +3,7 @@ using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Exceptions;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -84,7 +85,7 @@ public static class ToolServerEndpoints
             });
 
             return Results.Created($"/api/tool-servers/{server.Id}", MapToResponse(server));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/{id:guid}", async (
             Guid id,
@@ -114,7 +115,7 @@ public static class ToolServerEndpoints
             });
 
             return Results.Ok(MapToResponse(server));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -139,7 +140,7 @@ public static class ToolServerEndpoints
             });
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPost("/{id:guid}/heartbeat", async (
             Guid id,

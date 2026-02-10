@@ -1,3 +1,5 @@
+@using Microsoft.AspNetCore.Components.Authorization
+
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
         Dashboard
@@ -5,9 +7,12 @@
     <MudNavLink Href="/service-accounts" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Key">
         Service Accounts
     </MudNavLink>
-    <MudNavLink Href="/api-keys" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.VpnKey">
-        API Keys
-    </MudNavLink>
+    @if (_isAdmin)
+    {
+        <MudNavLink Href="/api-keys" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.VpnKey">
+            API Keys
+        </MudNavLink>
+    }
     <MudNavLink Href="/tool-servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dns">
         Tool Servers
     </MudNavLink>
@@ -23,12 +28,15 @@
     <MudNavLink Href="/workflows" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.WorkOutline">
         Workflows
     </MudNavLink>
-    <MudNavLink Href="/approvals" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.HowToVote">
-        Approvals
-    </MudNavLink>
-    <MudNavLink Href="/manual-submissions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.PlayArrow">
-        Test Workflows
-    </MudNavLink>
+    @if (_isOperatorOrAbove)
+    {
+        <MudNavLink Href="/approvals" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.HowToVote">
+            Approvals
+        </MudNavLink>
+        <MudNavLink Href="/manual-submissions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.PlayArrow">
+            Test Workflows
+        </MudNavLink>
+    }
     <MudNavLink Href="/capability-mappings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AccountTree">
         Capability Mappings
     </MudNavLink>
@@ -36,15 +44,39 @@
         Audit Log
     </MudNavLink>
     <MudDivider Class="my-2" />
-    <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="false">
-        <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
-            Users
-        </MudNavLink>
-        <MudNavLink Href="/settings/active-directory" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Domain">
-            Active Directory
-        </MudNavLink>
-    </MudNavGroup>
+    @if (_isOperatorOrAbove)
+    {
+        <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="false">
+            @if (_isAdmin)
+            {
+                <MudNavLink Href="/settings/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
+                    Users
+                </MudNavLink>
+            }
+            <MudNavLink Href="/settings/active-directory" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Domain">
+                Active Directory
+            </MudNavLink>
+        </MudNavGroup>
+    }
     <MudNavLink Href="/change-password" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.VpnKey">
         Change Password
     </MudNavLink>
 </MudNavMenu>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _isAdmin;
+    private bool _isOperatorOrAbove;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+            _isOperatorOrAbove = state.User.IsInRole("Admin") || state.User.IsInRole("Operator");
+        }
+    }
+}

@@ -16,7 +16,8 @@ public static class AgentConfigurationEndpoints
     public static void MapAgentConfigurationEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/agents")
-            .WithTags("Agent Configuration");
+            .WithTags("Agent Configuration")
+            .RequireAuthorization();
 
         // GET /api/agents/{name}/configuration
         group.MapGet("/{name}/configuration", GetAgentConfiguration)

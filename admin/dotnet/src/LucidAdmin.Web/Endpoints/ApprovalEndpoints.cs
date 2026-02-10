@@ -2,6 +2,7 @@ using System.Text.Json;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Infrastructure.Data;
+using LucidAdmin.Web.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -11,7 +12,8 @@ public static class ApprovalEndpoints
     public static void MapApprovalEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/approvals")
-            .WithTags("Approvals");
+            .WithTags("Approvals")
+            .RequireAuthorization();
 
         // ================================================================
         // Agent-facing endpoints
@@ -61,7 +63,7 @@ public static class ApprovalEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/approvals/{approval.Id}", MapToResponse(approval));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // GET /api/approvals/actionable?agentName={name} — Agent polls for decisions
         group.MapGet("/actionable", async (string agentName, LucidDbContext db) =>
@@ -100,7 +102,7 @@ public static class ApprovalEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { id = approval.Id, acknowledgedAt = approval.AcknowledgedAt });
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // ================================================================
         // Portal-facing endpoints
@@ -175,7 +177,7 @@ public static class ApprovalEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(MapToResponse(approval));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
 
         // GET /api/approvals/stats — Dashboard metrics
         group.MapGet("/stats", async (LucidDbContext db) =>

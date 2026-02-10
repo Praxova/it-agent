@@ -5,6 +5,7 @@ using LucidAdmin.Core.Interfaces.Credentials;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Infrastructure.Data;
+using LucidAdmin.Web.Authorization;
 using LucidAdmin.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -99,7 +100,7 @@ public static class ServiceAccountEndpoints
             });
 
             return Results.Created($"/api/v1/service-accounts/{account.Id}", MapToResponse(account));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPut("/{id:guid}", async (
             Guid id,
@@ -146,7 +147,7 @@ public static class ServiceAccountEndpoints
             });
 
             return Results.Ok(MapToResponse(account));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapDelete("/{id:guid}", async (
             Guid id,
@@ -170,7 +171,7 @@ public static class ServiceAccountEndpoints
             });
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         group.MapPost("/{id:guid}/test-connectivity", async (
             Guid id,

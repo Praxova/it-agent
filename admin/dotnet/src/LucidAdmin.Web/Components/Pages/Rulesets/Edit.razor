@@ -1,6 +1,6 @@
 @page "/rulesets/edit/{Id:guid}"
 @page "/rulesets/create"
-@attribute [Authorize]
+@attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Web.Models
 @using LucidAdmin.Core.Enums
 @inject HttpClient Http

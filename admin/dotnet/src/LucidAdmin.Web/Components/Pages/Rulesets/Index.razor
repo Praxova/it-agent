@@ -43,15 +43,18 @@
                 <MudSelectItem Value="@("inactive")">Inactive</MudSelectItem>
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="2" Class="d-flex align-end">
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="CreateRuleset"
-                       FullWidth="true">
-                Create
-            </MudButton>
-        </MudItem>
+        @if (_isAdmin)
+        {
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="CreateRuleset"
+                           FullWidth="true">
+                    Create
+                </MudButton>
+            </MudItem>
+        }
     </MudGrid>
 </MudPaper>
 
@@ -123,21 +126,24 @@ else if (_rulesets != null)
                 }
             </MudTd>
             <MudTd DataLabel="Actions">
-                <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                   Color="Color.Primary"
-                                   Size="Size.Small"
-                                   OnClick="@(() => EditRuleset(context.Id))"
-                                   title="Edit" />
-                    @if (!context.IsBuiltIn)
-                    {
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       Color="Color.Error"
+                @if (_isAdmin)
+                {
+                    <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Color="Color.Primary"
                                        Size="Size.Small"
-                                       OnClick="@(() => DeleteRuleset(context))"
-                                       title="Delete" />
-                    }
-                </MudButtonGroup>
+                                       OnClick="@(() => EditRuleset(context.Id))"
+                                       title="Edit" />
+                        @if (!context.IsBuiltIn)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                           Color="Color.Error"
+                                           Size="Size.Small"
+                                           OnClick="@(() => DeleteRuleset(context))"
+                                           title="Delete" />
+                        }
+                    </MudButtonGroup>
+                }
             </MudTd>
         </RowTemplate>
         <NoRecordsContent>
@@ -156,6 +162,10 @@ else
     private string _searchString = string.Empty;
     private string? _filterCategory;
     private string? _filterStatus;
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
 
     private IEnumerable<RulesetResponse> FilteredRulesets
     {
@@ -195,6 +205,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
         await LoadRulesets();
     }
 

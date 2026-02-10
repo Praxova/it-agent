@@ -48,15 +48,18 @@
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="2" Class="d-flex align-end">
-            <MudButton Variant="Variant.Filled"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add"
-                       OnClick="OpenCreateDialog"
-                       FullWidth="true">
-                Add Server
-            </MudButton>
-        </MudItem>
+        @if (_isAdmin)
+        {
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenCreateDialog"
+                           FullWidth="true">
+                    Add Server
+                </MudButton>
+            </MudItem>
+        }
     </MudGrid>
 </MudPaper>
 
@@ -143,21 +146,27 @@ else if (_servers != null)
             </MudTd>
             <MudTd DataLabel="Actions">
                 <MudButtonGroup Size="Size.Small" Variant="Variant.Outlined">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                   Color="Color.Primary"
-                                   Size="Size.Small"
-                                   OnClick="@(() => OpenEditDialog(context))"
-                                   title="Edit" />
+                    @if (_isAdmin)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenEditDialog(context))"
+                                       title="Edit" />
+                    }
                     <MudIconButton Icon="@Icons.Material.Filled.NetworkCheck"
                                    Color="Color.Info"
                                    Size="Size.Small"
                                    OnClick="@(() => TestConnectivity(context))"
                                    title="Test Connectivity" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                   Color="Color.Error"
-                                   Size="Size.Small"
-                                   OnClick="@(() => OpenDeleteDialog(context))"
-                                   title="Delete" />
+                    @if (_isAdmin)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenDeleteDialog(context))"
+                                       title="Delete" />
+                    }
                 </MudButtonGroup>
             </MudTd>
         </RowTemplate>
@@ -178,6 +187,10 @@ else
     private string? _filterStatus;
     private string? _filterDomain;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
+
     private IEnumerable<string> _domains => _servers?
         .Where(s => !string.IsNullOrWhiteSpace(s.Domain))
         .Select(s => s.Domain)
@@ -186,6 +199,11 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
         await LoadServers();
     }
 

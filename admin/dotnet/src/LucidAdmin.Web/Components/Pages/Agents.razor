@@ -63,15 +63,18 @@
                     <MudSelectItem Value="@((bool?)false)">Disabled</MudSelectItem>
                 </MudSelect>
             </MudItem>
-            <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           StartIcon="@Icons.Material.Filled.Add"
-                           OnClick="OpenCreateDialog"
-                           FullWidth="true">
-                    Add Agent
-                </MudButton>
-            </MudItem>
+            @if (_isAdmin)
+            {
+                <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="OpenCreateDialog"
+                               FullWidth="true">
+                        Add Agent
+                    </MudButton>
+                </MudItem>
+            }
         </MudGrid>
 
         <!-- Agents Table -->
@@ -200,21 +203,27 @@
                     }
                 </MudTd>
                 <MudTd DataLabel="Actions" Style="text-align: right;">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                   Color="Color.Primary"
-                                   Size="Size.Small"
-                                   OnClick="@(() => OpenEditDialog(context))"
-                                   Title="Edit" />
+                    @if (_isAdmin)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       OnClick="@(() => OpenEditDialog(context))"
+                                       Title="Edit" />
+                    }
                     <MudIconButton Icon="@Icons.Material.Filled.Download"
                                    Color="Color.Info"
                                    Size="Size.Small"
                                    OnClick="@(() => ExportAgent(context.Id, context.Name))"
                                    Title="Export Agent Definition" />
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                   Color="Color.Error"
-                                   Size="Size.Small"
-                                   OnClick="@(() => DeleteAgent(context))"
-                                   Title="Delete" />
+                    @if (_isAdmin)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="@(() => DeleteAgent(context))"
+                                       Title="Delete" />
+                    }
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
@@ -234,6 +243,10 @@
     private string? _statusFilter;
     private bool? _enabledFilter;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _isAdmin;
+
     private IEnumerable<AgentResponse> FilteredAgents =>
         _agents.Where(a =>
             (string.IsNullOrWhiteSpace(_searchText) ||
@@ -246,6 +259,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState != null)
+        {
+            var state = await AuthState;
+            _isAdmin = state.User.IsInRole("Admin");
+        }
         await Task.WhenAll(LoadAgents(), LoadServiceAccounts(), LoadWorkflows());
     }
 

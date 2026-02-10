@@ -20,7 +20,7 @@ public static class AgentEndpoints
     {
         var group = app.MapGroup("/api/agents")
             .WithTags("Agents")
-            .AllowAnonymous();  // For development and Python agent access
+            .RequireAuthorization();
 
         // GET /api/agents - List all agents
         group.MapGet("/", async (IAgentRepository repository) =>
@@ -100,7 +100,7 @@ public static class AgentEndpoints
             });
 
             return Results.Created($"/api/agents/{agent.Id}", MapToResponse(agent));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // PUT /api/agents/{id} - Update agent
         group.MapPut("/{id:guid}", async (
@@ -134,7 +134,7 @@ public static class AgentEndpoints
             });
 
             return Results.Ok(MapToResponse(agent));
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // DELETE /api/agents/{id} - Delete agent
         group.MapDelete("/{id:guid}", async (
@@ -159,7 +159,7 @@ public static class AgentEndpoints
             });
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // POST /api/agents/{id}/heartbeat - Update heartbeat
         group.MapPost("/{id:guid}/heartbeat", async (
@@ -220,7 +220,7 @@ public static class AgentEndpoints
             });
 
             return Results.Ok();
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // GET /api/agents/{id}/export - Export agent definition
         group.MapGet("/{id:guid}/export", async (

@@ -1,5 +1,6 @@
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Web.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -159,7 +160,7 @@ public static class CapabilityEndpoints
 
             var result = provider.ValidateConfiguration(request.Configuration);
             return Results.Ok(result);
-        });
+        }).RequireAuthorization(AuthorizationPolicies.RequireAdmin);
     }
 
     private record ValidateConfigRequest(string? Configuration);

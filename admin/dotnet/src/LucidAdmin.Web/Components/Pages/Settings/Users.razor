@@ -1,4 +1,6 @@
 @page "/settings/users"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "RequireAdmin")]
 @using LucidAdmin.Core.Entities
 @using LucidAdmin.Core.Interfaces.Repositories
 @using LucidAdmin.Core.Interfaces.Services
