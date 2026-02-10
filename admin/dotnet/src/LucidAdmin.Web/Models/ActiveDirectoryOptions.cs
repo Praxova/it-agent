@@ -11,7 +11,7 @@ public class ActiveDirectoryOptions
     public bool UseLdaps { get; set; } = false;
     public string SearchBase { get; set; } = "";
     public string BindUserDn { get; set; } = "";
-    public string BindPasswordEnvVar { get; set; } = "LUCID_AD_BIND_PASSWORD";
+    public string BindPasswordEnvVar { get; set; } = "PRAXOVA_AD_BIND_PASSWORD";
     public RoleMappingOptions RoleMapping { get; set; } = new();
     public string DefaultRole { get; set; } = "Viewer";
     public bool RequireRoleGroup { get; set; } = false;
@@ -19,7 +19,7 @@ public class ActiveDirectoryOptions
 
 public class RoleMappingOptions
 {
-    public string AdminGroup { get; set; } = "LucidAdmin-Admins";
-    public string OperatorGroup { get; set; } = "LucidAdmin-Operators";
-    public string ViewerGroup { get; set; } = "LucidAdmin-Viewers";
+    public string AdminGroup { get; set; } = "PraxovaAdmin-Admins";
+    public string OperatorGroup { get; set; } = "PraxovaAdmin-Operators";
+    public string ViewerGroup { get; set; } = "PraxovaAdmin-Viewers";
 }
