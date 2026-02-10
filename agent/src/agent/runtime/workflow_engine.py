@@ -13,6 +13,7 @@ from .execution_context import ExecutionContext, ExecutionStatus, StepResult
 from .condition_evaluator import ConditionEvaluator
 from .executors.base import BaseStepExecutor
 from .executors.registry import default_registry, ExecutorRegistry
+from .validators import validate_workflow_capabilities
 
 if TYPE_CHECKING:
     from griptape.drivers.prompt import BasePromptDriver
@@ -84,6 +85,16 @@ class WorkflowEngine:
                 if trans.from_step_name not in self._transitions:
                     self._transitions[trans.from_step_name] = []
                 self._transitions[trans.from_step_name].append(trans)
+
+        # Validate workflow capabilities against registered capabilities
+        validation_errors = validate_workflow_capabilities(export)
+        if validation_errors:
+            logger.warning(
+                "Capability validation found %d issue(s). "
+                "Some execute steps may fail at runtime. "
+                "Check capability mappings in the Admin Portal.",
+                len(validation_errors),
+            )
 
     def register_executor(self, executor: BaseStepExecutor):
         """Register a step executor for a step type."""

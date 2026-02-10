@@ -1,12 +1,12 @@
 namespace LucidAdmin.Infrastructure.Providers.Capabilities;
 
-public class FilePermissionsCapabilityProvider : BaseCapabilityProvider
+public class NtfsPermissionGrantCapabilityProvider : BaseCapabilityProvider
 {
-    public override string CapabilityId => "fs-permissions";
+    public override string CapabilityId => "ntfs-permission-grant";
     public override string Version => "1.0.0";
     public override string Category => "file-system";
-    public override string DisplayName => "File System Permissions";
-    public override string Description => "Grant and revoke NTFS permissions on files and folders";
+    public override string DisplayName => "NTFS Permission Grant";
+    public override string Description => "Grant NTFS permissions on files and folders";
     public override bool RequiresServiceAccount => true;
     public override IEnumerable<string> RequiredProviders => new[] { "windows-ad" };
     public override IEnumerable<string> Dependencies => new[] { "ad-user-lookup" };

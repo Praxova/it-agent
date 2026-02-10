@@ -3,13 +3,13 @@ using LucidAdmin.Core.Models;
 
 namespace LucidAdmin.Infrastructure.Providers.Capabilities;
 
-public class AdGroupManagementCapabilityProvider : BaseCapabilityProvider
+public class AdGroupAddCapabilityProvider : BaseCapabilityProvider
 {
-    public override string CapabilityId => "ad-group-mgmt";
+    public override string CapabilityId => "ad-group-add";
     public override string Version => "1.0.0";
     public override string Category => "active-directory";
-    public override string DisplayName => "AD Group Management";
-    public override string Description => "Add and remove users from Active Directory groups";
+    public override string DisplayName => "AD Group Add Member";
+    public override string Description => "Add users to Active Directory groups";
     public override bool RequiresServiceAccount => true;
     public override IEnumerable<string> RequiredProviders => new[] { "windows-ad" };
     public override IEnumerable<string> Dependencies => new[] { "ad-user-lookup" };

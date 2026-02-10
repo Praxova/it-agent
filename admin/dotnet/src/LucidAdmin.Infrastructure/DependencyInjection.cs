@@ -111,8 +111,10 @@ public static class DependencyInjection
         // Capability Providers
         services.AddSingleton<ICapabilityProvider, AdUserLookupCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, AdPasswordResetCapabilityProvider>();
-        services.AddSingleton<ICapabilityProvider, AdGroupManagementCapabilityProvider>();
-        services.AddSingleton<ICapabilityProvider, FilePermissionsCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, AdGroupAddCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, AdGroupRemoveCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, NtfsPermissionGrantCapabilityProvider>();
+        services.AddSingleton<ICapabilityProvider, NtfsPermissionRevokeCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, ServiceNowConnectorCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, AzureUserLookupCapabilityProvider>();
         services.AddSingleton<ICapabilityProvider, AzureVmLookupCapabilityProvider>();

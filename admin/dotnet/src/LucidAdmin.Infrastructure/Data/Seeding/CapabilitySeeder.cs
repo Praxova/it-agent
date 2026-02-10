@@ -54,6 +54,30 @@ public class CapabilitySeeder
             }
         }
 
+        // Clean up renamed capabilities from previous versions
+        var obsoleteIds = new[] { "ad-group-mgmt", "fs-permissions" };
+        var obsoleteMappings = await _context.CapabilityMappings
+            .Where(cm => obsoleteIds.Contains(cm.CapabilityId))
+            .ToListAsync();
+        if (obsoleteMappings.Any())
+        {
+            _context.CapabilityMappings.RemoveRange(obsoleteMappings);
+            _logger.LogWarning(
+                "Removed {Count} capability mapping(s) referencing obsolete capabilities ({Ids}). " +
+                "Recreate these mappings with the new capability IDs in the Admin Portal.",
+                obsoleteMappings.Count, string.Join(", ", obsoleteIds));
+        }
+
+        var obsolete = await _context.Capabilities
+            .Where(c => obsoleteIds.Contains(c.CapabilityId))
+            .ToListAsync();
+        if (obsolete.Any())
+        {
+            _context.Capabilities.RemoveRange(obsolete);
+            _logger.LogInformation("Removed {Count} obsolete capability records: {Ids}",
+                obsolete.Count, string.Join(", ", obsolete.Select(c => c.CapabilityId)));
+        }
+
         await _context.SaveChangesAsync();
     }
 }

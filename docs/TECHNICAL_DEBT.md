@@ -49,27 +49,33 @@ Low — only affects agent startup when no service account bindings exist. The f
 
 ---
 
-## TD-003: No Validation Between Capability Names in Workflows vs Capability Mappings (MEDIUM)
+## TD-003: No Validation Between Capability Names in Workflows vs Capability Mappings (MEDIUM) — PARTIALLY RESOLVED
 
-**Location:** Seeder `WorkflowSeeder.cs` (step ConfigurationJson), Capability Mappings (portal UI), `execute.py` (endpoint_map)
+**Location:** Seeder `WorkflowSeeder.cs` (step ConfigurationJson), Capability Providers, `execute.py` (endpoint_map)
 **Introduced:** ADR-011 Phase 5 E2E testing (2026-02-06)
-**Workaround:** Manual alignment — fixed seeder values and patched live DB
+**Partially resolved:** 2026-02-10
 
-**Problem:**
-Capability names appear in three independent locations with no cross-validation:
+**Original Problem:**
+Capability names appeared in three independent locations with no cross-validation:
 1. Workflow step `ConfigurationJson` (e.g., `"capability": "ad-group-add"`)
-2. Capability Mappings in the Admin Portal (e.g., capability name `ad-group-add`)
+2. Capability Provider IDs in the Admin Portal (e.g., `ad-group-mgmt`)
 3. Python `endpoint_map` in `execute.py` (maps capability → tool server API path)
 
-The group-membership-sub and file-permissions-sub workflows shipped with wrong capability names (`ad-group-membership` and `file-permissions` instead of `ad-group-add` and `ntfs-permission-grant`). The execute step silently failed because the Admin Portal returned 404 for the unknown capability, and the workflow reported success despite doing nothing.
+The group-membership-sub and file-permissions-sub workflows had mismatched capability names vs the registered capability providers, causing silent 404 failures at runtime.
 
-**Proper Fix:**
-- Add a startup validation step in the agent that checks all referenced capabilities in the active workflow export against the registered capability mappings.
-- Consider adding a foreign key or lookup validation in the Admin Portal when saving workflow step configurations.
-- The Python `endpoint_map` should be replaced with dynamic endpoint discovery from the tool server's capability metadata.
+**What was fixed:**
+1. Capability Provider IDs aligned to match workflow step names and endpoint_map:
+   - `ad-group-mgmt` → split into `ad-group-add` and `ad-group-remove`
+   - `fs-permissions` → split into `ntfs-permission-grant` and `ntfs-permission-revoke`
+2. Agent startup validation warns when workflow Execute steps reference unregistered capabilities
+3. Obsolete capability records cleaned up by seeder
 
-**Risk if Deferred:**
-Any new workflow with a typo in a capability name will silently fail. The lack of validation makes this class of bug invisible without careful log inspection.
+**Remaining (post-launch):**
+- The Python `endpoint_map` in `execute.py` is still hardcoded. Future enhancement: replace with dynamic endpoint discovery from tool server capability metadata.
+- No foreign key or lookup validation in the Admin Portal UI when saving workflow step configurations. Users could still type a wrong capability name in the workflow designer.
+
+**Risk if Deferred (remaining items):**
+Low — the startup validation catches mismatches early. The hardcoded endpoint_map covers all current capabilities and only needs updating when new capabilities are added.
 
 ---
 
@@ -133,5 +139,46 @@ Implement local caching (SQLite or YAML) so the agent can operate with a stale c
 
 **Risk if Deferred:**
 Agent cannot process software install tickets if the admin portal is down. Acceptable for dev/demo environments but a reliability concern in production.
+
+*Last updated: 2026-02-08*
+
+---
+
+## TD-007: Admin Portal Authentication — AD Integration and Local Account Hardening (HIGH — MVP BLOCKER)
+
+**Location:** `admin/dotnet/src/LucidAdmin.Web/` (auth middleware, login flow), `LucidAdmin.Infrastructure/Services/`
+**Introduced:** Initial portal scaffold — hardcoded `admin/admin` credentials
+**Workaround:** Static username/password with no password change capability
+
+**Problem:**
+The Admin Portal currently uses a hardcoded `admin/admin` local account with no password change mechanism, no password policy enforcement, and plaintext credential comparison. This is unsuitable for any deployment beyond local development.
+
+Two authentication capabilities are needed:
+
+**1. Local Break-Glass Account (hardening)**
+The built-in local administrator account must remain permanently available — it cannot be disabled or removed. This account is the only recovery path when the portal is disconnected from Active Directory due to network segmentation, routing failures, DNS issues, or domain trust problems. However, it needs proper hardening:
+- Force password change on first login (the training video intro should demonstrate this)
+- Store the password hash using the existing Argon2 hasher (`Argon2PasswordHasher.cs`)
+- Enforce a reasonable password policy (length, complexity)
+- Support credential storage in a vault (HashiCorp Vault, Azure Key Vault) rather than the application database for production deployments
+- Audit all local account authentications
+
+**2. Active Directory Integration (new capability)**
+Operators and administrators should authenticate against the domain (montanifarms.com) using their existing AD credentials:
+- LDAP bind authentication against the domain controller
+- AD group-to-portal-role mapping (e.g., `LucidAdmin-Admins` → Admin role, `LucidAdmin-Operators` → Operator role, `LucidAdmin-Viewers` → Viewer role)
+- Leverage the existing `UserRole` enum (Admin, Operator, Viewer)
+- Kerberos/NTLM pass-through for domain-joined browsers (nice-to-have for MVP, not required)
+- Graceful fallback to local account when AD is unreachable
+
+**Proper Fix:**
+- Add a first-login setup flow that forces the default admin password to be changed before any other portal operations
+- Implement LDAP authentication provider using the existing ServiceAccount infrastructure (a `windows-ad` service account already exists for the tool server — the portal can use the same pattern or a dedicated one)
+- Add AD group membership lookup at login time to resolve portal roles
+- Add an authentication provider abstraction so local and AD auth coexist cleanly
+- The local account should always authenticate against the local store, never against AD — keeping the two paths independent ensures the break-glass account works regardless of AD connectivity
+
+**Risk if Deferred:**
+Cannot ship MVP. The first thing shown in training videos must be changing the default password. Shipping with `admin/admin` and no AD integration would undermine credibility with any enterprise audience. The break-glass account requirement also means this can't be solved by "just use AD" — both paths must work.
 
 *Last updated: 2026-02-08*
