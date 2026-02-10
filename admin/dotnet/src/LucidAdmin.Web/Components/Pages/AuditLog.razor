@@ -1,17 +1,289 @@
 @page "/audit-log"
 @attribute [Authorize]
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Repositories
+@inject IAuditEventRepository AuditRepository
 
-<PageTitle>Audit Log - Lucid Admin Portal</PageTitle>
+<PageTitle>Audit Log - Lucid Admin</PageTitle>
 
-<h1>Audit Log</h1>
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Audit Log</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4">
+        View the complete audit trail of all system operations.
+    </MudText>
 
-<p>View the complete audit trail of all system operations.</p>
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (_error != null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+    else
+    {
+        <!-- Filters -->
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField @bind-Value="_searchText"
+                              Label="Search"
+                              Placeholder="Search by user, target, ticket..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true"
+                              DebounceInterval="300"
+                              OnDebounceIntervalElapsed="@(() => StateHasChanged())" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect @bind-Value="_actionFilter"
+                           Label="Action Type"
+                           T="AuditAction?"
+                           Clearable="true"
+                           OnClearButtonClick="@(() => { _actionFilter = null; StateHasChanged(); })">
+                    @foreach (var action in Enum.GetValues<AuditAction>())
+                    {
+                        <MudSelectItem Value="@((AuditAction?)action)">@FormatActionName(action)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudSelect @bind-Value="_statusFilter"
+                           Label="Status"
+                           T="string?"
+                           Clearable="true"
+                           OnClearButtonClick="@(() => { _statusFilter = null; StateHasChanged(); })">
+                    <MudSelectItem Value="@((string?)"Success")">Success</MudSelectItem>
+                    <MudSelectItem Value="@((string?)"Failed")">Failed</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker @bind-Date="_dateFrom"
+                               @bind-Date:after="ApplyServerFilters"
+                               Label="From"
+                               Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2">
+                <MudDatePicker @bind-Date="_dateTo"
+                               @bind-Date:after="ApplyServerFilters"
+                               Label="To"
+                               Clearable="true" />
+            </MudItem>
+        </MudGrid>
 
-<div class="mb-3">
-    <input type="search" class="form-control" placeholder="Search audit log..." />
-</div>
+        <!-- Audit Events Table -->
+        <MudTable Items="@FilteredEvents"
+                  Dense="true"
+                  Hover="true"
+                  Breakpoint="Breakpoint.Sm"
+                  RowsPerPage="25">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<AuditEvent, object>(x => x.CreatedAt)" InitialDirection="SortDirection.Descending">Timestamp</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<AuditEvent, object>(x => x.Action)">Action</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<AuditEvent, object>(x => x.PerformedBy ?? string.Empty)">Performed By</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<AuditEvent, object>(x => x.TargetResource ?? string.Empty)">Target</MudTableSortLabel></MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Details</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Timestamp">
+                    <MudTooltip Text="@context.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                        <MudText Typo="Typo.body2">@GetTimeAgo(context.CreatedAt)</MudText>
+                    </MudTooltip>
+                </MudTd>
+                <MudTd DataLabel="Action">
+                    <MudChip T="string" Color="@GetActionColor(context.Action, context.Success)" Size="Size.Small">
+                        @FormatActionName(context.Action)
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Performed By">
+                    <MudText Typo="Typo.body2">@(context.PerformedBy ?? "System")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Target">
+                    <MudText Typo="Typo.body2">@(context.TargetResource ?? "—")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.Success)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                    }
+                </MudTd>
+                <MudTd DataLabel="Details">
+                    @{
+                        var detail = GetDetailText(context);
+                    }
+                    @if (!string.IsNullOrEmpty(detail))
+                    {
+                        @if (detail.Length > 60)
+                        {
+                            <MudTooltip Text="@detail">
+                                <MudText Typo="Typo.body2" Style="cursor: pointer;">@(detail[..57])...</MudText>
+                            </MudTooltip>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2">@detail</MudText>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                @if (_events.Count == 0)
+                {
+                    <MudText>No audit events recorded yet. Events are logged automatically as you use the system.</MudText>
+                }
+                else
+                {
+                    <MudText>No audit events found matching your criteria.</MudText>
+                }
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    }
+</MudContainer>
 
-<div class="alert alert-info">
-    Audit events list will be displayed here. This is a placeholder component.
-    In a full implementation, this would fetch and display audit events from the API.
-</div>
+@code {
+    private List<AuditEvent> _events = new();
+    private bool _loading = true;
+    private string? _error;
+    private string? _searchText;
+    private AuditAction? _actionFilter;
+    private string? _statusFilter;
+    private DateTime? _dateFrom;
+    private DateTime? _dateTo;
+
+    private IEnumerable<AuditEvent> FilteredEvents => _events.Where(e =>
+    {
+        // Client-side text search
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            var search = _searchText.Trim();
+            if (!(e.PerformedBy?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                  e.TargetResource?.Contains(search, StringComparison.OrdinalIgnoreCase) == true ||
+                  e.TicketNumber?.Contains(search, StringComparison.OrdinalIgnoreCase) == true))
+                return false;
+        }
+
+        // Action type filter
+        if (_actionFilter.HasValue && e.Action != _actionFilter.Value)
+            return false;
+
+        // Status filter
+        if (_statusFilter == "Success" && !e.Success)
+            return false;
+        if (_statusFilter == "Failed" && e.Success)
+            return false;
+
+        return true;
+    });
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEvents();
+    }
+
+    private async Task LoadEvents()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            IEnumerable<AuditEvent> events;
+            if (_dateFrom.HasValue || _dateTo.HasValue)
+            {
+                var from = _dateFrom ?? DateTime.MinValue;
+                var to = _dateTo?.AddDays(1) ?? DateTime.MaxValue;
+                events = await AuditRepository.SearchAsync(null, null, null, from, to, 500);
+            }
+            else
+            {
+                events = await AuditRepository.GetRecentAsync(limit: 200);
+            }
+            _events = events.ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load audit events: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApplyServerFilters()
+    {
+        await LoadEvents();
+    }
+
+    private static string FormatActionName(AuditAction action)
+    {
+        var name = action.ToString();
+        return System.Text.RegularExpressions.Regex.Replace(name, "(?<!^)([A-Z])", " $1");
+    }
+
+    private static Color GetActionColor(AuditAction action, bool success)
+    {
+        if (!success)
+            return Color.Error;
+
+        var name = action.ToString();
+
+        // Auth events
+        if (action is AuditAction.UserLogin or AuditAction.UserLogout or AuditAction.PasswordChanged)
+            return Color.Info;
+
+        // Delete / revoke events
+        if (name.Contains("Deleted") || name.Contains("Revoked") || name.Contains("Deregistered"))
+            return Color.Error;
+
+        // Failed events
+        if (name.Contains("Failed"))
+            return Color.Error;
+
+        // Create events
+        if (name.Contains("Created") || name.Contains("Registered"))
+            return Color.Success;
+
+        // Update events
+        if (name.Contains("Updated"))
+            return Color.Warning;
+
+        return Color.Default;
+    }
+
+    private static string? GetDetailText(AuditEvent e)
+    {
+        if (!string.IsNullOrEmpty(e.ErrorMessage))
+            return e.ErrorMessage;
+        if (!string.IsNullOrEmpty(e.DetailsJson))
+            return e.DetailsJson;
+        return null;
+    }
+
+    private static string GetTimeAgo(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+
+        if (timeSpan.TotalSeconds < 30)
+            return "Just now";
+        if (timeSpan.TotalMinutes < 1)
+            return $"{(int)timeSpan.TotalSeconds}s ago";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} min ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours}h ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays}d ago";
+        return dateTime.ToString("yyyy-MM-dd HH:mm");
+    }
+}
