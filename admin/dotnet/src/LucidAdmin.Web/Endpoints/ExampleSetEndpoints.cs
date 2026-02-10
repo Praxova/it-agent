@@ -215,9 +215,6 @@ public static class ExampleSetEndpoints
             if (set is null)
                 return Results.NotFound(new { error = "ExampleSetNotFound" });
 
-            if (set.IsBuiltIn)
-                return Results.BadRequest(new { error = "CannotModifyBuiltIn" });
-
             if (set.Examples.Any(e => e.Name == request.Name))
                 return Results.Conflict(new { error = "ExampleExists", message = $"Example '{request.Name}' already exists in this set" });
 
@@ -264,9 +261,6 @@ public static class ExampleSetEndpoints
             if (set is null)
                 return Results.NotFound(new { error = "ExampleSetNotFound" });
 
-            if (set.IsBuiltIn)
-                return Results.BadRequest(new { error = "CannotModifyBuiltIn" });
-
             var example = await db.Examples.FindAsync(exampleId);
             if (example is null || example.ExampleSetId != setId)
                 return Results.NotFound(new { error = "ExampleNotFound" });
@@ -303,9 +297,6 @@ public static class ExampleSetEndpoints
             if (set is null)
                 return Results.NotFound(new { error = "ExampleSetNotFound" });
 
-            if (set.IsBuiltIn)
-                return Results.BadRequest(new { error = "CannotModifyBuiltIn" });
-
             var example = await db.Examples.FindAsync(exampleId);
             if (example is null || example.ExampleSetId != setId)
                 return Results.NotFound(new { error = "ExampleNotFound" });
@@ -326,9 +317,6 @@ public static class ExampleSetEndpoints
             var set = await repo.GetWithExamplesAsync(setId);
             if (set is null)
                 return Results.NotFound(new { error = "ExampleSetNotFound" });
-
-            if (set.IsBuiltIn)
-                return Results.BadRequest(new { error = "CannotModifyBuiltIn" });
 
             for (int i = 0; i < request.ExampleIds.Count; i++)
             {

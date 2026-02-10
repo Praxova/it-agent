@@ -1,0 +1,195 @@
+@using MudBlazor
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Infrastructure.Data
+@using LucidAdmin.Web.Models
+@using Microsoft.EntityFrameworkCore
+@inject LucidDbContext Context
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_isValid">
+            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Ticket Input</strong></MudText>
+
+            <MudTextField @bind-Value="_model.Name"
+                          Label="Example Name"
+                          Required="true"
+                          RequiredError="Name is required"
+                          HelperText="Short identifier for this example"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.TicketShortDescription"
+                          Label="Short Description"
+                          Required="true"
+                          RequiredError="Short description is required"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.TicketDescription"
+                          Label="Full Description"
+                          Lines="3"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.CallerName"
+                          Label="Caller Name"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Expected Classification Output</strong></MudText>
+
+            <MudSelect @bind-Value="_model.TicketCategoryId"
+                       Label="Expected Category"
+                       Clearable="true"
+                       Class="mt-3"
+                       T="Guid?">
+                <MudSelectItem Value="@((Guid?)null)">None</MudSelectItem>
+                @if (_categories != null)
+                {
+                    @foreach (var cat in _categories)
+                    {
+                        <MudSelectItem Value="@((Guid?)cat.Id)">@(cat.DisplayName ?? cat.Name)</MudSelectItem>
+                    }
+                }
+            </MudSelect>
+
+            <MudNumericField @bind-Value="_model.ExpectedConfidence"
+                             Label="Expected Confidence"
+                             Min="0m" Max="1m" Step="0.05m"
+                             Format="N2"
+                             Class="mt-3"
+                             T="decimal" />
+
+            <MudTextField @bind-Value="_model.ExpectedAffectedUser"
+                          Label="Expected Affected User"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.ExpectedTargetGroup"
+                          Label="Expected Target Group"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.ExpectedTargetResource"
+                          Label="Expected Target Resource"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudTextField @bind-Value="_model.ExpectedPermissionLevel"
+                          Label="Expected Permission Level"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudSwitch T="bool"
+                       @bind-Value="_model.ExpectedShouldEscalate"
+                       Label="Should Escalate"
+                       Color="Color.Warning"
+                       Class="mt-3" />
+
+            @if (_model.ExpectedShouldEscalate)
+            {
+                <MudTextField @bind-Value="_model.ExpectedEscalationReason"
+                              Label="Escalation Reason"
+                              Class="mt-3"
+                              T="string" />
+            }
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle1" Class="mb-2"><strong>Metadata</strong></MudText>
+
+            <MudTextField @bind-Value="_model.Notes"
+                          Label="Notes"
+                          Lines="2"
+                          Class="mt-3"
+                          T="string" />
+
+            <MudSwitch T="bool"
+                       @bind-Value="_model.IsActive"
+                       Label="Active"
+                       Color="Color.Success"
+                       Class="mt-3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   Disabled="@(!_isValid || _saving)"
+                   OnClick="Save">
+            @if (_saving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(_isEdit ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public ExampleFormModel? Example { get; set; }
+
+    [Parameter]
+    public Guid ExampleSetId { get; set; }
+
+    private ExampleFormModel _model = new();
+    private List<TicketCategory>? _categories;
+    private MudForm? _form;
+    private bool _isValid;
+    private bool _saving;
+    private bool _isEdit => Example != null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _categories = await Context.TicketCategories
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.DisplayName)
+            .ToListAsync();
+
+        if (Example != null)
+        {
+            _model = new ExampleFormModel
+            {
+                Id = Example.Id,
+                Name = Example.Name,
+                TicketShortDescription = Example.TicketShortDescription,
+                TicketDescription = Example.TicketDescription,
+                CallerName = Example.CallerName,
+                TicketCategoryId = Example.TicketCategoryId,
+                ExpectedConfidence = Example.ExpectedConfidence,
+                ExpectedAffectedUser = Example.ExpectedAffectedUser,
+                ExpectedTargetGroup = Example.ExpectedTargetGroup,
+                ExpectedTargetResource = Example.ExpectedTargetResource,
+                ExpectedPermissionLevel = Example.ExpectedPermissionLevel,
+                ExpectedShouldEscalate = Example.ExpectedShouldEscalate,
+                ExpectedEscalationReason = Example.ExpectedEscalationReason,
+                Notes = Example.Notes,
+                SortOrder = Example.SortOrder,
+                IsActive = Example.IsActive
+            };
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Save()
+    {
+        if (_form != null) await _form.Validate();
+        if (!_isValid || _saving) return;
+
+        _saving = true;
+        try
+        {
+            MudDialog.Close(DialogResult.Ok(_model));
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

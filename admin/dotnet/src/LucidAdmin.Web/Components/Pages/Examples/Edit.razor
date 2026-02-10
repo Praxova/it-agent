@@ -6,6 +6,7 @@
 @using LucidAdmin.Core.Entities
 @using LucidAdmin.Infrastructure.Data
 @using Microsoft.EntityFrameworkCore
+@using LucidAdmin.Web.Api.Models.Requests
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
@@ -97,6 +98,14 @@ else if (_model != null)
             <MudPaper Elevation="2" Class="pa-4">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <MudText Typo="Typo.h6">Examples (@_model.Examples.Count)</MudText>
+                    @if (!_isCreate)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Size="Size.Small"
+                                   OnClick="AddExample">Add Example</MudButton>
+                    }
                 </div>
 
                 @if (_model.Examples.Any())
@@ -113,6 +122,13 @@ else if (_model != null)
                                         <MudChip T="string" Size="Size.Small" Color="@(example.IsActive ? Color.Success : Color.Default)">
                                             @(example.IsActive ? "Active" : "Inactive")
                                         </MudChip>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                       Size="Size.Small"
+                                                       OnClick="@(() => EditExample(example))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => DeleteExample(example))" />
                                     </CardHeaderActions>
                                 </MudCardHeader>
                                 <MudCardContent>
@@ -275,6 +291,107 @@ else if (_model != null)
         finally
         {
             _saving = false;
+        }
+    }
+
+    private async Task AddExample()
+    {
+        var parameters = new DialogParameters<ExampleDialog>
+        {
+            { x => x.ExampleSetId, Id!.Value }
+        };
+
+        var dialog = await DialogService.ShowAsync<ExampleDialog>("Add Example", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: ExampleFormModel model })
+        {
+            try
+            {
+                var request = model.ToCreateRequest();
+                var response = await Http.PostAsJsonAsync($"/api/v1/example-sets/{Id}/examples", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Example added successfully", Severity.Success);
+                    await LoadExampleSet();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to add example: {error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to add example: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task EditExample(ExampleFormModel example)
+    {
+        var parameters = new DialogParameters<ExampleDialog>
+        {
+            { x => x.ExampleSetId, Id!.Value },
+            { x => x.Example, example }
+        };
+
+        var dialog = await DialogService.ShowAsync<ExampleDialog>("Edit Example", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: ExampleFormModel model })
+        {
+            try
+            {
+                var request = model.ToUpdateRequest();
+                var response = await Http.PutAsJsonAsync($"/api/v1/example-sets/{Id}/examples/{example.Id}", request);
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Example updated successfully", Severity.Success);
+                    await LoadExampleSet();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to update example: {error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to update example: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DeleteExample(ExampleFormModel example)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete Example",
+            $"Are you sure you want to delete the example '{example.Name}'?",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed == true)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"/api/v1/example-sets/{Id}/examples/{example.Id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    Snackbar.Add("Example deleted successfully", Severity.Success);
+                    await LoadExampleSet();
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Snackbar.Add($"Failed to delete example: {error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to delete example: {ex.Message}", Severity.Error);
+            }
         }
     }
 

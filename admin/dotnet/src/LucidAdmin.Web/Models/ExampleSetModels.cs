@@ -61,6 +61,40 @@ public class ExampleFormModel
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public CreateExampleRequest ToCreateRequest() => new(
+        Name: Name,
+        TicketShortDescription: TicketShortDescription,
+        TicketDescription: TicketDescription,
+        CallerName: CallerName,
+        TicketCategoryId: TicketCategoryId,
+        ExpectedConfidence: ExpectedConfidence,
+        ExpectedAffectedUser: ExpectedAffectedUser,
+        ExpectedTargetGroup: ExpectedTargetGroup,
+        ExpectedTargetResource: ExpectedTargetResource,
+        ExpectedPermissionLevel: ExpectedPermissionLevel,
+        ExpectedShouldEscalate: ExpectedShouldEscalate,
+        ExpectedEscalationReason: ExpectedEscalationReason,
+        Notes: Notes,
+        IsActive: IsActive
+    );
+
+    public UpdateExampleRequest ToUpdateRequest() => new(
+        Name: Name,
+        TicketShortDescription: TicketShortDescription,
+        TicketDescription: TicketDescription,
+        CallerName: CallerName,
+        TicketCategoryId: TicketCategoryId,
+        ExpectedConfidence: ExpectedConfidence,
+        ExpectedAffectedUser: ExpectedAffectedUser,
+        ExpectedTargetGroup: ExpectedTargetGroup,
+        ExpectedTargetResource: ExpectedTargetResource,
+        ExpectedPermissionLevel: ExpectedPermissionLevel,
+        ExpectedShouldEscalate: ExpectedShouldEscalate,
+        ExpectedEscalationReason: ExpectedEscalationReason,
+        Notes: Notes,
+        IsActive: IsActive
+    );
+
     public static ExampleFormModel FromResponse(ExampleResponse response) => new()
     {
         Id = response.Id,

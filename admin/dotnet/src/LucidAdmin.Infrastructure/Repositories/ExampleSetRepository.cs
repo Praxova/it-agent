@@ -18,9 +18,20 @@ public class ExampleSetRepository : Repository<ExampleSet>, IExampleSetRepositor
             .FirstOrDefaultAsync(e => e.Id == id, ct);
     }
 
+    public override async Task<IEnumerable<ExampleSet>> GetAllAsync(CancellationToken ct = default)
+    {
+        return await _dbSet
+            .Include(e => e.TicketCategory)
+            .Include(e => e.Examples)
+            .OrderBy(e => e.Name)
+            .ToListAsync(ct);
+    }
+
     public async Task<IEnumerable<ExampleSet>> GetByCategoryIdAsync(Guid categoryId, CancellationToken ct = default)
     {
         return await _dbSet
+            .Include(e => e.TicketCategory)
+            .Include(e => e.Examples)
             .Where(e => e.TicketCategoryId == categoryId)
             .OrderBy(e => e.Name)
             .ToListAsync(ct);
