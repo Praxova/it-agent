@@ -242,10 +242,10 @@ public class AccountController : Controller
             return "Password must contain at least one digit.";
         if (!Regex.IsMatch(password, @"[!@#$%^&*()\-_+=\[\]{}|;':"",./<>?\\]"))
             return "Password must contain at least one special character.";
-        if (string.Equals(password, "admin", StringComparison.OrdinalIgnoreCase))
-            return "Password cannot be 'admin'.";
-        if (string.Equals(password, username, StringComparison.OrdinalIgnoreCase))
-            return "Password cannot be the same as your username.";
+        if (password.Contains("admin", StringComparison.OrdinalIgnoreCase))
+            return "Password cannot contain the word 'admin'.";
+        if (username.Length >= 3 && password.Contains(username, StringComparison.OrdinalIgnoreCase))
+            return "Password cannot contain your username.";
         return null;
     }
 }
