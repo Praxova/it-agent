@@ -1,69 +1,75 @@
 # ─────────────────────────────────────────────────────────────────
-# Lucid IT Agent — Full Stack Development Compose
+# Praxova IT Agent — Full Stack Docker Compose
 # ─────────────────────────────────────────────────────────────────
 # Usage:
 #   docker compose up -d                    # Start all services
-#   docker compose up -d agent-helpdesk-01  # Start just one agent
+#   docker compose up -d --build            # Rebuild and start
+#   docker compose logs -f admin-portal     # Follow portal logs
 #   docker compose logs -f agent-helpdesk-01 # Follow agent logs
 #   docker compose down                     # Stop everything
-#
-# Prerequisites:
-#   - Admin Portal running natively or in container
-#   - Ollama running on host or as container
-#   - .NET Tool Server running on Windows VM
+#   docker compose down -v                  # Stop and remove volumes
 # ─────────────────────────────────────────────────────────────────
 
 services:
+  # ── Admin Portal (Blazor Server + REST API) ──────────────────
+  admin-portal:
+    build:
+      context: ./admin/dotnet
+      dockerfile: Dockerfile
+    container_name: praxova-admin-portal
+    ports:
+      - "5000:5000"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
+      Database__Provider: Sqlite
+      Jwt__SecretKey: "${JWT_SECRET_KEY:-praxova-dev-secret-key-change-in-production-min32chars!}"
+      ActiveDirectory__LdapServer: 172.16.119.20
+      ActiveDirectory__Domain: montanifarms.com
+      ActiveDirectory__SearchBase: "DC=montanifarms,DC=com"
+      ActiveDirectory__Enabled: "true"
+      PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
+    volumes:
+      - admin-data:/app/data
+      - admin-logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - lucid-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health/"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
   # ── Helpdesk Agent Instance 1 ────────────────────────────────
   agent-helpdesk-01:
     build:
       context: ./agent
       dockerfile: Dockerfile
-    container_name: lucid-agent-helpdesk-01
+    container_name: praxova-agent-helpdesk-01
     environment:
-      ADMIN_PORTAL_URL: http://host.docker.internal:5000
+      ADMIN_PORTAL_URL: http://admin-portal:5000
       AGENT_NAME: test-agent
       POLL_INTERVAL: "30"
       HEARTBEAT_INTERVAL: "60"
       LOG_LEVEL: INFO
       SERVICENOW_USERNAME: admin
       SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      OLLAMA_HOST: http://ollama:11434
     restart: unless-stopped
     networks:
       - lucid-net
     depends_on:
-      - ollama
-
-  # ── Helpdesk Agent Instance 2 (scale example) ───────────────
-  # Uncomment to run a second agent instance against a different
-  # agent config in the Admin Portal.
-  #
-  # agent-helpdesk-02:
-  #   build:
-  #     context: ./agent
-  #     dockerfile: Dockerfile
-  #   container_name: lucid-agent-helpdesk-02
-  #   environment:
-  #     ADMIN_PORTAL_URL: http://host.docker.internal:5000
-  #     AGENT_NAME: helpdesk-agent-02
-  #     POLL_INTERVAL: "30"
-  #     HEARTBEAT_INTERVAL: "60"
-  #     LOG_LEVEL: INFO
-  #     SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
-  #   restart: unless-stopped
-  #   networks:
-  #     - lucid-net
-  #   depends_on:
-  #     - ollama
+      admin-portal:
+        condition: service_healthy
+      ollama:
+        condition: service_started
 
   # ── Ollama LLM Server ───────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
-    container_name: lucid-ollama
+    container_name: praxova-ollama
     ports:
       - "11434:11434"
     volumes:
@@ -80,10 +86,14 @@ services:
       - lucid-net
 
 volumes:
+  admin-data:
+    name: praxova-admin-data
+  admin-logs:
+    name: praxova-admin-logs
   ollama-models:
-    name: lucid-ollama-models
+    name: praxova-ollama-models
 
 networks:
   lucid-net:
-    name: lucid-network
+    name: praxova-network
     driver: bridge

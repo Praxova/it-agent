@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────
-# Lucid IT Agent — Runtime Container
+# Praxova IT Agent — Runtime Container
 # ─────────────────────────────────────────────────────────────────
 # Multi-stage build: install dependencies in builder, copy to slim runtime
 
@@ -22,6 +22,11 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
+# Install curl for entrypoint health check
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
@@ -39,7 +44,7 @@ USER agent
 # ── Configuration via environment variables ──────────────────────
 # Required:
 ENV ADMIN_PORTAL_URL=http://admin-portal:5000
-ENV AGENT_NAME=lucid-agent
+ENV AGENT_NAME=praxova-agent
 #
 # Optional (with defaults):
 ENV POLL_INTERVAL=30
