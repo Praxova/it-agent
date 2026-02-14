@@ -190,3 +190,8 @@ test-results/
 # Docker
 docker-compose.override.yml
 .env
+
+# Local development certificates
+docker/certs/*.pem
+docker/certs/*.key
+docker/certs/*.crt

@@ -325,6 +325,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    app.UseHsts();
+}
+app.UseHttpsRedirection();
+
+// TODO: TD-007 — Add API key authentication middleware
+// TODO: TD-007 — Add CORS policy for known origins only
 
 app.UseSerilogRequestLogging();
 app.UseStaticFiles();

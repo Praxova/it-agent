@@ -38,12 +38,13 @@ COPY --from=build /app/publish .
 RUN mkdir -p /app/data /app/logs
 
 # Environment defaults
-ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_URLS=http://+:5000;https://+:5001
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV ConnectionStrings__DefaultConnection="Data Source=/app/data/lucid-admin.db"
 ENV Database__Provider=Sqlite
 
 EXPOSE 5000
+EXPOSE 5001
 
 # Health check against the existing endpoint
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
