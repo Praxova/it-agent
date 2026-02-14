@@ -7,7 +7,15 @@
 
 <PageTitle>Dashboard - Praxova Admin Portal</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+<MudPaper Class="pa-4 mb-4" Elevation="0" Style="background: linear-gradient(135deg, #0A2463 0%, #00B4D8 100%); border-radius: 12px;">
+    <div class="d-flex align-center">
+        <MudImage Src="images/it-agent-icon.png" Alt="Praxova IT Agent" Width="64" Height="64" Class="mr-4" ObjectFit="ObjectFit.Contain" />
+        <div>
+            <MudText Typo="Typo.h4" Style="color: #E8F1F5;">Praxova IT Agent</MudText>
+            <MudText Typo="Typo.body1" Style="color: #90E0EF;">AI-Powered IT Helpdesk Automation</MudText>
+        </div>
+    </div>
+</MudPaper>
 
 @if (_loading)
 {

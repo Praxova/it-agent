@@ -1,6 +1,6 @@
 @inherits LayoutComponentBase
 
-<MudThemeProvider />
+<MudThemeProvider Theme="_theme" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -10,3 +10,23 @@
         @Body
     </MudMainContent>
 </MudLayout>
+
+@code {
+    private MudTheme _theme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#0A2463",
+            Secondary = "#00B4D8",
+            Tertiary = "#48CAE4",
+            Success = "#06D6A0",
+            Warning = "#FFC857",
+            Error = "#EF476F",
+            Info = "#90E0EF",
+            Background = "#F5F5F5",
+            Surface = "#FFFFFF",
+            TextPrimary = "#212529",
+            TextSecondary = "#6C757D",
+        }
+    };
+}

@@ -14,12 +14,12 @@
 3. Generate certificates (from this directory):
    ```
    cd docker/certs/
-   mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 admin.lucid.local
+   mkcert -cert-file cert.pem -key-file key.pem localhost 127.0.0.1 admin.praxova.local
    ```
 
 4. Add to /etc/hosts (optional, for clean demo URL):
    ```
-   127.0.0.1 admin.lucid.local
+   127.0.0.1 admin.praxova.local
    ```
 
 ## Files (git-ignored)

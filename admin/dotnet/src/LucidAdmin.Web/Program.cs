@@ -39,7 +39,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Lucid Admin Portal API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Praxova IT Agent API", Version = "v1" });
 
     // JWT Bearer authentication
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -277,7 +277,7 @@ using (var scope = app.Services.CreateScope())
         var newAdmin = new User
         {
             Username = "admin",
-            Email = "admin@lucid.local",
+            Email = "admin@praxova.local",
             PasswordHash = passwordHasher.HashPassword("admin"),
             Role = UserRole.Admin,
             IsEnabled = true,
@@ -328,8 +328,8 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseHsts();
+    app.UseHttpsRedirection();
 }
-app.UseHttpsRedirection();
 
 // TODO: TD-007 — Add API key authentication middleware
 // TODO: TD-007 — Add CORS policy for known origins only

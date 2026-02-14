@@ -10,7 +10,8 @@
 <MudLayout>
     <MudAppBar Elevation="1" Fixed="true">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
-        <MudText Typo="Typo.h6" Class="ml-3">Praxova Admin Portal</MudText>
+        <MudImage Src="images/it-agent-icon.png" Alt="Praxova IT Agent" Width="32" Height="32" Class="ml-3 mr-2" ObjectFit="ObjectFit.Contain" />
+        <MudText Typo="Typo.h6">Praxova IT Agent</MudText>
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
@@ -58,21 +59,41 @@
     {
         PaletteLight = new PaletteLight()
         {
-            Primary = "#1976D2",
-            Secondary = "#00796B",
-            AppbarBackground = "#1976D2",
-            Background = "#f5f5f5",
-            Surface = "#ffffff",
-            DrawerBackground = "#ffffff",
+            Primary = "#0A2463",
+            Secondary = "#00B4D8",
+            Tertiary = "#48CAE4",
+            AppbarBackground = "#0A2463",
+            AppbarText = "#E8F1F5",
+            DrawerBackground = "#E8F1F5",
+            DrawerText = "#212529",
+            DrawerIcon = "#0A2463",
+            Success = "#06D6A0",
+            Warning = "#FFC857",
+            Error = "#EF476F",
+            Info = "#90E0EF",
+            Surface = "#FFFFFF",
+            Background = "#F5F5F5",
+            TextPrimary = "#212529",
+            TextSecondary = "#6C757D",
         },
         PaletteDark = new PaletteDark()
         {
-            Primary = "#90CAF9",
-            Secondary = "#80CBC4",
-            AppbarBackground = "#1e1e1e",
-            Background = "#121212",
-            Surface = "#1e1e1e",
-            DrawerBackground = "#1e1e1e",
+            Primary = "#00B4D8",
+            Secondary = "#48CAE4",
+            Tertiary = "#90E0EF",
+            AppbarBackground = "#0A2463",
+            AppbarText = "#E8F1F5",
+            DrawerBackground = "#1A1A2E",
+            DrawerText = "#E8F1F5",
+            DrawerIcon = "#00B4D8",
+            Success = "#06D6A0",
+            Warning = "#FFC857",
+            Error = "#EF476F",
+            Info = "#90E0EF",
+            Surface = "#16213E",
+            Background = "#0F1419",
+            TextPrimary = "#E8F1F5",
+            TextSecondary = "#ADB5BD",
         }
     };
 
