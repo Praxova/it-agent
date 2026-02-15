@@ -9,7 +9,13 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure Serilog
+// Enable running as a Windows Service
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "PraxovaToolServer";
+});
+
+// Configure Serilog (after UseWindowsService so content root is correct)
 builder.Host.UseSerilog((context, config) =>
     config.ReadFrom.Configuration(context.Configuration));
 
@@ -36,6 +42,20 @@ if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azur
 }
 
 var app = builder.Build();
+
+// Lifecycle logging for service start/stop events
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
+
+lifetime.ApplicationStarted.Register(() =>
+    startupLogger.LogInformation("Praxova Tool Server started. Endpoints: {Urls}",
+        string.Join(", ", app.Urls)));
+
+lifetime.ApplicationStopping.Register(() =>
+    startupLogger.LogInformation("Praxova Tool Server is shutting down..."));
+
+lifetime.ApplicationStopped.Register(() =>
+    startupLogger.LogInformation("Praxova Tool Server stopped."));
 
 // HTTPS enforcement
 if (!app.Environment.IsDevelopment())
