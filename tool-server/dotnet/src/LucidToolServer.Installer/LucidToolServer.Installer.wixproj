@@ -16,9 +16,9 @@
     <ProjectReference Include="..\LucidToolServer\LucidToolServer.csproj" />
   </ItemGroup>
 
-  <!-- Exclude the Bundle definition from MSI compilation -->
-  <ItemGroup>
-    <None Remove="Prerequisites\PrereqCheck.wxs" />
-    <Compile Remove="Prerequisites\PrereqCheck.wxs" />
-  </ItemGroup>
+  <!--
+    Note: Prerequisites/PrereqCheck.wxs.bundle is a Bundle (EXE bootstrapper)
+    definition for a future separate project. It is NOT compiled into the MSI.
+    The .bundle extension prevents WiX auto-inclusion.
+  -->
 </Project>
