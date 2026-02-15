@@ -1,0 +1,11 @@
+<Project Sdk="WixToolset.Sdk/5.0.1">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+  </PropertyGroup>
+
+  <!-- Reference the tool server project for harvesting published files -->
+  <ItemGroup>
+    <ProjectReference Include="..\LucidToolServer\LucidToolServer.csproj" />
+  </ItemGroup>
+</Project>

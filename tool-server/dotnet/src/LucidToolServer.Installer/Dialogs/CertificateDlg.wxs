@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Certificate Configuration Dialog (placeholder for future custom UI)
+
+  Currently, certificate configuration is handled via:
+  1. Silent install properties: CERT_PATH, CERT_KEY_PATH
+  2. Post-install script: configure-toolserver.ps1
+
+  Example silent install with certificate:
+    msiexec /i PraxovaToolServer.msi /qn CERT_PATH="C:\certs\toolserver.pfx"
+
+  Future: This file will contain a WiX custom dialog with:
+  - Text field + Browse button: Certificate file path
+  - Text field + Browse button: Private key file path
+  - Optional: CA root certificate path
+  - Checkbox: "Configure HTTPS later"
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!-- Placeholder for future Certificate dialog UI -->
+  </Fragment>
+</Wix>

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!--
+    Praxova IT Agent Tool Server Installer
+    Produces: PraxovaToolServer-{version}-x64.msi
+  -->
+
+  <Package Name="Praxova IT Agent Tool Server"
+           Manufacturer="Praxova"
+           Version="1.0.0.0"
+           UpgradeCode="84ACB1D3-9291-4DD4-9676-550584B7A4CD"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <!-- Upgrade handling — removes previous versions -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Praxova IT Agent Tool Server is already installed."
+                  AllowSameVersionUpgrades="yes" />
+
+    <!-- Embed all files in the MSI -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Installer UI branding -->
+    <WixVariable Id="WixUIBannerBmp" Value="Assets\banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="Assets\dialog.bmp" />
+    <WixVariable Id="WixUILicenseRtf" Value="Assets\license.rtf" />
+    <Icon Id="PraxovaIcon" SourceFile="Assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PraxovaIcon" />
+
+    <!-- Custom properties for user input (silent install support) -->
+    <Property Id="SERVICE_ACCOUNT" Value="LocalSystem" />
+    <Property Id="SERVICE_ACCOUNT_PASSWORD" Value="" Secure="yes" />
+    <Property Id="CERT_PATH" Value="" />
+    <Property Id="CERT_KEY_PATH" Value="" />
+    <Property Id="DOMAIN_NAME" Value="" />
+    <Property Id="HTTPS_PORT" Value="8443" />
+    <Property Id="HTTP_PORT" Value="8080" />
+
+    <!-- Installation directory -->
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="PraxovaDir" Name="Praxova">
+        <Directory Id="INSTALLFOLDER" Name="ToolServer">
+          <Directory Id="CertsDir" Name="certs">
+            <Directory Id="CaTrustDir" Name="ca-trust" />
+          </Directory>
+          <Directory Id="LogsDir" Name="logs" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Main component group — tool server binaries -->
+    <ComponentGroup Id="ToolServerFiles" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="CE160AA2-AB11-4AC7-9168-964A5D31A497">
+        <File Id="ToolServerExe" Source="$(var.LucidToolServer.TargetDir)\LucidToolServer.exe" KeyPath="yes" />
+
+        <!-- Install as Windows Service -->
+        <ServiceInstall Id="PraxovaToolServerService"
+                        Type="ownProcess"
+                        Name="PraxovaToolServer"
+                        DisplayName="Praxova IT Agent Tool Server"
+                        Description="Provides Active Directory, file permission, and remote management operations for the Praxova IT Agent."
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="[SERVICE_ACCOUNT]"
+                        Password="[SERVICE_ACCOUNT_PASSWORD]">
+          <!-- Service recovery: restart on failure -->
+          <ServiceConfig DelayedAutoStart="yes"
+                         OnInstall="yes"
+                         OnReinstall="yes" />
+        </ServiceInstall>
+
+        <!-- Service control — start after install, stop before uninstall -->
+        <ServiceControl Id="StartService"
+                        Name="PraxovaToolServer"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!-- appsettings.json — mark as permanent so upgrades don't overwrite customer config -->
+      <Component Id="AppSettings" Guid="27949D44-B431-4978-A8AF-5AF94C0F992B" NeverOverwrite="yes">
+        <File Id="AppSettingsJson" Source="$(var.LucidToolServer.TargetDir)\appsettings.json" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Empty directory components -->
+    <ComponentGroup Id="DirectoryStructure">
+      <Component Id="CertsDirectory" Directory="CertsDir" Guid="D7CD2F8B-D55A-4B84-986D-188280D83CED">
+        <CreateFolder />
+      </Component>
+      <Component Id="CaTrustDirectory" Directory="CaTrustDir" Guid="28B3A680-BEF9-4C73-9B8A-6AD63D4077F5">
+        <CreateFolder />
+      </Component>
+      <Component Id="LogsDirectory" Directory="LogsDir" Guid="63E58147-C440-4C5B-B62C-94604D7C55CC">
+        <CreateFolder />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Firewall rules -->
+    <ComponentGroup Id="FirewallRules" Directory="INSTALLFOLDER">
+      <Component Id="FirewallHttps" Guid="AFC25DCB-BC9A-4C1C-86F9-C96C4D881D30">
+        <fw:FirewallException Id="FwHttps"
+                              Name="Praxova Tool Server (HTTPS)"
+                              Port="[HTTPS_PORT]"
+                              Protocol="tcp"
+                              Scope="any"
+                              Profile="domain" />
+      </Component>
+      <Component Id="FirewallHttp" Guid="32A248DC-0801-450A-9579-F4251CAAD58A">
+        <fw:FirewallException Id="FwHttp"
+                              Name="Praxova Tool Server (HTTP - Health)"
+                              Port="[HTTP_PORT]"
+                              Protocol="tcp"
+                              Scope="localSubnet"
+                              Profile="domain" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- EventLog source registration -->
+    <ComponentGroup Id="EventLogSource" Directory="INSTALLFOLDER">
+      <Component Id="EventLog" Guid="87F3071F-75C7-4C3B-9165-77A37D5650C4">
+        <RegistryKey Root="HKLM"
+                     Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\PraxovaToolServer">
+          <RegistryValue Type="expandable" Name="EventMessageFile"
+                         Value="%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\EventLogMessages.dll" />
+          <RegistryValue Type="integer" Name="TypesSupported" Value="7" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <!-- Feature tree -->
+    <Feature Id="ProductFeature" Title="Praxova IT Agent Tool Server" Level="1">
+      <ComponentGroupRef Id="ToolServerFiles" />
+      <ComponentGroupRef Id="DirectoryStructure" />
+      <ComponentGroupRef Id="FirewallRules" />
+      <ComponentGroupRef Id="EventLogSource" />
+    </Feature>
+
+    <!-- Use WiX standard UI with install directory selection -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+  </Package>
+</Wix>

@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidToolServer", "src\Luci
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LucidToolServer.Tests", "tests\LucidToolServer.Tests\LucidToolServer.Tests.csproj", "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC943}"
 EndProject
+Project("{930C7802-8A8C-48F9-8165-68863BCCD9DD}") = "LucidToolServer.Installer", "src\LucidToolServer.Installer\LucidToolServer.Installer.wixproj", "{5D103AFC-D89C-4D9F-95C8-38249D0151E0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,5 +23,9 @@ Global
 		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC943}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC943}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC943}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5D103AFC-D89C-4D9F-95C8-38249D0151E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5D103AFC-D89C-4D9F-95C8-38249D0151E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5D103AFC-D89C-4D9F-95C8-38249D0151E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5D103AFC-D89C-4D9F-95C8-38249D0151E0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

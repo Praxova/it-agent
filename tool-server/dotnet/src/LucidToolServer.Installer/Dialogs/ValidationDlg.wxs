@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Validation Dialog (placeholder for future custom UI)
+
+  Currently, validation is handled by the post-install script:
+    configure-toolserver.ps1
+
+  The script tests:
+  - AD connectivity using the configured domain and service account
+  - Certificate file presence
+  - Service startup and health check
+
+  Future: This file will contain a WiX custom dialog showing:
+  - Green checkmark / red X for each validation check
+  - .NET 8 Runtime detected
+  - Active Directory connectivity
+  - Certificate files found
+  - Ports available
+  - "Install" button enabled only when critical checks pass
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!-- Placeholder for future Validation dialog UI -->
+  </Fragment>
+</Wix>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AD Validation Custom Action (placeholder for future implementation)
+
+  Currently, AD validation is handled by the post-install script:
+    configure-toolserver.ps1
+
+  Future: This file will contain a WiX custom action that:
+  - Tests AD connectivity during installation
+  - Validates service account credentials
+  - Reports results back to the ValidationDlg dialog
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <!-- Placeholder for future AD validation custom action -->
+  </Fragment>
+</Wix>
