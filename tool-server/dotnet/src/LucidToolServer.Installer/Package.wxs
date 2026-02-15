@@ -52,7 +52,7 @@
       </Directory>
     </StandardDirectory>
 
-    <!-- Main component group — tool server binaries -->
+    <!-- Main executable — explicit component for service registration -->
     <ComponentGroup Id="ToolServerFiles" Directory="INSTALLFOLDER">
       <Component Id="MainExecutable" Guid="CE160AA2-AB11-4AC7-9168-964A5D31A497">
         <File Id="ToolServerExe" Source="$(var.LucidToolServer.TargetDir)\LucidToolServer.exe" KeyPath="yes" />
@@ -88,6 +88,12 @@
       <Component Id="AppSettings" Guid="27949D44-B431-4978-A8AF-5AF94C0F992B" NeverOverwrite="yes">
         <File Id="AppSettingsJson" Source="$(var.LucidToolServer.TargetDir)\appsettings.json" KeyPath="yes" />
       </Component>
+
+      <!-- All remaining binaries (DLLs, runtimeconfig, deps.json, etc.) -->
+      <Files Include="$(var.LucidToolServer.TargetDir)\**">
+        <Exclude Files="$(var.LucidToolServer.TargetDir)\LucidToolServer.exe" />
+        <Exclude Files="$(var.LucidToolServer.TargetDir)\appsettings.json" />
+      </Files>
     </ComponentGroup>
 
     <!-- Empty directory components -->
