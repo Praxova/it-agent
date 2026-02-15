@@ -4,8 +4,21 @@
     <InstallerPlatform>x64</InstallerPlatform>
   </PropertyGroup>
 
+  <!-- WiX extension packages for Firewall, UI, and Util -->
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Firewall.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.1" />
+  </ItemGroup>
+
   <!-- Reference the tool server project for harvesting published files -->
   <ItemGroup>
     <ProjectReference Include="..\LucidToolServer\LucidToolServer.csproj" />
+  </ItemGroup>
+
+  <!-- Exclude the Bundle definition from MSI compilation -->
+  <ItemGroup>
+    <None Remove="Prerequisites\PrereqCheck.wxs" />
+    <Compile Remove="Prerequisites\PrereqCheck.wxs" />
   </ItemGroup>
 </Project>

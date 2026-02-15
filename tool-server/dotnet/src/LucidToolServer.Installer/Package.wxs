@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
-     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!--
     Praxova IT Agent Tool Server Installer
@@ -32,10 +33,10 @@
 
     <!-- Custom properties for user input (silent install support) -->
     <Property Id="SERVICE_ACCOUNT" Value="LocalSystem" />
-    <Property Id="SERVICE_ACCOUNT_PASSWORD" Value="" Secure="yes" />
-    <Property Id="CERT_PATH" Value="" />
-    <Property Id="CERT_KEY_PATH" Value="" />
-    <Property Id="DOMAIN_NAME" Value="" />
+    <Property Id="SERVICE_ACCOUNT_PASSWORD" Secure="yes" />
+    <Property Id="CERT_PATH" Secure="yes" />
+    <Property Id="CERT_KEY_PATH" Secure="yes" />
+    <Property Id="DOMAIN_NAME" Secure="yes" />
     <Property Id="HTTPS_PORT" Value="8443" />
     <Property Id="HTTP_PORT" Value="8080" />
 
@@ -67,9 +68,11 @@
                         Account="[SERVICE_ACCOUNT]"
                         Password="[SERVICE_ACCOUNT_PASSWORD]">
           <!-- Service recovery: restart on failure -->
-          <ServiceConfig DelayedAutoStart="yes"
-                         OnInstall="yes"
-                         OnReinstall="yes" />
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="60"
+                              ResetPeriodInDays="1" />
         </ServiceInstall>
 
         <!-- Service control — start after install, stop before uninstall -->
