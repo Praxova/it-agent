@@ -4,7 +4,7 @@
 @using Microsoft.Extensions.Options
 @attribute [Authorize(Policy = "RequireOperator")]
 @inject IOptionsMonitor<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
-@inject HttpClient Http
+@inject LucidAdmin.Web.Services.IAdSettingsService AdService
 @inject ISnackbar Snackbar
 
 <PageTitle>Active Directory Settings - Praxova Admin</PageTitle>
@@ -326,29 +326,29 @@
 
         try
         {
-            var payload = new
+            var settings = new LucidAdmin.Web.Models.ActiveDirectoryOptions
             {
-                enabled = _editModel!.Enabled,
-                domain = _editModel.Domain,
-                ldapServer = _editModel.LdapServer,
-                ldapPort = _editModel.LdapPort,
-                useLdaps = _editModel.UseLdaps,
-                searchBase = _editModel.SearchBase,
-                bindUserDn = _editModel.BindUserDn,
-                bindPasswordEnvVar = _editModel.BindPasswordEnvVar,
-                defaultRole = _editModel.DefaultRole,
-                requireRoleGroup = _editModel.RequireRoleGroup,
-                roleMapping = new
+                Enabled = _editModel!.Enabled,
+                Domain = _editModel.Domain,
+                LdapServer = _editModel.LdapServer,
+                LdapPort = _editModel.LdapPort,
+                UseLdaps = _editModel.UseLdaps,
+                SearchBase = _editModel.SearchBase,
+                BindUserDn = _editModel.BindUserDn,
+                BindPasswordEnvVar = _editModel.BindPasswordEnvVar,
+                DefaultRole = _editModel.DefaultRole,
+                RequireRoleGroup = _editModel.RequireRoleGroup,
+                RoleMapping = new LucidAdmin.Web.Models.RoleMappingOptions
                 {
-                    adminGroup = _editModel.RoleMapping.AdminGroup,
-                    operatorGroup = _editModel.RoleMapping.OperatorGroup,
-                    viewerGroup = _editModel.RoleMapping.ViewerGroup
+                    AdminGroup = _editModel.RoleMapping.AdminGroup,
+                    OperatorGroup = _editModel.RoleMapping.OperatorGroup,
+                    ViewerGroup = _editModel.RoleMapping.ViewerGroup
                 }
             };
 
-            var response = await Http.PutAsJsonAsync("/api/settings/active-directory", payload);
+            var (success, error) = await AdService.SaveSettingsAsync(settings);
 
-            if (response.IsSuccessStatusCode)
+            if (success)
             {
                 Snackbar.Add("Active Directory settings saved. Changes take effect immediately.", Severity.Success);
                 _editing = false;
@@ -356,8 +356,7 @@
             }
             else
             {
-                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                Snackbar.Add(error?.Error ?? $"Save failed: {response.StatusCode}", Severity.Error);
+                Snackbar.Add(error ?? "Save failed.", Severity.Error);
             }
         }
         catch (Exception ex)
@@ -376,9 +375,7 @@
         try
         {
             var query = string.IsNullOrWhiteSpace(searchText) ? "" : searchText;
-            var results = await Http.GetFromJsonAsync<string[]>(
-                $"/api/settings/active-directory/groups?q={Uri.EscapeDataString(query)}&maxResults=20", ct);
-            return results ?? Array.Empty<string>();
+            return await AdService.SearchGroupsAsync(query, 20);
         }
         catch
         {
@@ -393,8 +390,15 @@
 
         try
         {
-            var response = await Http.GetFromJsonAsync<AdStatusResult>("/api/auth/ad-status");
-            _testResult = response;
+            var result = await AdService.TestConnectionAsync();
+            _testResult = new AdStatusResult
+            {
+                Enabled = result.Enabled,
+                Server = result.Server,
+                Domain = result.Domain,
+                Reachable = result.Reachable,
+                LatencyMs = result.LatencyMs
+            };
         }
         catch (Exception ex)
         {
@@ -414,11 +418,6 @@
         public string Domain { get; init; } = "";
         public bool Reachable { get; init; }
         public long LatencyMs { get; init; }
-    }
-
-    private record ErrorResponse
-    {
-        public string? Error { get; init; }
     }
 
     private class EditModel
