@@ -33,7 +33,7 @@ services:
       ActiveDirectory__SearchBase: "DC=montanifarms,DC=com"
       ActiveDirectory__Enabled: "true"
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
-      LUCID_KEY_FILE: /app/certs/encryption.key
+      PRAXOVA_KEY_FILE: /app/certs/encryption.key
     volumes:
       - ./docker/certs:/app/certs:ro
       - admin-data:/app/data

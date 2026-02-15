@@ -37,7 +37,7 @@ public class EncryptionService : IEncryptionService
     public (byte[] CipherText, byte[] Nonce) Encrypt(byte[] plaintext)
     {
         if (_key == null)
-            throw new InvalidOperationException("Encryption key not configured. Set LUCID_KEY_FILE or LUCID_ENCRYPTION_KEY environment variable.");
+            throw new InvalidOperationException("Encryption key not configured. Set PRAXOVA_KEY_FILE or PRAXOVA_ENCRYPTION_KEY environment variable.");
 
         var nonce = new byte[NonceSize];
         RandomNumberGenerator.Fill(nonce);
@@ -111,7 +111,7 @@ public class EncryptionService : IEncryptionService
         }
 
         // Try environment variable fallback
-        var envKey = Environment.GetEnvironmentVariable("LUCID_ENCRYPTION_KEY");
+        var envKey = Environment.GetEnvironmentVariable("PRAXOVA_ENCRYPTION_KEY");
         if (!string.IsNullOrEmpty(envKey))
         {
             try
@@ -119,13 +119,13 @@ public class EncryptionService : IEncryptionService
                 var keyBytes = ParseKeyString(envKey);
                 if (keyBytes != null)
                 {
-                    _logger.LogInformation("Loaded encryption key from LUCID_ENCRYPTION_KEY environment variable");
+                    _logger.LogInformation("Loaded encryption key from PRAXOVA_ENCRYPTION_KEY environment variable");
                     return keyBytes;
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to parse LUCID_ENCRYPTION_KEY environment variable");
+                _logger.LogError(ex, "Failed to parse PRAXOVA_ENCRYPTION_KEY environment variable");
             }
         }
 
@@ -136,7 +136,7 @@ public class EncryptionService : IEncryptionService
     {
         // Check explicit configuration first
         var configuredPath = configuration["Encryption:KeyFile"]
-            ?? Environment.GetEnvironmentVariable("LUCID_KEY_FILE");
+            ?? Environment.GetEnvironmentVariable("PRAXOVA_KEY_FILE");
 
         if (!string.IsNullOrEmpty(configuredPath))
         {
@@ -162,16 +162,16 @@ public class EncryptionService : IEncryptionService
 
         if (OperatingSystem.IsWindows())
         {
-            paths.Add(@"C:\ProgramData\Lucid\encryption.key");
+            paths.Add(@"C:\ProgramData\Praxova\encryption.key");
             var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            paths.Add(Path.Combine(userProfile, ".lucid", "encryption.key"));
+            paths.Add(Path.Combine(userProfile, ".praxova", "encryption.key"));
         }
         else
         {
             // Linux/macOS
-            paths.Add("/etc/lucid/encryption.key");
+            paths.Add("/etc/praxova/encryption.key");
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            paths.Add(Path.Combine(home, ".lucid", "encryption.key"));
+            paths.Add(Path.Combine(home, ".praxova", "encryption.key"));
         }
 
         // Current directory fallback (for development)
@@ -208,7 +208,7 @@ public class EncryptionService : IEncryptionService
                 // Treat as passphrase - derive key using PBKDF2
                 using var pbkdf2 = new Rfc2898DeriveBytes(
                     keyString,
-                    salt: Encoding.UTF8.GetBytes("LucidAdminPortal"),
+                    salt: Encoding.UTF8.GetBytes("PraxovaAdminPortal"),
                     iterations: 100000,
                     HashAlgorithmName.SHA256);
                 keyBytes = pbkdf2.GetBytes(KeySize);

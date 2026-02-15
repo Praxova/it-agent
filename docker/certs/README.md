@@ -126,8 +126,8 @@ Best practices:
 ### Environment Variables
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `LUCID_KEY_FILE` | Path to encryption key file (recommended) | `/app/certs/encryption.key` |
-| `LUCID_ENCRYPTION_KEY` | Inline base64-encoded key (alternative) | `dGhpcyBpcyBhIHRlc3Qga2V5...` |
+| `PRAXOVA_KEY_FILE` | Path to encryption key file (recommended) | `/app/certs/encryption.key` |
+| `PRAXOVA_ENCRYPTION_KEY` | Inline base64-encoded key (alternative) | `dGhpcyBpcyBhIHRlc3Qga2V5...` |
 
-Only one is required. `LUCID_KEY_FILE` is preferred for production as it
+Only one is required. `PRAXOVA_KEY_FILE` is preferred for production as it
 keeps the key out of environment variable listings.

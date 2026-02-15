@@ -41,7 +41,7 @@ public class DatabaseCredentialProvider : ICredentialProvider
     {
         if (!_encryptionService.IsConfigured)
         {
-            return CredentialStoreResult.Failed("Encryption service not configured. Set LUCID_KEY_FILE or LUCID_ENCRYPTION_KEY.");
+            return CredentialStoreResult.Failed("Encryption service not configured. Set PRAXOVA_KEY_FILE or PRAXOVA_ENCRYPTION_KEY.");
         }
 
         try
@@ -162,7 +162,7 @@ public class DatabaseCredentialProvider : ICredentialProvider
         if (!_encryptionService.IsConfigured)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
-                "Encryption key not configured. Set LUCID_KEY_FILE environment variable to the path of your encryption key file."));
+                "Encryption key not configured. Set PRAXOVA_KEY_FILE environment variable to the path of your encryption key file."));
         }
 
         // Test encryption round-trip
