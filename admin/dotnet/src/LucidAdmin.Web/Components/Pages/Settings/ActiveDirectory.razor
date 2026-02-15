@@ -114,15 +114,27 @@
                 <MudCardContent>
                     @if (_editing)
                     {
-                        <MudTextField @bind-Value="_editModel!.RoleMapping.AdminGroup" Label="Admin Group"
-                                      Variant="Variant.Outlined" Class="mb-2"
-                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AdminPanelSettings" />
-                        <MudTextField @bind-Value="_editModel!.RoleMapping.OperatorGroup" Label="Operator Group"
-                                      Variant="Variant.Outlined" Class="mb-2"
-                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Engineering" />
-                        <MudTextField @bind-Value="_editModel!.RoleMapping.ViewerGroup" Label="Viewer Group"
-                                      Variant="Variant.Outlined" Class="mb-2"
-                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Visibility" />
+                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.AdminGroup"
+                                         Label="Admin Group" Variant="Variant.Outlined" Class="mb-2"
+                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AdminPanelSettings"
+                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
+                                         MinCharacters="0" MaxItems="20"
+                                         CoerceText="false" CoerceValue="false"
+                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
+                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.OperatorGroup"
+                                         Label="Operator Group" Variant="Variant.Outlined" Class="mb-2"
+                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Engineering"
+                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
+                                         MinCharacters="0" MaxItems="20"
+                                         CoerceText="false" CoerceValue="false"
+                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
+                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.ViewerGroup"
+                                         Label="Viewer Group" Variant="Variant.Outlined" Class="mb-2"
+                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Visibility"
+                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
+                                         MinCharacters="0" MaxItems="20"
+                                         CoerceText="false" CoerceValue="false"
+                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
                     }
                     else
                     {
@@ -356,6 +368,21 @@
         {
             _saving = false;
             StateHasChanged();
+        }
+    }
+
+    private async Task<IEnumerable<string>> SearchAdGroups(string? searchText, CancellationToken ct)
+    {
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(searchText) ? "" : searchText;
+            var results = await Http.GetFromJsonAsync<string[]>(
+                $"/api/settings/active-directory/groups?q={Uri.EscapeDataString(query)}&maxResults=20", ct);
+            return results ?? Array.Empty<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
         }
     }
 
