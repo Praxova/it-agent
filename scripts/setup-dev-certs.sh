@@ -41,12 +41,12 @@ mkdir -p "$CERT_DIR"
 mkdir -p "$CA_TRUST_DIR"
 
 # Step 1: Install the local CA into system + browser trust stores
-echo "[1/4] Installing mkcert local CA..."
+echo "[1/5] Installing mkcert local CA..."
 mkcert -install
 echo ""
 
 # Step 2: Generate TLS certificate for the portal
-echo "[2/4] Generating TLS certificate..."
+echo "[2/5] Generating TLS certificate..."
 cd "$CERT_DIR"
 mkcert -cert-file cert.pem -key-file key.pem \
     localhost \
@@ -55,7 +55,7 @@ mkcert -cert-file cert.pem -key-file key.pem \
 echo ""
 
 # Step 3: Copy the CA root to the container trust directory
-echo "[3/4] Copying CA root for container trust..."
+echo "[3/5] Copying CA root for container trust..."
 CA_ROOT="$(mkcert -CAROOT)/rootCA.pem"
 if [ -f "$CA_ROOT" ]; then
     cp "$CA_ROOT" "$CA_TRUST_DIR/mkcert-ca.crt"
@@ -66,8 +66,20 @@ else
 fi
 echo ""
 
-# Step 4: Remind about /etc/hosts
-echo "[4/4] Hosts file check..."
+# Step 4: Generate encryption key for database credential storage
+ENCRYPTION_KEY_FILE="$CERT_DIR/encryption.key"
+echo "[4/5] Setting up encryption key for credential storage..."
+if [ -f "$ENCRYPTION_KEY_FILE" ]; then
+    echo "  ✓ Encryption key already exists at $ENCRYPTION_KEY_FILE"
+else
+    openssl rand -base64 32 > "$ENCRYPTION_KEY_FILE"
+    chmod 600 "$ENCRYPTION_KEY_FILE"
+    echo "  ✓ Generated new encryption key at $ENCRYPTION_KEY_FILE"
+fi
+echo ""
+
+# Step 5: Remind about /etc/hosts
+echo "[5/5] Hosts file check..."
 if grep -q "admin.praxova.local" /etc/hosts 2>/dev/null; then
     echo "  ✓ admin.praxova.local already in /etc/hosts"
 else
