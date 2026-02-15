@@ -37,6 +37,13 @@ if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azur
 
 var app = builder.Build();
 
+// HTTPS enforcement
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+app.UseHttpsRedirection();
+
 // Global exception handler
 app.Use(async (context, next) =>
 {

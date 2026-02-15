@@ -191,9 +191,16 @@ test-results/
 docker-compose.override.yml
 .env
 
-# Local development certificates
+# Local development certificates — Admin Portal
 docker/certs/*.pem
 docker/certs/*.key
 docker/certs/*.crt
 docker/certs/ca-trust/*.crt
 docker/certs/ca-trust/*.pem
+
+# Local development certificates — Tool Server
+tool-server/dotnet/src/LucidToolServer/certs/*.pem
+tool-server/dotnet/src/LucidToolServer/certs/*.pfx
+tool-server/dotnet/src/LucidToolServer/certs/*.key
+tool-server/dotnet/src/LucidToolServer/certs/*.crt
+!tool-server/dotnet/src/LucidToolServer/certs/ca-trust/.gitkeep
