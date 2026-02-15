@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -37,6 +38,7 @@ public class WorkflowSeeder
         }
 
         await FixTransitionOutputIndexes();
+        await CreateCustomerCopiesAsync();
         await _context.SaveChangesAsync();
     }
 
@@ -1473,6 +1475,206 @@ public class WorkflowSeeder
 
         _logger.LogInformation("Seeded sub-workflow: {Name} with 14 steps and 19 transitions", name);
         return workflow;
+    }
+
+    /// <summary>
+    /// Creates editable "Customer" copies of all built-in workflows.
+    /// Users get working copies out of the box while retaining read-only references.
+    /// </summary>
+    private async Task CreateCustomerCopiesAsync()
+    {
+        var builtInWorkflows = await _context.WorkflowDefinitions
+            .Include(w => w.Steps)
+                .ThenInclude(s => s.OutgoingTransitions)
+            .Include(w => w.Steps)
+                .ThenInclude(s => s.RulesetMappings)
+            .Include(w => w.RulesetMappings)
+            .Where(w => w.IsBuiltIn)
+            .ToListAsync();
+
+        if (!builtInWorkflows.Any()) return;
+
+        // Track original display names before renaming
+        var originalDisplayNames = builtInWorkflows.ToDictionary(
+            w => w.Name,
+            w => w.DisplayName ?? w.Name);
+
+        // Step 1: Rename built-in workflows with "Read-Only - " prefix
+        foreach (var workflow in builtInWorkflows)
+        {
+            if (workflow.DisplayName != null && workflow.DisplayName.StartsWith("Read-Only - "))
+                continue;
+
+            var displayName = workflow.DisplayName ?? workflow.Name;
+            // Store the original before we overwrite it
+            originalDisplayNames[workflow.Name] = displayName;
+            workflow.DisplayName = $"Read-Only - {displayName}";
+        }
+
+        await _context.SaveChangesAsync();
+
+        // Step 2: Create customer copies
+        var customerWorkflows = new Dictionary<string, WorkflowDefinition>();
+
+        foreach (var builtIn in builtInWorkflows)
+        {
+            var customerName = $"customer-{builtIn.Name}";
+
+            // Idempotency: skip if customer copy already exists
+            var existingCustomer = await _context.WorkflowDefinitions
+                .FirstOrDefaultAsync(w => w.Name == customerName);
+            if (existingCustomer != null)
+            {
+                customerWorkflows[builtIn.Name] = existingCustomer;
+                _logger.LogDebug("Customer copy already exists: {Name}", customerName);
+                continue;
+            }
+
+            var customerWorkflow = new WorkflowDefinition
+            {
+                Name = customerName,
+                DisplayName = $"Customer - {originalDisplayNames[builtIn.Name]}",
+                Description = builtIn.Description,
+                Version = builtIn.Version,
+                TriggerType = builtIn.TriggerType,
+                TriggerConfigJson = builtIn.TriggerConfigJson,
+                ExampleSetId = builtIn.ExampleSetId,
+                IsBuiltIn = false,
+                IsActive = true
+            };
+
+            _context.WorkflowDefinitions.Add(customerWorkflow);
+            await _context.SaveChangesAsync();
+
+            // Deep copy steps — track old step ID → new step ID
+            var stepMapping = new Dictionary<Guid, Guid>();
+
+            foreach (var builtInStep in builtIn.Steps.OrderBy(s => s.SortOrder))
+            {
+                var customerStep = new WorkflowStep
+                {
+                    Name = builtInStep.Name,
+                    DisplayName = builtInStep.DisplayName,
+                    StepType = builtInStep.StepType,
+                    ConfigurationJson = builtInStep.ConfigurationJson,
+                    PositionX = builtInStep.PositionX,
+                    PositionY = builtInStep.PositionY,
+                    DrawflowNodeId = builtInStep.DrawflowNodeId,
+                    SortOrder = builtInStep.SortOrder,
+                    WorkflowDefinitionId = customerWorkflow.Id
+                };
+
+                _context.WorkflowSteps.Add(customerStep);
+                await _context.SaveChangesAsync();
+
+                stepMapping[builtInStep.Id] = customerStep.Id;
+
+                // Deep copy step-level ruleset mappings
+                foreach (var srm in builtInStep.RulesetMappings)
+                {
+                    _context.StepRulesetMappings.Add(new StepRulesetMapping
+                    {
+                        WorkflowStepId = customerStep.Id,
+                        RulesetId = srm.RulesetId,
+                        Priority = srm.Priority,
+                        IsEnabled = srm.IsEnabled
+                    });
+                }
+            }
+
+            // Deep copy transitions — remap FromStepId and ToStepId
+            foreach (var builtInStep in builtIn.Steps)
+            {
+                foreach (var transition in builtInStep.OutgoingTransitions)
+                {
+                    if (stepMapping.ContainsKey(transition.FromStepId) &&
+                        stepMapping.ContainsKey(transition.ToStepId))
+                    {
+                        _context.StepTransitions.Add(new StepTransition
+                        {
+                            FromStepId = stepMapping[transition.FromStepId],
+                            ToStepId = stepMapping[transition.ToStepId],
+                            Label = transition.Label,
+                            Condition = transition.Condition,
+                            OutputIndex = transition.OutputIndex,
+                            InputIndex = transition.InputIndex,
+                            SortOrder = transition.SortOrder
+                        });
+                    }
+                }
+            }
+
+            // Deep copy workflow-level ruleset mappings
+            foreach (var wrm in builtIn.RulesetMappings)
+            {
+                _context.WorkflowRulesetMappings.Add(new WorkflowRulesetMapping
+                {
+                    WorkflowDefinitionId = customerWorkflow.Id,
+                    RulesetId = wrm.RulesetId,
+                    Priority = wrm.Priority,
+                    IsEnabled = wrm.IsEnabled
+                });
+            }
+
+            await _context.SaveChangesAsync();
+            customerWorkflows[builtIn.Name] = customerWorkflow;
+
+            _logger.LogInformation(
+                "Created customer copy: {CustomerName} from {BuiltInName} with {StepCount} steps",
+                customerName, builtIn.Name, builtIn.Steps.Count);
+        }
+
+        // Step 3: Remap SubWorkflow references in customer dispatcher
+        if (customerWorkflows.TryGetValue("it-dispatch", out var customerDispatcher))
+        {
+            var dispatcherSteps = await _context.WorkflowSteps
+                .Where(s => s.WorkflowDefinitionId == customerDispatcher.Id &&
+                            s.StepType == StepType.SubWorkflow)
+                .ToListAsync();
+
+            foreach (var step in dispatcherSteps)
+            {
+                if (string.IsNullOrEmpty(step.ConfigurationJson)) continue;
+
+                using var doc = JsonDocument.Parse(step.ConfigurationJson);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("workflow_name", out var nameEl))
+                {
+                    var originalSubName = nameEl.GetString();
+                    if (originalSubName != null &&
+                        customerWorkflows.TryGetValue(originalSubName, out var customerSub))
+                    {
+                        step.ConfigurationJson = JsonSerializer.Serialize(new
+                        {
+                            workflow_id = customerSub.Id.ToString(),
+                            workflow_name = customerSub.Name
+                        });
+
+                        _logger.LogInformation(
+                            "Remapped SubWorkflow step {StepName}: {Original} -> {Customer}",
+                            step.Name, originalSubName, customerSub.Name);
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        // Step 4: Point test-agent to customer dispatcher
+        if (customerWorkflows.TryGetValue("it-dispatch", out var dispatcherForAgent))
+        {
+            var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+            if (agent != null)
+            {
+                agent.WorkflowDefinitionId = dispatcherForAgent.Id;
+                agent.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "Linked test-agent to customer dispatcher: {Name}", dispatcherForAgent.Name);
+            }
+        }
     }
 
     private async Task<Agent> EnsureTestAgentExistsAsync()
