@@ -20,7 +20,7 @@ public record AdTestResult(bool Enabled, string Server, string Domain, bool Reac
 public class AdSettingsService : IAdSettingsService
 {
     private readonly IOptionsMonitor<ActiveDirectoryOptions> _adOptions;
-    private readonly IConfiguration _configuration;
+    private readonly IConfigurationRoot _configurationRoot;
     private readonly ILogger<AdSettingsService> _logger;
 
     public AdSettingsService(
@@ -29,7 +29,7 @@ public class AdSettingsService : IAdSettingsService
         ILogger<AdSettingsService> logger)
     {
         _adOptions = adOptions;
-        _configuration = configuration;
+        _configurationRoot = (IConfigurationRoot)configuration;
         _logger = logger;
     }
 
@@ -62,7 +62,7 @@ public class AdSettingsService : IAdSettingsService
 
         var json = JsonSerializer.Serialize(wrapper, jsonOptions);
 
-        var dataDir = _configuration.GetValue<string>("DataDirectory") ?? "/app/data";
+        var dataDir = _configurationRoot.GetValue<string>("DataDirectory") ?? "/app/data";
         var filePath = Path.Combine(dataDir, "ad-settings.json");
 
         var dir = Path.GetDirectoryName(filePath);
@@ -70,6 +70,9 @@ public class AdSettingsService : IAdSettingsService
             Directory.CreateDirectory(dir);
 
         await File.WriteAllTextAsync(filePath, json);
+
+        // Force reload — Docker volumes don't trigger inotify for reloadOnChange
+        _configurationRoot.Reload();
 
         _logger.LogInformation("AD settings saved to {Path}. Enabled={Enabled}, Domain={Domain}",
             filePath, settings.Enabled, settings.Domain);
