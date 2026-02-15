@@ -1,0 +1,122 @@
+@inject LucidAdmin.Web.Services.IAdSettingsService AdService
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-2" />
+            Select AD Group
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_searchText"
+                      Label="Search groups"
+                      Variant="Variant.Outlined"
+                      Adornment="Adornment.End"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      OnAdornmentClick="DoSearch"
+                      OnKeyUp="OnSearchKeyUp"
+                      Immediate="true"
+                      AutoFocus="true"
+                      Class="mb-3"
+                      HelperText="Type to filter, press Enter or click search" />
+
+        @if (_searching)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-2" />
+        }
+
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_error</MudAlert>
+        }
+
+        @if (_results != null)
+        {
+            @if (_results.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No groups found.</MudText>
+            }
+            else
+            {
+                <MudList T="string" Dense="true" Style="max-height: 300px; overflow-y: auto;">
+                    @foreach (var group in _results)
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.Group"
+                                     OnClick="@(() => SelectGroup(group))">
+                            @group
+                        </MudListItem>
+                    }
+                </MudList>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                    @_results.Count group(s) found
+                </MudText>
+            }
+        }
+        else if (!_searching)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Search for AD groups or leave empty to list all groups.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string? CurrentValue { get; set; }
+
+    private string _searchText = "";
+    private bool _searching = false;
+    private string? _error;
+    private IReadOnlyList<string>? _results;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _searchText = CurrentValue ?? "";
+        await DoSearch();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await DoSearch();
+    }
+
+    private async Task DoSearch()
+    {
+        _searching = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _results = await AdService.SearchGroupsAsync(_searchText, 50);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Search failed: {ex.Message}";
+            _results = null;
+        }
+        finally
+        {
+            _searching = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectGroup(string groupName)
+    {
+        MudDialog.Close(DialogResult.Ok(groupName));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

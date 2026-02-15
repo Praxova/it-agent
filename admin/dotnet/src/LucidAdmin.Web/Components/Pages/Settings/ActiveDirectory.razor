@@ -6,6 +6,7 @@
 @inject IOptionsMonitor<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
 @inject LucidAdmin.Web.Services.IAdSettingsService AdService
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Active Directory Settings - Praxova Admin</PageTitle>
 
@@ -114,27 +115,42 @@
                 <MudCardContent>
                     @if (_editing)
                     {
-                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.AdminGroup"
-                                         Label="Admin Group" Variant="Variant.Outlined" Class="mb-2"
-                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AdminPanelSettings"
-                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
-                                         MinCharacters="0" MaxItems="20"
-                                         CoerceText="false" CoerceValue="false"
-                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
-                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.OperatorGroup"
-                                         Label="Operator Group" Variant="Variant.Outlined" Class="mb-2"
-                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Engineering"
-                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
-                                         MinCharacters="0" MaxItems="20"
-                                         CoerceText="false" CoerceValue="false"
-                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
-                        <MudAutocomplete T="string" @bind-Value="_editModel!.RoleMapping.ViewerGroup"
-                                         Label="Viewer Group" Variant="Variant.Outlined" Class="mb-2"
-                                         Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Visibility"
-                                         SearchFunc="@SearchAdGroups" DebounceInterval="300"
-                                         MinCharacters="0" MaxItems="20"
-                                         CoerceText="false" CoerceValue="false"
-                                         ShowProgressIndicator="true" ProgressIndicatorColor="Color.Primary" />
+                        <div class="d-flex align-center gap-2 mb-3">
+                            <MudTextField @bind-Value="_editModel!.RoleMapping.AdminGroup"
+                                          Label="Admin Group" Variant="Variant.Outlined"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.AdminPanelSettings"
+                                          Style="flex: 1;" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                           Color="Color.Primary"
+                                           Variant="Variant.Outlined"
+                                           Title="Browse AD Groups"
+                                           OnClick="@(() => BrowseAdGroup(nameof(_editModel.RoleMapping.AdminGroup)))" />
+                        </div>
+                        <div class="d-flex align-center gap-2 mb-3">
+                            <MudTextField @bind-Value="_editModel!.RoleMapping.OperatorGroup"
+                                          Label="Operator Group" Variant="Variant.Outlined"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Engineering"
+                                          Style="flex: 1;" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                           Color="Color.Primary"
+                                           Variant="Variant.Outlined"
+                                           Title="Browse AD Groups"
+                                           OnClick="@(() => BrowseAdGroup(nameof(_editModel.RoleMapping.OperatorGroup)))" />
+                        </div>
+                        <div class="d-flex align-center gap-2 mb-3">
+                            <MudTextField @bind-Value="_editModel!.RoleMapping.ViewerGroup"
+                                          Label="Viewer Group" Variant="Variant.Outlined"
+                                          Adornment="Adornment.Start"
+                                          AdornmentIcon="@Icons.Material.Filled.Visibility"
+                                          Style="flex: 1;" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Search"
+                                           Color="Color.Primary"
+                                           Variant="Variant.Outlined"
+                                           Title="Browse AD Groups"
+                                           OnClick="@(() => BrowseAdGroup(nameof(_editModel.RoleMapping.ViewerGroup)))" />
+                        </div>
                     }
                     else
                     {
@@ -370,16 +386,47 @@
         }
     }
 
-    private async Task<IEnumerable<string>> SearchAdGroups(string? searchText, CancellationToken ct)
+    private async Task BrowseAdGroup(string fieldName)
     {
-        try
+        var currentValue = fieldName switch
         {
-            var query = string.IsNullOrWhiteSpace(searchText) ? "" : searchText;
-            return await AdService.SearchGroupsAsync(query, 20);
-        }
-        catch
+            nameof(EditRoleMapping.AdminGroup) => _editModel?.RoleMapping.AdminGroup,
+            nameof(EditRoleMapping.OperatorGroup) => _editModel?.RoleMapping.OperatorGroup,
+            nameof(EditRoleMapping.ViewerGroup) => _editModel?.RoleMapping.ViewerGroup,
+            _ => ""
+        };
+
+        var parameters = new DialogParameters<LucidAdmin.Web.Components.Shared.AdGroupPickerDialog>
         {
-            return Array.Empty<string>();
+            { x => x.CurrentValue, currentValue }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<LucidAdmin.Web.Components.Shared.AdGroupPickerDialog>(
+            "Select AD Group", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is string selectedGroup)
+        {
+            switch (fieldName)
+            {
+                case nameof(EditRoleMapping.AdminGroup):
+                    _editModel!.RoleMapping.AdminGroup = selectedGroup;
+                    break;
+                case nameof(EditRoleMapping.OperatorGroup):
+                    _editModel!.RoleMapping.OperatorGroup = selectedGroup;
+                    break;
+                case nameof(EditRoleMapping.ViewerGroup):
+                    _editModel!.RoleMapping.ViewerGroup = selectedGroup;
+                    break;
+            }
+            StateHasChanged();
         }
     }
 
