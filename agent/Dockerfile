@@ -30,6 +30,10 @@ RUN apt-get update && \
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
+# Optional: Trust custom CA certificates (for HTTPS tool server connections)
+COPY certs/ca-trust/ /usr/local/share/ca-certificates/custom/
+RUN update-ca-certificates 2>/dev/null || true
+
 # Copy application code
 COPY src/ ./src/
 
