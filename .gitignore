@@ -195,3 +195,5 @@ docker-compose.override.yml
 docker/certs/*.pem
 docker/certs/*.key
 docker/certs/*.crt
+docker/certs/ca-trust/*.crt
+docker/certs/ca-trust/*.pem

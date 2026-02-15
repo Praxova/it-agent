@@ -1,0 +1,17 @@
+# Large directories not needed in build context
+.git
+agent/
+connectors/
+tool-server/
+env-setup/
+test_data_generator/
+docs/
+scripts/
+node_modules/
+**/__pycache__
+**/.venv
+**/bin/
+**/obj/
+docker/certs/*.pem
+docker/certs/*.key
+ollama-models/

@@ -14,8 +14,8 @@ services:
   # ── Admin Portal (Blazor Server + REST API) ──────────────────
   admin-portal:
     build:
-      context: ./admin/dotnet
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: admin/dotnet/Dockerfile
     container_name: praxova-admin-portal
     ports:
       - "5000:5000"

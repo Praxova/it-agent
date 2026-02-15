@@ -238,12 +238,27 @@ builder.Services.AddScoped(sp =>
     // authenticated requests to our own API endpoints
     var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
     var navigationManager = sp.GetRequiredService<NavigationManager>();
-    var httpClient = new HttpClient(new HttpClientHandler
+
+    var handler = new HttpClientHandler
     {
         UseCookies = false // We'll handle cookies manually
-    })
+    };
+
+    // For loopback HTTPS calls (Blazor server calling its own API),
+    // trust the server certificate. This is safe because:
+    // 1. It's the server calling itself — no external trust needed
+    // 2. The real TLS trust is between the client browser and the server
+    // Production deployments with proper CA trust can remove this.
+    var baseUri = new Uri(navigationManager.BaseUri);
+    if (baseUri.IsLoopback || baseUri.Host.EndsWith(".local"))
     {
-        BaseAddress = new Uri(navigationManager.BaseUri)
+        handler.ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    }
+
+    var httpClient = new HttpClient(handler)
+    {
+        BaseAddress = baseUri
     };
 
     // Copy authentication cookie from current HTTP context

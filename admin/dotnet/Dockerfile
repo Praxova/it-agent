@@ -2,21 +2,22 @@
 # Praxova Admin Portal — Production Container
 # ─────────────────────────────────────────────────────────────────
 # Multi-stage build: restore/build in SDK image, run in slim ASP.NET image
+# Build context must be the project root (not admin/dotnet/)
 
 # Stage 1: Build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copy project files first for layer caching
-COPY src/LucidAdmin.Core/LucidAdmin.Core.csproj LucidAdmin.Core/
-COPY src/LucidAdmin.Infrastructure/LucidAdmin.Infrastructure.csproj LucidAdmin.Infrastructure/
-COPY src/LucidAdmin.Web/LucidAdmin.Web.csproj LucidAdmin.Web/
+COPY admin/dotnet/src/LucidAdmin.Core/LucidAdmin.Core.csproj LucidAdmin.Core/
+COPY admin/dotnet/src/LucidAdmin.Infrastructure/LucidAdmin.Infrastructure.csproj LucidAdmin.Infrastructure/
+COPY admin/dotnet/src/LucidAdmin.Web/LucidAdmin.Web.csproj LucidAdmin.Web/
 
 # Restore dependencies (cached unless csproj files change)
 RUN dotnet restore LucidAdmin.Web/LucidAdmin.Web.csproj
 
 # Copy all source code
-COPY src/ .
+COPY admin/dotnet/src/ .
 
 # Build release
 WORKDIR /src/LucidAdmin.Web
@@ -36,6 +37,11 @@ COPY --from=build /app/publish .
 
 # Create data and logs directories
 RUN mkdir -p /app/data /app/logs
+
+# Trust custom CA certificates (internal CAs, mkcert dev certs, etc.)
+# Drop .crt files into docker/certs/ca-trust/ and rebuild
+COPY docker/certs/ca-trust/ /usr/local/share/ca-certificates/custom/
+RUN update-ca-certificates 2>/dev/null || true
 
 # Environment defaults
 ENV ASPNETCORE_URLS=http://+:5000;https://+:5001
