@@ -9,11 +9,11 @@ namespace LucidAdmin.Web.Services;
 
 public class LdapAuthenticationProvider : IAuthenticationProvider
 {
-    private readonly IOptions<ActiveDirectoryOptions> _options;
+    private readonly IOptionsSnapshot<ActiveDirectoryOptions> _options;
     private readonly ILogger<LdapAuthenticationProvider> _logger;
 
     public LdapAuthenticationProvider(
-        IOptions<ActiveDirectoryOptions> options,
+        IOptionsSnapshot<ActiveDirectoryOptions> options,
         ILogger<LdapAuthenticationProvider> logger)
     {
         _options = options;

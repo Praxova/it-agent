@@ -28,10 +28,6 @@ services:
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
       Jwt__SecretKey: "${JWT_SECRET_KEY:-praxova-dev-secret-key-change-in-production-min32chars!}"
-      ActiveDirectory__LdapServer: 172.16.119.20
-      ActiveDirectory__Domain: montanifarms.com
-      ActiveDirectory__SearchBase: "DC=montanifarms,DC=com"
-      ActiveDirectory__Enabled: "true"
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
       PRAXOVA_KEY_FILE: /app/certs/encryption.key
     volumes:
@@ -54,6 +50,9 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     container_name: praxova-agent-helpdesk-01
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       ADMIN_PORTAL_URL: http://admin-portal:5000
       AGENT_NAME: test-agent
@@ -76,6 +75,9 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: praxova-ollama
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "11434:11434"
     volumes:

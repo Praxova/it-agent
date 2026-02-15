@@ -192,6 +192,12 @@ builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.Ca
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
 builder.Services.AddSingleton<WorkflowRequirementsService>();
 
+// AD settings override file (portal-managed, persists in data volume)
+var adSettingsPath = Path.Combine(
+    builder.Configuration.GetValue<string>("DataDirectory") ?? "/app/data",
+    "ad-settings.json");
+builder.Configuration.AddJsonFile(adSettingsPath, optional: true, reloadOnChange: true);
+
 // Active Directory options
 builder.Services.Configure<ActiveDirectoryOptions>(
     builder.Configuration.GetSection(ActiveDirectoryOptions.SectionName));
@@ -382,6 +388,7 @@ app.MapWorkflowEndpoints();
 app.MapManualSubmissionEndpoints();
 app.MapApprovalEndpoints();
 app.MapClarificationEndpoints();
+app.MapSettingsEndpoints();
 
 // Map Blazor
 app.MapRazorComponents<LucidAdmin.Web.Components.App>()

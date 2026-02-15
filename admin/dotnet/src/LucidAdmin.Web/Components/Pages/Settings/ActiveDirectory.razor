@@ -1,7 +1,9 @@
 @page "/settings/active-directory"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Options
 @attribute [Authorize(Policy = "RequireOperator")]
-@inject IOptions<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
+@inject IOptionsMonitor<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
 @inject HttpClient Http
 @inject ISnackbar Snackbar
 
@@ -10,12 +12,11 @@
 <MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
     <MudText Typo="Typo.h4" GutterBottom="true">Active Directory Settings</MudText>
     <MudText Typo="Typo.body1" Class="mb-4">
-        View the current Active Directory configuration and test connectivity.
-        Configuration is managed via <code>appsettings.json</code> and requires a portal restart to change.
+        Configure Active Directory authentication and role mapping.
     </MudText>
 
     @{
-        var config = AdOptions.Value;
+        var config = AdOptions.CurrentValue;
     }
 
     <!-- Status Banner -->
@@ -44,20 +45,60 @@
                         <MudChip T="string" Color="@(config.Enabled ? Color.Success : Color.Default)" Size="Size.Small">
                             @(config.Enabled ? "Enabled" : "Disabled")
                         </MudChip>
+                        <AuthorizeView Policy="RequireAdmin">
+                            @if (!_editing)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               Title="Edit Settings"
+                                               OnClick="EnterEditMode" />
+                            }
+                        </AuthorizeView>
                     </CardHeaderActions>
                 </MudCardHeader>
                 <MudCardContent>
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <tbody>
-                            <tr><td><strong>Domain</strong></td><td>@(string.IsNullOrEmpty(config.Domain) ? "—" : config.Domain)</td></tr>
-                            <tr><td><strong>LDAP Server</strong></td><td>@(string.IsNullOrEmpty(config.LdapServer) ? "—" : config.LdapServer)</td></tr>
-                            <tr><td><strong>LDAP Port</strong></td><td>@config.LdapPort</td></tr>
-                            <tr><td><strong>Use LDAPS</strong></td><td>@(config.UseLdaps ? "Yes (SSL)" : "No (Plain)")</td></tr>
-                            <tr><td><strong>Search Base</strong></td><td><code>@(string.IsNullOrEmpty(config.SearchBase) ? "—" : config.SearchBase)</code></td></tr>
-                            <tr><td><strong>Default Role</strong></td><td>@config.DefaultRole</td></tr>
-                            <tr><td><strong>Require Role Group</strong></td><td>@(config.RequireRoleGroup ? "Yes" : "No")</td></tr>
-                        </tbody>
-                    </MudSimpleTable>
+                    @if (_editing)
+                    {
+                        <MudSwitch @bind-Value="_editModel!.Enabled" Label="Enabled" Color="Color.Success" Class="mb-3" />
+                        <MudTextField @bind-Value="_editModel!.Domain" Label="Domain" Variant="Variant.Outlined"
+                                      HelperText="e.g., montanifarms.com" Class="mb-2" />
+                        <MudTextField @bind-Value="_editModel!.LdapServer" Label="LDAP Server" Variant="Variant.Outlined"
+                                      HelperText="IP address or hostname" Class="mb-2" />
+                        <MudNumericField @bind-Value="_editModel!.LdapPort" Label="LDAP Port" Variant="Variant.Outlined"
+                                         Min="1" Max="65535" Class="mb-2" />
+                        <MudSwitch T="bool" Value="_editModel!.UseLdaps" Label="Use LDAPS (SSL)" Color="Color.Primary"
+                                   ValueChanged="OnLdapsToggled" Class="mb-2" />
+                        <MudTextField @bind-Value="_editModel!.SearchBase" Label="Search Base" Variant="Variant.Outlined"
+                                      HelperText="e.g., DC=montanifarms,DC=com" Class="mb-2" />
+                        <MudTextField @bind-Value="_editModel!.BindUserDn" Label="Bind User DN" Variant="Variant.Outlined"
+                                      HelperText="Leave empty for anonymous bind" Class="mb-2" />
+                        <MudTextField @bind-Value="_editModel!.BindPasswordEnvVar" Label="Bind Password Env Var" Variant="Variant.Outlined"
+                                      HelperText="Name of the environment variable containing the bind password" Class="mb-2" />
+                        <MudSelect @bind-Value="_editModel!.DefaultRole" Label="Default Role" Variant="Variant.Outlined" Class="mb-2">
+                            <MudSelectItem Value="@("Viewer")">Viewer</MudSelectItem>
+                            <MudSelectItem Value="@("Operator")">Operator</MudSelectItem>
+                            <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                        </MudSelect>
+                        <MudSwitch @bind-Value="_editModel!.RequireRoleGroup" Label="Require Role Group"
+                                   Color="Color.Warning" Class="mb-2"
+                                   HelperText="When enabled, users must be in a mapped group to log in" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <tbody>
+                                <tr><td><strong>Domain</strong></td><td>@(string.IsNullOrEmpty(config.Domain) ? "\u2014" : config.Domain)</td></tr>
+                                <tr><td><strong>LDAP Server</strong></td><td>@(string.IsNullOrEmpty(config.LdapServer) ? "\u2014" : config.LdapServer)</td></tr>
+                                <tr><td><strong>LDAP Port</strong></td><td>@config.LdapPort</td></tr>
+                                <tr><td><strong>Use LDAPS</strong></td><td>@(config.UseLdaps ? "Yes (SSL)" : "No (Plain)")</td></tr>
+                                <tr><td><strong>Search Base</strong></td><td><code>@(string.IsNullOrEmpty(config.SearchBase) ? "\u2014" : config.SearchBase)</code></td></tr>
+                                <tr><td><strong>Bind User DN</strong></td><td>@(string.IsNullOrEmpty(config.BindUserDn) ? "Anonymous" : config.BindUserDn)</td></tr>
+                                <tr><td><strong>Default Role</strong></td><td>@config.DefaultRole</td></tr>
+                                <tr><td><strong>Require Role Group</strong></td><td>@(config.RequireRoleGroup ? "Yes" : "No")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    }
                 </MudCardContent>
             </MudCard>
         </MudItem>
@@ -71,38 +112,79 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                            <tr>
-                                <th>AD Group</th>
-                                <th>Portal Role</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td><code>@config.RoleMapping.AdminGroup</code></td>
-                                <td><MudChip T="string" Color="Color.Error" Size="Size.Small">Admin</MudChip></td>
-                            </tr>
-                            <tr>
-                                <td><code>@config.RoleMapping.OperatorGroup</code></td>
-                                <td><MudChip T="string" Color="Color.Warning" Size="Size.Small">Operator</MudChip></td>
-                            </tr>
-                            <tr>
-                                <td><code>@config.RoleMapping.ViewerGroup</code></td>
-                                <td><MudChip T="string" Color="Color.Info" Size="Size.Small">Viewer</MudChip></td>
-                            </tr>
-                        </tbody>
-                    </MudSimpleTable>
-                    <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
-                        Users not in any group receive the <strong>@config.DefaultRole</strong> role.
-                        @if (config.RequireRoleGroup)
-                        {
-                            <span> Access is <strong>denied</strong> for users without a matching group.</span>
-                        }
-                    </MudText>
+                    @if (_editing)
+                    {
+                        <MudTextField @bind-Value="_editModel!.RoleMapping.AdminGroup" Label="Admin Group"
+                                      Variant="Variant.Outlined" Class="mb-2"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AdminPanelSettings" />
+                        <MudTextField @bind-Value="_editModel!.RoleMapping.OperatorGroup" Label="Operator Group"
+                                      Variant="Variant.Outlined" Class="mb-2"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Engineering" />
+                        <MudTextField @bind-Value="_editModel!.RoleMapping.ViewerGroup" Label="Viewer Group"
+                                      Variant="Variant.Outlined" Class="mb-2"
+                                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Visibility" />
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                                <tr>
+                                    <th>AD Group</th>
+                                    <th>Portal Role</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>@config.RoleMapping.AdminGroup</code></td>
+                                    <td><MudChip T="string" Color="Color.Error" Size="Size.Small">Admin</MudChip></td>
+                                </tr>
+                                <tr>
+                                    <td><code>@config.RoleMapping.OperatorGroup</code></td>
+                                    <td><MudChip T="string" Color="Color.Warning" Size="Size.Small">Operator</MudChip></td>
+                                </tr>
+                                <tr>
+                                    <td><code>@config.RoleMapping.ViewerGroup</code></td>
+                                    <td><MudChip T="string" Color="Color.Info" Size="Size.Small">Viewer</MudChip></td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                        <MudText Typo="Typo.caption" Class="mt-2" Color="Color.Secondary">
+                            Users not in any group receive the <strong>@config.DefaultRole</strong> role.
+                            @if (config.RequireRoleGroup)
+                            {
+                                <span> Access is <strong>denied</strong> for users without a matching group.</span>
+                            }
+                        </MudText>
+                    }
                 </MudCardContent>
             </MudCard>
         </MudItem>
+
+        <!-- Save / Cancel buttons (edit mode) -->
+        @if (_editing)
+        {
+            <MudItem xs="12">
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Save"
+                               OnClick="SaveSettings" Disabled="_saving">
+                        @if (_saving)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <span>Save Settings</span>
+                        }
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                               OnClick="CancelEdit" Disabled="_saving">
+                        Cancel
+                    </MudButton>
+                </div>
+            </MudItem>
+        }
 
         <!-- Connection Test -->
         <MudItem xs="12">
@@ -113,9 +195,9 @@
                     </CardHeaderContent>
                 </MudCardHeader>
                 <MudCardContent>
-                    @if (!config.Enabled)
+                    @if (!config.Enabled && !(_editing && _editModel!.Enabled))
                     {
-                        <MudText Color="Color.Secondary">Enable Active Directory in <code>appsettings.json</code> to test connectivity.</MudText>
+                        <MudText Color="Color.Secondary">Enable Active Directory to test connectivity.</MudText>
                     }
                     else
                     {
@@ -146,7 +228,7 @@
                                 }
                                 else
                                 {
-                                    <span>Cannot reach <strong>@_testResult.Server</strong> — verify the server address and ensure port @config.LdapPort is open.</span>
+                                    <span>Cannot reach <strong>@_testResult.Server</strong> — verify the server address and ensure the LDAP port is open.</span>
                                 }
                             </MudAlert>
                         }
@@ -154,37 +236,6 @@
                 </MudCardContent>
             </MudCard>
         </MudItem>
-
-        <!-- Setup Instructions -->
-        @if (!config.Enabled)
-        {
-            <MudItem xs="12">
-                <MudCard Elevation="2">
-                    <MudCardHeader>
-                        <CardHeaderContent>
-                            <MudText Typo="Typo.h6">How to Enable Active Directory</MudText>
-                        </CardHeaderContent>
-                    </MudCardHeader>
-                    <MudCardContent>
-                        <MudText Typo="Typo.body2" Class="mb-2">
-                            1. Edit <code>appsettings.json</code> (or <code>appsettings.Development.json</code> for dev) and set <code>"Enabled": true</code> in the <code>ActiveDirectory</code> section.
-                        </MudText>
-                        <MudText Typo="Typo.body2" Class="mb-2">
-                            2. Configure the LDAP server address, domain, and search base for your environment.
-                        </MudText>
-                        <MudText Typo="Typo.body2" Class="mb-2">
-                            3. Run the <code>Setup-PraxovaAdminGroups.ps1</code> script on your domain controller to create the role mapping groups.
-                        </MudText>
-                        <MudText Typo="Typo.body2" Class="mb-2">
-                            4. Restart the portal for changes to take effect.
-                        </MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                            The local "admin" account always works regardless of AD configuration (break-glass access).
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
 
         <!-- Session Behavior -->
         <MudItem xs="12">
@@ -209,8 +260,104 @@
 </MudContainer>
 
 @code {
+    private bool _editing = false;
+    private bool _saving = false;
     private bool _testing = false;
     private AdStatusResult? _testResult;
+    private EditModel? _editModel;
+
+    private void EnterEditMode()
+    {
+        var config = AdOptions.CurrentValue;
+        _editModel = new EditModel
+        {
+            Enabled = config.Enabled,
+            Domain = config.Domain,
+            LdapServer = config.LdapServer,
+            LdapPort = config.LdapPort,
+            UseLdaps = config.UseLdaps,
+            SearchBase = config.SearchBase,
+            BindUserDn = config.BindUserDn,
+            BindPasswordEnvVar = config.BindPasswordEnvVar,
+            DefaultRole = config.DefaultRole,
+            RequireRoleGroup = config.RequireRoleGroup,
+            RoleMapping = new EditRoleMapping
+            {
+                AdminGroup = config.RoleMapping.AdminGroup,
+                OperatorGroup = config.RoleMapping.OperatorGroup,
+                ViewerGroup = config.RoleMapping.ViewerGroup
+            }
+        };
+        _editing = true;
+        _testResult = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        _editModel = null;
+    }
+
+    private void OnLdapsToggled(bool useLdaps)
+    {
+        _editModel!.UseLdaps = useLdaps;
+        if (useLdaps && _editModel.LdapPort == 389)
+            _editModel.LdapPort = 636;
+        else if (!useLdaps && _editModel.LdapPort == 636)
+            _editModel.LdapPort = 389;
+    }
+
+    private async Task SaveSettings()
+    {
+        _saving = true;
+        StateHasChanged();
+
+        try
+        {
+            var payload = new
+            {
+                enabled = _editModel!.Enabled,
+                domain = _editModel.Domain,
+                ldapServer = _editModel.LdapServer,
+                ldapPort = _editModel.LdapPort,
+                useLdaps = _editModel.UseLdaps,
+                searchBase = _editModel.SearchBase,
+                bindUserDn = _editModel.BindUserDn,
+                bindPasswordEnvVar = _editModel.BindPasswordEnvVar,
+                defaultRole = _editModel.DefaultRole,
+                requireRoleGroup = _editModel.RequireRoleGroup,
+                roleMapping = new
+                {
+                    adminGroup = _editModel.RoleMapping.AdminGroup,
+                    operatorGroup = _editModel.RoleMapping.OperatorGroup,
+                    viewerGroup = _editModel.RoleMapping.ViewerGroup
+                }
+            };
+
+            var response = await Http.PutAsJsonAsync("/api/settings/active-directory", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add("Active Directory settings saved. Changes take effect immediately.", Severity.Success);
+                _editing = false;
+                _editModel = null;
+            }
+            else
+            {
+                var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+                Snackbar.Add(error?.Error ?? $"Save failed: {response.StatusCode}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+            StateHasChanged();
+        }
+    }
 
     private async Task TestConnection()
     {
@@ -240,5 +387,32 @@
         public string Domain { get; init; } = "";
         public bool Reachable { get; init; }
         public long LatencyMs { get; init; }
+    }
+
+    private record ErrorResponse
+    {
+        public string? Error { get; init; }
+    }
+
+    private class EditModel
+    {
+        public bool Enabled { get; set; }
+        public string Domain { get; set; } = "";
+        public string LdapServer { get; set; } = "";
+        public int LdapPort { get; set; } = 389;
+        public bool UseLdaps { get; set; }
+        public string SearchBase { get; set; } = "";
+        public string BindUserDn { get; set; } = "";
+        public string BindPasswordEnvVar { get; set; } = "";
+        public string DefaultRole { get; set; } = "Viewer";
+        public bool RequireRoleGroup { get; set; }
+        public EditRoleMapping RoleMapping { get; set; } = new();
+    }
+
+    private class EditRoleMapping
+    {
+        public string AdminGroup { get; set; } = "";
+        public string OperatorGroup { get; set; } = "";
+        public string ViewerGroup { get; set; } = "";
     }
 }

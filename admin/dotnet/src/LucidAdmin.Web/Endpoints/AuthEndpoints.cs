@@ -137,7 +137,7 @@ public static class AuthEndpoints
             )));
         }).RequireAuthorization();
 
-        group.MapGet("/ad-status", async (IOptions<ActiveDirectoryOptions> adOptions) =>
+        group.MapGet("/ad-status", async (IOptionsSnapshot<ActiveDirectoryOptions> adOptions) =>
         {
             var config = adOptions.Value;
 

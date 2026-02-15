@@ -15,14 +15,14 @@ public class AuthenticationService : IAuthenticationService
 {
     private readonly LocalAuthenticationProvider _localProvider;
     private readonly LdapAuthenticationProvider _ldapProvider;
-    private readonly IOptions<ActiveDirectoryOptions> _adOptions;
+    private readonly IOptionsSnapshot<ActiveDirectoryOptions> _adOptions;
     private readonly IUserRepository _userRepository;
     private readonly ILogger<AuthenticationService> _logger;
 
     public AuthenticationService(
         LocalAuthenticationProvider localProvider,
         LdapAuthenticationProvider ldapProvider,
-        IOptions<ActiveDirectoryOptions> adOptions,
+        IOptionsSnapshot<ActiveDirectoryOptions> adOptions,
         IUserRepository userRepository,
         ILogger<AuthenticationService> logger)
     {
