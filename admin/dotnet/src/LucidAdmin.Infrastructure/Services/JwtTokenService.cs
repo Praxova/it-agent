@@ -1,6 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Interfaces.Services;
 using Microsoft.Extensions.Configuration;
@@ -10,27 +9,26 @@ namespace LucidAdmin.Infrastructure.Services;
 
 public class JwtTokenService : ITokenService
 {
-    private readonly IConfiguration _configuration;
-    private readonly string _secretKey;
+    private readonly IJwtKeyManager _keyManager;
     private readonly string _issuer;
     private readonly string _audience;
     private readonly int _expirationMinutes;
 
-    public JwtTokenService(IConfiguration configuration)
+    public JwtTokenService(IJwtKeyManager keyManager, IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(keyManager);
         ArgumentNullException.ThrowIfNull(configuration);
-        _configuration = configuration;
-        _secretKey = _configuration["Jwt:SecretKey"] ?? throw new InvalidOperationException("JWT secret key not configured");
-        _issuer = _configuration["Jwt:Issuer"] ?? "LucidAdmin";
-        _audience = _configuration["Jwt:Audience"] ?? "LucidAdmin";
-        _expirationMinutes = int.Parse(_configuration["Jwt:ExpirationMinutes"] ?? "60");
+        _keyManager = keyManager;
+        _issuer = configuration["Jwt:Issuer"] ?? "LucidAdmin";
+        _audience = configuration["Jwt:Audience"] ?? "LucidAdmin";
+        _expirationMinutes = int.Parse(configuration["Jwt:ExpirationMinutes"] ?? "60");
     }
 
     public string GenerateToken(User user)
     {
         ArgumentNullException.ThrowIfNull(user);
 
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
+        var securityKey = new SymmetricSecurityKey(_keyManager.GetSigningKey());
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
@@ -58,7 +56,7 @@ public class JwtTokenService : ITokenService
         ArgumentNullException.ThrowIfNull(token);
 
         var tokenHandler = new JwtSecurityTokenHandler();
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
+        var securityKey = new SymmetricSecurityKey(_keyManager.GetSigningKey());
 
         try
         {
@@ -87,7 +85,7 @@ public class JwtTokenService : ITokenService
         ArgumentNullException.ThrowIfNull(token);
 
         var tokenHandler = new JwtSecurityTokenHandler();
-        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
+        var securityKey = new SymmetricSecurityKey(_keyManager.GetSigningKey());
 
         try
         {

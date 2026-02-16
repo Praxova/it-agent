@@ -27,7 +27,6 @@ services:
       Kestrel__Certificates__Default__KeyPath: /app/certs/key.pem
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
-      Jwt__SecretKey: "${JWT_SECRET_KEY:-praxova-dev-secret-key-change-in-production-min32chars!}"
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
       PRAXOVA_KEY_FILE: /app/certs/encryption.key
     volumes:

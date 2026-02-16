@@ -90,7 +90,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Authentication - Cookie for Blazor UI, JWT for API
-var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ?? throw new InvalidOperationException("JWT secret key not configured");
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "LucidAdmin";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "LucidAdmin";
 
@@ -136,6 +135,8 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    // Signing key is set after app build via PostConfigure (auto-generated,
+    // stored encrypted in database, initialized before first request)
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -144,7 +145,6 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtIssuer,
         ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey)),
         ClockSkew = TimeSpan.Zero
     };
 })
@@ -322,6 +322,17 @@ using (var scope = app.Services.CreateScope())
         await userRepository.UpdateAsync(adminUser);
         Log.Information("Admin user still has default password — MustChangePassword set to true");
     }
+
+    // Initialize JWT key manager (generates or loads encrypted signing key)
+    var jwtKeyManager = app.Services.GetRequiredService<IJwtKeyManager>();
+    await jwtKeyManager.InitializeAsync();
+
+    // Configure JWT Bearer signing key now that JwtKeyManager is initialized
+    var jwtBearerOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<
+        Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>>().Get(
+        Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme);
+    jwtBearerOptions.TokenValidationParameters.IssuerSigningKey =
+        new SymmetricSecurityKey(jwtKeyManager.GetSigningKey());
 
     // Seed built-in rulesets
     var rulesetSeeder = new LucidAdmin.Infrastructure.Data.Seeding.RulesetSeeder(

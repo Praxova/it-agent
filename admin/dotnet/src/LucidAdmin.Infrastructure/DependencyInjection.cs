@@ -63,6 +63,9 @@ public static class DependencyInjection
         // Encryption
         services.AddSingleton<IEncryptionService, EncryptionService>();
 
+        // JWT Key Manager (singleton — holds key in memory for app lifetime)
+        services.AddSingleton<IJwtKeyManager, JwtKeyManager>();
+
         // Credential Providers
         services.AddScoped<ICredentialProvider, DatabaseCredentialProvider>();
         services.AddScoped<ICredentialProvider, NoneCredentialProvider>();
