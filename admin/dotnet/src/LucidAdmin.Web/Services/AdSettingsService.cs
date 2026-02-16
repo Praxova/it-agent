@@ -2,6 +2,8 @@ using System.DirectoryServices.Protocols;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LucidAdmin.Core.Interfaces.Credentials;
+using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Web.Models;
 using Microsoft.Extensions.Options;
 
@@ -21,15 +23,21 @@ public class AdSettingsService : IAdSettingsService
 {
     private readonly IOptionsMonitor<ActiveDirectoryOptions> _adOptions;
     private readonly IConfigurationRoot _configurationRoot;
+    private readonly ICredentialService _credentialService;
+    private readonly IServiceAccountRepository _serviceAccountRepository;
     private readonly ILogger<AdSettingsService> _logger;
 
     public AdSettingsService(
         IOptionsMonitor<ActiveDirectoryOptions> adOptions,
         IConfiguration configuration,
+        ICredentialService credentialService,
+        IServiceAccountRepository serviceAccountRepository,
         ILogger<AdSettingsService> logger)
     {
         _adOptions = adOptions;
         _configurationRoot = (IConfigurationRoot)configuration;
+        _credentialService = credentialService;
+        _serviceAccountRepository = serviceAccountRepository;
         _logger = logger;
     }
 
@@ -88,6 +96,9 @@ public class AdSettingsService : IAdSettingsService
 
         maxResults = Math.Min(Math.Max(maxResults, 1), 50);
 
+        // Resolve bind credentials
+        var (bindDn, bindPassword) = await ResolveBindCredentialsAsync(config);
+
         try
         {
             return await Task.Run(() =>
@@ -99,17 +110,7 @@ public class AdSettingsService : IAdSettingsService
                 if (config.UseLdaps)
                     connection.SessionOptions.SecureSocketLayer = true;
 
-                if (!string.IsNullOrEmpty(config.BindUserDn))
-                {
-                    var password = Environment.GetEnvironmentVariable(config.BindPasswordEnvVar) ?? "";
-                    connection.AuthType = AuthType.Basic;
-                    connection.Bind(new NetworkCredential(config.BindUserDn, password));
-                }
-                else
-                {
-                    connection.AuthType = AuthType.Anonymous;
-                    connection.Bind();
-                }
+                BindConnection(connection, bindDn, bindPassword);
 
                 string filter;
                 if (string.IsNullOrWhiteSpace(query))
@@ -152,6 +153,9 @@ public class AdSettingsService : IAdSettingsService
         if (!config.Enabled)
             return new AdTestResult(false, "", "", false, 0);
 
+        // Resolve bind credentials
+        var (bindDn, bindPassword) = await ResolveBindCredentialsAsync(config);
+
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -164,11 +168,10 @@ public class AdSettingsService : IAdSettingsService
                 if (config.UseLdaps)
                     connection.SessionOptions.SecureSocketLayer = true;
 
-                if (!string.IsNullOrEmpty(config.BindUserDn))
+                if (!string.IsNullOrEmpty(bindDn))
                 {
-                    var password = Environment.GetEnvironmentVariable(config.BindPasswordEnvVar) ?? "";
                     connection.AuthType = AuthType.Basic;
-                    connection.Bind(new NetworkCredential(config.BindUserDn, password));
+                    connection.Bind(new NetworkCredential(bindDn, bindPassword));
                 }
                 else
                 {
@@ -188,6 +191,78 @@ public class AdSettingsService : IAdSettingsService
         {
             _logger.LogWarning(ex, "AD connection test failed");
             return new AdTestResult(true, config.LdapServer, config.Domain, false, 0);
+        }
+    }
+
+    /// <summary>
+    /// Resolves LDAP bind credentials. Prefers LdapServiceAccountId (credential service),
+    /// falls back to legacy BindUserDn/BindPasswordEnvVar with deprecation warning.
+    /// </summary>
+    private async Task<(string? BindDn, string? Password)> ResolveBindCredentialsAsync(ActiveDirectoryOptions config)
+    {
+        // Preferred: ServiceAccount-based bind via credential service
+        if (config.LdapServiceAccountId.HasValue)
+        {
+            var account = await _serviceAccountRepository.GetByIdAsync(config.LdapServiceAccountId.Value);
+            if (account != null)
+            {
+                var credentials = await _credentialService.GetCredentialsAsync(account);
+                if (credentials != null)
+                {
+                    // ServiceAccount Configuration JSON contains the bind DN
+                    // Credential contains the password
+                    var bindDn = account.Configuration != null
+                        ? ExtractBindDnFromConfig(account.Configuration)
+                        : null;
+                    var password = credentials.Get("password");
+                    return (bindDn, password);
+                }
+                _logger.LogWarning("LDAP ServiceAccount {AccountId} has no credentials stored", config.LdapServiceAccountId);
+            }
+            else
+            {
+                _logger.LogWarning("LDAP ServiceAccount {AccountId} not found", config.LdapServiceAccountId);
+            }
+        }
+
+        // Legacy fallback: env var-based bind
+        if (!string.IsNullOrEmpty(config.BindUserDn))
+        {
+            _logger.LogWarning(
+                "Using legacy BindUserDn/BindPasswordEnvVar for LDAP bind — " +
+                "configure LdapServiceAccountId in AD settings to use encrypted credential storage");
+            var password = Environment.GetEnvironmentVariable(config.BindPasswordEnvVar) ?? "";
+            return (config.BindUserDn, password);
+        }
+
+        return (null, null);
+    }
+
+    private static string? ExtractBindDnFromConfig(string configJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(configJson);
+            if (doc.RootElement.TryGetProperty("username", out var username))
+                return username.GetString();
+            if (doc.RootElement.TryGetProperty("bindDn", out var bindDn))
+                return bindDn.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private static void BindConnection(LdapConnection connection, string? bindDn, string? password)
+    {
+        if (!string.IsNullOrEmpty(bindDn))
+        {
+            connection.AuthType = AuthType.Basic;
+            connection.Bind(new NetworkCredential(bindDn, password));
+        }
+        else
+        {
+            connection.AuthType = AuthType.Anonymous;
+            connection.Bind();
         }
     }
 

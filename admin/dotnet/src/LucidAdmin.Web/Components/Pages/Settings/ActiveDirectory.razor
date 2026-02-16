@@ -5,6 +5,7 @@
 @attribute [Authorize(Policy = "RequireOperator")]
 @inject IOptionsMonitor<LucidAdmin.Web.Models.ActiveDirectoryOptions> AdOptions
 @inject LucidAdmin.Web.Services.IAdSettingsService AdService
+@inject LucidAdmin.Core.Interfaces.Repositories.IServiceAccountRepository ServiceAccountRepo
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -72,10 +73,40 @@
                                    ValueChanged="OnLdapsToggled" Class="mb-2" />
                         <MudTextField @bind-Value="_editModel!.SearchBase" Label="Search Base" Variant="Variant.Outlined"
                                       HelperText="e.g., DC=montanifarms,DC=com" Class="mb-2" />
-                        <MudTextField @bind-Value="_editModel!.BindUserDn" Label="Bind User DN" Variant="Variant.Outlined"
-                                      HelperText="Leave empty for anonymous bind" Class="mb-2" />
-                        <MudTextField @bind-Value="_editModel!.BindPasswordEnvVar" Label="Bind Password Env Var" Variant="Variant.Outlined"
-                                      HelperText="Name of the environment variable containing the bind password" Class="mb-2" />
+
+                        <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">LDAP Bind Credentials</MudText>
+                        @if (_adServiceAccounts != null && _adServiceAccounts.Count > 0)
+                        {
+                            <MudSelect T="Guid?" @bind-Value="_editModel!.LdapServiceAccountId"
+                                       Label="Service Account for LDAP Bind"
+                                       Variant="Variant.Outlined" Class="mb-2"
+                                       Clearable="true"
+                                       HelperText="Used for Test Connection and group search. User auth uses the user's own credentials.">
+                                <MudSelectItem T="Guid?" Value="@((Guid?)null)">(None — anonymous bind)</MudSelectItem>
+                                @foreach (var sa in _adServiceAccounts)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@sa.Id">@(sa.DisplayName ?? sa.Name)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mb-2">
+                                No <strong>windows-ad</strong> service accounts found.
+                                <MudLink Href="/service-accounts/create" Typo="Typo.body2">Create one</MudLink> to enable authenticated LDAP bind.
+                            </MudAlert>
+                        }
+
+                        @if (!string.IsNullOrEmpty(_editModel!.BindUserDn))
+                        {
+                            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-2">
+                                Legacy bind fields are deprecated. Select a Service Account above and clear these fields.
+                            </MudAlert>
+                            <MudTextField @bind-Value="_editModel!.BindUserDn" Label="Bind User DN (deprecated)" Variant="Variant.Outlined"
+                                          HelperText="Clear this field after selecting a Service Account" Class="mb-2" />
+                            <MudTextField @bind-Value="_editModel!.BindPasswordEnvVar" Label="Bind Password Env Var (deprecated)" Variant="Variant.Outlined"
+                                          HelperText="Clear this field after selecting a Service Account" Class="mb-2" />
+                        }
                         <MudSelect @bind-Value="_editModel!.DefaultRole" Label="Default Role" Variant="Variant.Outlined" Class="mb-2">
                             <MudSelectItem Value="@("Viewer")">Viewer</MudSelectItem>
                             <MudSelectItem Value="@("Operator")">Operator</MudSelectItem>
@@ -94,7 +125,7 @@
                                 <tr><td><strong>LDAP Port</strong></td><td>@config.LdapPort</td></tr>
                                 <tr><td><strong>Use LDAPS</strong></td><td>@(config.UseLdaps ? "Yes (SSL)" : "No (Plain)")</td></tr>
                                 <tr><td><strong>Search Base</strong></td><td><code>@(string.IsNullOrEmpty(config.SearchBase) ? "\u2014" : config.SearchBase)</code></td></tr>
-                                <tr><td><strong>Bind User DN</strong></td><td>@(string.IsNullOrEmpty(config.BindUserDn) ? "Anonymous" : config.BindUserDn)</td></tr>
+                                <tr><td><strong>LDAP Bind</strong></td><td>@GetBindDisplayText(config)</td></tr>
                                 <tr><td><strong>Default Role</strong></td><td>@config.DefaultRole</td></tr>
                                 <tr><td><strong>Require Role Group</strong></td><td>@(config.RequireRoleGroup ? "Yes" : "No")</td></tr>
                             </tbody>
@@ -293,6 +324,13 @@
     private bool _testing = false;
     private AdStatusResult? _testResult;
     private EditModel? _editModel;
+    private List<LucidAdmin.Core.Entities.ServiceAccount>? _adServiceAccounts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var accounts = await ServiceAccountRepo.GetByProviderAsync("windows-ad");
+        _adServiceAccounts = accounts.Where(a => a.IsEnabled).ToList();
+    }
 
     private void EnterEditMode()
     {
@@ -305,6 +343,7 @@
             LdapPort = config.LdapPort,
             UseLdaps = config.UseLdaps,
             SearchBase = config.SearchBase,
+            LdapServiceAccountId = config.LdapServiceAccountId,
             BindUserDn = config.BindUserDn,
             BindPasswordEnvVar = config.BindPasswordEnvVar,
             DefaultRole = config.DefaultRole,
@@ -350,6 +389,7 @@
                 LdapPort = _editModel.LdapPort,
                 UseLdaps = _editModel.UseLdaps,
                 SearchBase = _editModel.SearchBase,
+                LdapServiceAccountId = _editModel.LdapServiceAccountId,
                 BindUserDn = _editModel.BindUserDn,
                 BindPasswordEnvVar = _editModel.BindPasswordEnvVar,
                 DefaultRole = _editModel.DefaultRole,
@@ -467,6 +507,18 @@
         public long LatencyMs { get; init; }
     }
 
+    private string GetBindDisplayText(LucidAdmin.Web.Models.ActiveDirectoryOptions config)
+    {
+        if (config.LdapServiceAccountId.HasValue)
+        {
+            var sa = _adServiceAccounts?.FirstOrDefault(a => a.Id == config.LdapServiceAccountId.Value);
+            return sa != null ? $"Service Account: {sa.DisplayName ?? sa.Name}" : $"Service Account ID: {config.LdapServiceAccountId}";
+        }
+        if (!string.IsNullOrEmpty(config.BindUserDn))
+            return $"{config.BindUserDn} (legacy)";
+        return "Anonymous";
+    }
+
     private class EditModel
     {
         public bool Enabled { get; set; }
@@ -475,6 +527,7 @@
         public int LdapPort { get; set; } = 389;
         public bool UseLdaps { get; set; }
         public string SearchBase { get; set; } = "";
+        public Guid? LdapServiceAccountId { get; set; }
         public string BindUserDn { get; set; } = "";
         public string BindPasswordEnvVar { get; set; } = "";
         public string DefaultRole { get; set; } = "Viewer";
