@@ -16,5 +16,6 @@ public class SystemSecretConfiguration : IEntityTypeConfiguration<SystemSecret>
         builder.Property(s => s.EncryptedValue).IsRequired();
         builder.Property(s => s.Nonce).IsRequired();
         builder.Property(s => s.Purpose).HasMaxLength(500);
+        builder.Property(s => s.Metadata).HasMaxLength(2000);
     }
 }

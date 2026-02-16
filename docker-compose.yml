@@ -28,7 +28,7 @@ services:
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
-      PRAXOVA_KEY_FILE: /app/certs/encryption.key
+      PRAXOVA_UNSEAL_PASSPHRASE: "${PRAXOVA_UNSEAL_PASSPHRASE:-dev-passphrase-change-in-production}"
     volumes:
       - ./docker/certs:/app/certs:ro
       - admin-data:/app/data

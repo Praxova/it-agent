@@ -31,4 +31,10 @@ public class SystemSecret : BaseEntity
     /// When the secret was last deliberately rotated
     /// </summary>
     public DateTime? RotatedAt { get; set; }
+
+    /// <summary>
+    /// Optional metadata for this secret (e.g., Argon2id salt as hex for envelope KEK).
+    /// Schema depends on the secret type.
+    /// </summary>
+    public string? Metadata { get; set; }
 }

@@ -1,0 +1,121 @@
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_requiresInit)
+        {
+            <MudText Typo="Typo.body1" Class="mb-3">
+                First-time setup: set a master passphrase to protect the secrets store.
+                This passphrase will be required on every restart.
+            </MudText>
+            <MudTextField @bind-Value="_passphrase" Label="Master Passphrase"
+                          InputType="InputType.Password" Variant="Variant.Outlined" Class="mb-2"
+                          HelperText="Minimum 8 characters" />
+            <MudTextField @bind-Value="_confirmPassphrase" Label="Confirm Passphrase"
+                          InputType="InputType.Password" Variant="Variant.Outlined" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body1" Class="mb-3">
+                Enter the master passphrase to unseal the secrets store.
+            </MudText>
+            <MudTextField @bind-Value="_passphrase" Label="Master Passphrase"
+                          InputType="InputType.Password" Variant="Variant.Outlined"
+                          OnKeyDown="OnKeyDown" />
+        }
+
+        @if (_error != null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2" Dense="true">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   OnClick="Submit" Disabled="_submitting">
+            @if (_submitting)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            @(_requiresInit ? "Initialize" : "Unseal")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public bool RequiresInit { get; set; }
+
+    private bool _requiresInit;
+    private string _passphrase = "";
+    private string _confirmPassphrase = "";
+    private bool _submitting;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        _requiresInit = RequiresInit;
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Submit();
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_passphrase) || _passphrase.Length < 8)
+        {
+            _error = "Passphrase must be at least 8 characters.";
+            return;
+        }
+
+        if (_requiresInit && _passphrase != _confirmPassphrase)
+        {
+            _error = "Passphrases do not match.";
+            return;
+        }
+
+        _submitting = true;
+        StateHasChanged();
+
+        try
+        {
+            var endpoint = _requiresInit ? "/api/v1/system/initialize" : "/api/v1/system/unseal";
+            var payload = new { passphrase = _passphrase };
+            var response = await Http.PostAsJsonAsync(endpoint, payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add(_requiresInit
+                    ? "Secrets store initialized and unsealed."
+                    : "Secrets store unsealed.", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _error = "Incorrect passphrase.";
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _error = $"Failed: {body}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _submitting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

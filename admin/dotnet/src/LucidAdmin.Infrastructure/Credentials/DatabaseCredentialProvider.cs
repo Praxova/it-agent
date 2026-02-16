@@ -43,7 +43,7 @@ public class DatabaseCredentialProvider : ICredentialProvider
     {
         if (!_encryptionService.IsConfigured)
         {
-            return CredentialStoreResult.Failed("Encryption service not configured. Set PRAXOVA_KEY_FILE or PRAXOVA_ENCRYPTION_KEY.");
+            return CredentialStoreResult.Failed("Secrets store is sealed. Unseal before storing credentials.");
         }
 
         try
@@ -171,7 +171,7 @@ public class DatabaseCredentialProvider : ICredentialProvider
         if (!_encryptionService.IsConfigured)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
-                "Encryption key not configured. Set PRAXOVA_KEY_FILE environment variable to the path of your encryption key file."));
+                "Secrets store is sealed. Unseal via POST /api/v1/system/unseal or set PRAXOVA_UNSEAL_PASSPHRASE."));
         }
 
         // Test encryption round-trip

@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject LucidAdmin.Core.Interfaces.Services.ISealManager SealManager
+@inject IDialogService DialogService
 
 <MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode" />
 <MudPopoverProvider />
@@ -13,6 +15,21 @@
         <MudImage Src="images/it-agent-icon.png" Alt="Praxova IT Agent" Width="32" Height="32" Class="ml-3 mr-2" ObjectFit="ObjectFit.Contain" />
         <MudText Typo="Typo.h6">Praxova IT Agent</MudText>
         <MudSpacer />
+
+        @* Seal status indicator *@
+        @if (SealManager.IsUnsealed)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.LockOpen" Color="Color.Success" Size="Size.Small"
+                     Class="mr-2" Title="Secrets store: unsealed" />
+        }
+        else
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="mr-2"
+                     Icon="@Icons.Material.Filled.Lock" OnClick="ShowUnsealDialog">
+                SEALED
+            </MudChip>
+        }
+
         <AuthorizeView>
             <Authorized>
                 @{
@@ -45,6 +62,16 @@
     </MudDrawer>
 
     <MudMainContent Class="pt-16 px-4">
+        @if (!SealManager.IsUnsealed)
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mx-4 mt-4" Dense="true">
+                <div class="d-flex align-center">
+                    <MudText>Secrets store is sealed. Operations requiring credentials are unavailable.</MudText>
+                    <MudButton Color="Color.Inherit" Variant="Variant.Text" Size="Size.Small"
+                               Class="ml-4" OnClick="ShowUnsealDialog">Unseal</MudButton>
+                </div>
+            </MudAlert>
+        }
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4">
             @Body
         </MudContainer>
@@ -113,6 +140,32 @@
                     Navigation.NavigateTo("/change-password", forceLoad: true);
                 }
             }
+        }
+    }
+
+    private async Task ShowUnsealDialog()
+    {
+        var requiresInit = SealManager.RequiresInitialization;
+        var parameters = new DialogParameters<LucidAdmin.Web.Components.Shared.UnsealDialog>
+        {
+            { x => x.RequiresInit, requiresInit }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            CloseOnEscapeKey = true
+        };
+
+        var title = requiresInit ? "Initialize Secrets Store" : "Unseal Secrets Store";
+        var dialog = await DialogService.ShowAsync<LucidAdmin.Web.Components.Shared.UnsealDialog>(title, parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            // Force page reload to pick up the unsealed state
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
         }
     }
 

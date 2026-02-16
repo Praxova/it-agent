@@ -47,10 +47,10 @@ public class JwtKeyManager : IJwtKeyManager
         if (!_encryptionService.IsConfigured)
         {
             _logger.LogWarning(
-                "Encryption service not configured — JWT signing key cannot be stored encrypted. " +
-                "Set PRAXOVA_KEY_FILE or PRAXOVA_ENCRYPTION_KEY.");
+                "Secrets store is sealed — JWT signing key cannot be accessed. " +
+                "Unseal via POST /api/v1/system/unseal or set PRAXOVA_UNSEAL_PASSPHRASE.");
             throw new InvalidOperationException(
-                "Encryption service must be configured before JWT key manager can initialize.");
+                "Secrets store must be unsealed before JWT key manager can initialize.");
         }
 
         using var scope = _serviceProvider.CreateScope();

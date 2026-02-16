@@ -1,3 +1,4 @@
+using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Infrastructure.Data;
 using LucidAdmin.Web.Models;
 using Microsoft.EntityFrameworkCore;
@@ -10,16 +11,18 @@ public static class HealthEndpoints
     {
         var group = app.MapGroup("/api/health").WithTags("Health");
 
-        group.MapGet("/", async (LucidDbContext context) =>
+        group.MapGet("/", async (LucidDbContext context, ISealManager sealManager) =>
         {
             var canConnect = await context.Database.CanConnectAsync();
-            var status = canConnect ? "healthy" : "unhealthy";
+            var isSealed = !sealManager.IsUnsealed;
+            var status = !canConnect ? "unhealthy" : isSealed ? "degraded" : "healthy";
 
             return Results.Ok(new HealthResponse(
                 Status: status,
                 Timestamp: DateTime.UtcNow,
                 Version: "1.0.0",
-                Database: canConnect ? "connected" : "disconnected"
+                Database: canConnect ? "connected" : "disconnected",
+                SecretsStore: isSealed ? "sealed" : "unsealed"
             ));
         });
     }

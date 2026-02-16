@@ -323,16 +323,54 @@ using (var scope = app.Services.CreateScope())
         Log.Information("Admin user still has default password — MustChangePassword set to true");
     }
 
-    // Initialize JWT key manager (generates or loads encrypted signing key)
-    var jwtKeyManager = app.Services.GetRequiredService<IJwtKeyManager>();
-    await jwtKeyManager.InitializeAsync();
+    // Seal/Unseal: Initialize or unseal the secrets store
+    var sealManager = app.Services.GetRequiredService<ISealManager>();
+    var autoUnsealPassphrase = Environment.GetEnvironmentVariable("PRAXOVA_UNSEAL_PASSPHRASE");
 
-    // Configure JWT Bearer signing key now that JwtKeyManager is initialized
-    var jwtBearerOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<
-        Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>>().Get(
-        Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme);
-    jwtBearerOptions.TokenValidationParameters.IssuerSigningKey =
-        new SymmetricSecurityKey(jwtKeyManager.GetSigningKey());
+    if (sealManager.RequiresInitialization)
+    {
+        if (!string.IsNullOrEmpty(autoUnsealPassphrase))
+        {
+            await sealManager.InitializeAsync(autoUnsealPassphrase);
+            Log.Information("Secrets store initialized and unsealed via PRAXOVA_UNSEAL_PASSPHRASE");
+        }
+        else
+        {
+            Log.Warning(
+                "Secrets store requires initialization. Set PRAXOVA_UNSEAL_PASSPHRASE or " +
+                "use POST /api/v1/system/initialize to set the master passphrase.");
+        }
+    }
+    else if (!string.IsNullOrEmpty(autoUnsealPassphrase))
+    {
+        var unsealSuccess = await sealManager.UnsealAsync(autoUnsealPassphrase);
+        if (unsealSuccess)
+            Log.Information("Secrets store unsealed via PRAXOVA_UNSEAL_PASSPHRASE");
+        else
+            Log.Error("Failed to unseal secrets store — PRAXOVA_UNSEAL_PASSPHRASE is incorrect");
+    }
+    else
+    {
+        Log.Warning("Secrets store is SEALED. Use POST /api/v1/system/unseal to provide the master passphrase.");
+    }
+
+    // Initialize JWT key manager only when unsealed (requires encryption)
+    if (sealManager.IsUnsealed)
+    {
+        var jwtKeyManager = app.Services.GetRequiredService<IJwtKeyManager>();
+        await jwtKeyManager.InitializeAsync();
+
+        // Configure JWT Bearer signing key now that JwtKeyManager is initialized
+        var jwtBearerOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<
+            Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>>().Get(
+            Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme);
+        jwtBearerOptions.TokenValidationParameters.IssuerSigningKey =
+            new SymmetricSecurityKey(jwtKeyManager.GetSigningKey());
+    }
+    else
+    {
+        Log.Warning("JWT key manager skipped — secrets store is sealed. API authentication will not work until unsealed.");
+    }
 
     // Seed built-in rulesets
     var rulesetSeeder = new LucidAdmin.Infrastructure.Data.Seeding.RulesetSeeder(
@@ -408,6 +446,7 @@ app.MapManualSubmissionEndpoints();
 app.MapApprovalEndpoints();
 app.MapClarificationEndpoints();
 app.MapSettingsEndpoints();
+app.MapSystemEndpoints();
 
 // Map Blazor
 app.MapRazorComponents<LucidAdmin.Web.Components.App>()

@@ -60,7 +60,10 @@ public static class DependencyInjection
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IApiKeyService, ApiKeyService>();
 
-        // Encryption
+        // Seal Manager (singleton — holds KEK in memory for app lifetime)
+        services.AddSingleton<ISealManager, SealManager>();
+
+        // Encryption (singleton — delegates key access to ISealManager)
         services.AddSingleton<IEncryptionService, EncryptionService>();
 
         // JWT Key Manager (singleton — holds key in memory for app lifetime)
