@@ -214,7 +214,14 @@ else
                                 <i class="bi bi-check-lg"></i> Save Changes
                             </button>
                             <a href="/service-accounts" class="btn btn-secondary">Cancel</a>
-                            <button type="button" class="btn btn-outline-info ms-auto" @onclick="TestConnectivity" disabled="@_testing">
+                            <button type="button" class="btn btn-outline-secondary ms-auto" @onclick="TestCredentials" disabled="@_testingCredentials">
+                                @if (_testingCredentials)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                <i class="bi bi-key"></i> Test Credentials
+                            </button>
+                            <button type="button" class="btn btn-outline-info" @onclick="TestConnectivity" disabled="@_testing">
                                 @if (_testing)
                                 {
                                     <span class="spinner-border spinner-border-sm me-1"></span>
@@ -225,6 +232,41 @@ else
                     </form>
                 </div>
             </div>
+
+            @if (_credentialTestResult != null)
+            {
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">Credential Test Result</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert @(_credentialTestResult.CanDecrypt ? (_credentialTestResult.CanConnect == true ? "alert-success" : _credentialTestResult.CanConnect == false ? "alert-warning" : "alert-success") : "alert-danger")">
+                            <div class="mb-1">
+                                @if (_credentialTestResult.CanDecrypt)
+                                {
+                                    <span class="me-2">&#x2705; Decrypt: OK</span>
+                                }
+                                else
+                                {
+                                    <span class="me-2">&#x274C; Decrypt: Failed</span>
+                                }
+                                @if (_credentialTestResult.CanConnect.HasValue)
+                                {
+                                    @if (_credentialTestResult.CanConnect.Value)
+                                    {
+                                        <span>&#x2705; Connect: OK</span>
+                                    }
+                                    else
+                                    {
+                                        <span>&#x274C; Connect: Failed</span>
+                                    }
+                                }
+                            </div>
+                            <div>@_credentialTestResult.Message</div>
+                        </div>
+                    </div>
+                </div>
+            }
 
             @if (_testResult != null)
             {
@@ -287,8 +329,10 @@ else
     private bool _loading = true;
     private bool _saving;
     private bool _testing;
+    private bool _testingCredentials;
     private string? _error;
     private HealthCheckResult? _testResult;
+    private CredentialTestResult? _credentialTestResult;
 
     private bool ProviderRequiresToolServer =>
         _serviceAccount?.Provider.ToLower() == "windows-ad";
@@ -431,6 +475,47 @@ else
     }
 
     private record TestConnectivityApiResponse(string Status, string Message, DateTime CheckedAt);
+
+    private async Task TestCredentials()
+    {
+        if (_serviceAccount == null) return;
+
+        _testingCredentials = true;
+        _credentialTestResult = null;
+
+        try
+        {
+            // If there are unsaved credentials, store them first so the test has something to decrypt
+            if (_serviceAccount.CredentialStorage == CredentialStorageType.Database && _credentials.Any())
+            {
+                var credSet = new CredentialSet(_credentials);
+                await CredentialService.StoreCredentialsAsync(_serviceAccount.Id, credSet);
+                _hasExistingCredentials = true;
+            }
+
+            var response = await Http.PostAsync($"/api/v1/service-accounts/{_serviceAccount.Id}/test-credentials", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                _credentialTestResult = await response.Content.ReadFromJsonAsync<CredentialTestResult>();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                _credentialTestResult = new CredentialTestResult(false, null, $"API Error: {error}", DateTime.UtcNow);
+            }
+        }
+        catch (Exception ex)
+        {
+            _credentialTestResult = new CredentialTestResult(false, null, $"Test failed: {ex.Message}", DateTime.UtcNow);
+        }
+        finally
+        {
+            _testingCredentials = false;
+        }
+    }
+
+    private record CredentialTestResult(bool CanDecrypt, bool? CanConnect, string Message, DateTime TestedAt);
 
     private void OnCredentialStorageChanged()
     {

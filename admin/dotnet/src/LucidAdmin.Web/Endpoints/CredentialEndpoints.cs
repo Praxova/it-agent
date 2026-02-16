@@ -1,5 +1,6 @@
 using LucidAdmin.Core.Interfaces.Credentials;
 using LucidAdmin.Core.Interfaces.Repositories;
+using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Core.Models;
 using LucidAdmin.Web.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +49,14 @@ public static class CredentialEndpoints
             .WithDescription("Delete credentials for a service account")
             .RequireAuthorization(AuthorizationPolicies.CanWriteCredentials)
             .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
+        // Test credentials for a service account (Admin only)
+        group.MapPost("/{id:guid}/test-credentials", TestCredentials)
+            .WithName("TestServiceAccountCredentials")
+            .WithDescription("Test that credentials can be decrypted and optionally connect to the external system")
+            .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
+            .Produces<CredentialTestResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status404NotFound);
     }
 
@@ -153,9 +162,85 @@ public static class CredentialEndpoints
             ? Results.NoContent()
             : Results.BadRequest(new { error = "Failed to delete credentials" });
     }
+
+    private static async Task<IResult> TestCredentials(
+        Guid id,
+        ICredentialService credentialService,
+        IServiceAccountRepository repository,
+        IProviderRegistry providerRegistry,
+        CancellationToken ct)
+    {
+        var account = await repository.GetByIdAsync(id, ct);
+        if (account == null)
+        {
+            return Results.NotFound(new { error = "Service account not found" });
+        }
+
+        // Step 1: Try to decrypt credentials
+        bool canDecrypt;
+        string? decryptError = null;
+        try
+        {
+            var credentials = await credentialService.GetCredentialsAsync(account, ct);
+            canDecrypt = credentials != null && !credentials.IsEmpty;
+            if (!canDecrypt)
+                decryptError = "No credentials stored for this service account";
+        }
+        catch (Exception ex)
+        {
+            canDecrypt = false;
+            decryptError = $"Failed to decrypt credentials: {ex.Message}";
+        }
+
+        // Step 2: If decryption succeeded, try to connect via provider
+        bool? canConnect = null;
+        string message;
+        if (canDecrypt)
+        {
+            var provider = providerRegistry.GetProvider(account.Provider);
+            if (provider != null && provider.IsImplemented)
+            {
+                try
+                {
+                    var healthResult = await provider.TestConnectivityAsync(account, ct);
+                    canConnect = healthResult.Status == LucidAdmin.Core.Enums.HealthStatus.Healthy;
+                    message = canConnect.Value
+                        ? $"Credentials valid — {healthResult.Message}"
+                        : $"Credentials decrypted but connection failed: {healthResult.Message}";
+                }
+                catch (Exception ex)
+                {
+                    canConnect = false;
+                    message = $"Credentials decrypted but connection test failed: {ex.Message}";
+                }
+            }
+            else
+            {
+                message = "Credentials retrieved and decrypted successfully (no provider connectivity test available)";
+            }
+        }
+        else
+        {
+            message = decryptError ?? "Credential test failed";
+        }
+
+        return Results.Ok(new CredentialTestResponse(
+            CanDecrypt: canDecrypt,
+            CanConnect: canConnect,
+            Message: message,
+            TestedAt: DateTime.UtcNow
+        ));
+    }
 }
 
 // Request/Response DTOs
+public record CredentialTestResponse(
+    bool CanDecrypt,
+    bool? CanConnect,
+    string Message,
+    DateTime TestedAt
+);
+
 public record CredentialResponse(
     Guid ServiceAccountId,
     string ServiceAccountName,
