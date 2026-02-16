@@ -8,6 +8,7 @@
 @inject LucidAdmin.Core.Interfaces.Repositories.IServiceAccountRepository ServiceAccountRepo
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject LucidAdmin.Web.Services.ITrustedCertificateStore TrustedCertStore
 
 <PageTitle>Active Directory Settings - Praxova Admin</PageTitle>
 
@@ -32,6 +33,24 @@
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mb-4">
             Active Directory authentication is <strong>disabled</strong>. Only local accounts can sign in.
+        </MudAlert>
+    }
+
+    @if (config.Enabled && !config.UseLdaps)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-4"
+                  Icon="@Icons.Material.Filled.Warning">
+            <MudText>
+                <strong>Insecure Connection:</strong> LDAP traffic (including passwords during authentication)
+                is sent in plain text. Enable LDAPS to encrypt the connection.
+            </MudText>
+            @if (_ldapsAvailable)
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" Size="Size.Small"
+                           OnClick="EnableLdaps" Class="mt-1">
+                    Upgrade to LDAPS
+                </MudButton>
+            }
         </MudAlert>
     }
 
@@ -285,6 +304,10 @@
                                 {
                                     <span>Connected to <strong>@_testResult.Server</strong> (@_testResult.Domain) in <strong>@_testResult.LatencyMs ms</strong></span>
                                 }
+                                else if (!string.IsNullOrEmpty(_testResult.Error))
+                                {
+                                    <span>@_testResult.Error</span>
+                                }
                                 else
                                 {
                                     <span>Cannot reach <strong>@_testResult.Server</strong> — verify the server address and ensure the LDAP port is open.</span>
@@ -295,6 +318,105 @@
                 </MudCardContent>
             </MudCard>
         </MudItem>
+
+        @* LDAPS Certificate Diagnostics *@
+        @if (_testResult?.Ldaps != null)
+        {
+            <MudItem xs="12">
+                <MudCard Elevation="2">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">LDAPS Certificate</MudText>
+                        </CardHeaderContent>
+                    </MudCardHeader>
+                    <MudCardContent>
+                        @if (_testResult.Ldaps.ServerCertificate != null)
+                        {
+                            var cert = _testResult.Ldaps.ServerCertificate;
+                            <MudSimpleTable Dense="true">
+                                <tbody>
+                                    <tr><td><strong>Subject</strong></td><td>@cert.Subject</td></tr>
+                                    <tr><td><strong>Issuer</strong></td><td>@cert.Issuer</td></tr>
+                                    <tr>
+                                        <td><strong>Valid Until</strong></td>
+                                        <td>
+                                            @cert.NotAfter.ToString("yyyy-MM-dd")
+                                            @if (cert.IsExpired)
+                                            {
+                                                <MudChip T="string" Color="Color.Error" Size="Size.Small">Expired</MudChip>
+                                            }
+                                            else if (cert.DaysUntilExpiry < 30)
+                                            {
+                                                <MudChip T="string" Color="Color.Warning" Size="Size.Small">
+                                                    @cert.DaysUntilExpiry days remaining
+                                                </MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Color="Color.Success" Size="Size.Small">
+                                                    @cert.DaysUntilExpiry days remaining
+                                                </MudChip>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr><td><strong>Thumbprint</strong></td><td><code>@cert.Thumbprint[..Math.Min(16, cert.Thumbprint.Length)]...</code></td></tr>
+                                    <tr>
+                                        <td><strong>Trusted</strong></td>
+                                        <td>
+                                            @if (_testResult.Ldaps.CertTrusted)
+                                            {
+                                                <MudChip T="string" Color="Color.Success" Size="Size.Small"
+                                                         Icon="@Icons.Material.Filled.Verified">Trusted</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <MudChip T="string" Color="Color.Error" Size="Size.Small"
+                                                         Icon="@Icons.Material.Filled.GppBad">Not Trusted</MudChip>
+                                            }
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+
+                            @if (!_testResult.Ldaps.CertTrusted)
+                            {
+                                <MudAlert Severity="Severity.Info" Class="mt-3" Variant="Variant.Outlined">
+                                    This certificate is not in Praxova's trust store. LDAPS connections will fail
+                                    until the certificate (or its issuing CA) is trusted.
+                                </MudAlert>
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.VerifiedUser"
+                                           OnClick="TrustDcCertificate" Class="mt-2"
+                                           Disabled="_importing">
+                                    @if (_importing)
+                                    {
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                        <span>Importing...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Trust This Certificate</span>
+                                    }
+                                </MudButton>
+                            }
+                        }
+                        else if (_testResult.Ldaps.TlsError != null)
+                        {
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+                                @_testResult.Ldaps.TlsError
+                            </MudAlert>
+                        }
+                        else if (!_testResult.Ldaps.PortOpen)
+                        {
+                            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+                                Port 636 is not reachable on @_testResult.Server. LDAPS may not be enabled
+                                on the domain controller, or a firewall is blocking the port.
+                            </MudAlert>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
 
         <!-- Session Behavior -->
         <MudItem xs="12">
@@ -315,6 +437,58 @@
                 </MudCardContent>
             </MudCard>
         </MudItem>
+        @* Trusted Certificates *@
+        <MudItem xs="12">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Trusted Certificates</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                       Size="Size.Small" OnClick="LoadTrustedCerts" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_trustedCerts == null || _trustedCerts.Count == 0)
+                    {
+                        <MudText Color="Color.Secondary">
+                            No certificates have been manually imported.
+                            Built-in OS certificates and the Praxova internal CA are always trusted.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="_trustedCerts" Dense="true" Hover="true">
+                            <HeaderContent>
+                                <MudTh>Name</MudTh>
+                                <MudTh>Subject</MudTh>
+                                <MudTh>Expires</MudTh>
+                                <MudTh>Imported</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.FriendlyName</MudTd>
+                                <MudTd><code>@context.Subject</code></MudTd>
+                                <MudTd>
+                                    @context.NotAfter.ToString("yyyy-MM-dd")
+                                    @if (context.IsExpired)
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small">Expired</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd>@context.ImportedAt.ToString("yyyy-MM-dd")</MudTd>
+                                <MudTd>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error" Size="Size.Small"
+                                                   OnClick="@(() => RemoveTrustedCert(context.Thumbprint))" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
     </MudGrid>
 </MudContainer>
 
@@ -322,14 +496,18 @@
     private bool _editing = false;
     private bool _saving = false;
     private bool _testing = false;
+    private bool _importing = false;
+    private bool _ldapsAvailable = false;
     private AdStatusResult? _testResult;
     private EditModel? _editModel;
     private List<LucidAdmin.Core.Entities.ServiceAccount>? _adServiceAccounts;
+    private List<LucidAdmin.Web.Services.TrustedCertEntry>? _trustedCerts;
 
     protected override async Task OnInitializedAsync()
     {
         var accounts = await ServiceAccountRepo.GetByProviderAsync("windows-ad");
         _adServiceAccounts = accounts.Where(a => a.IsEnabled).ToList();
+        await LoadTrustedCerts();
     }
 
     private void EnterEditMode()
@@ -484,8 +662,13 @@
                 Server = result.Server,
                 Domain = result.Domain,
                 Reachable = result.Reachable,
-                LatencyMs = result.LatencyMs
+                LatencyMs = result.LatencyMs,
+                Error = result.Error,
+                Ldaps = result.Ldaps
             };
+
+            // Track if LDAPS is available (port 636 open)
+            _ldapsAvailable = result.Ldaps?.PortOpen == true;
         }
         catch (Exception ex)
         {
@@ -498,6 +681,67 @@
         }
     }
 
+    private async Task LoadTrustedCerts()
+    {
+        _trustedCerts = (await TrustedCertStore.ListTrustedCertsAsync()).ToList();
+        StateHasChanged();
+    }
+
+    private async Task TrustDcCertificate()
+    {
+        if (_testResult?.Ldaps?.ServerCertificate == null) return;
+        _importing = true;
+        StateHasChanged();
+
+        try
+        {
+            var cert = _testResult.Ldaps.ServerCertificate;
+            var result = await TrustedCertStore.ImportCertificateAsync(
+                cert.Pem,
+                $"DC LDAPS - {_testResult.Server}");
+
+            if (result.Success)
+            {
+                Snackbar.Add("Certificate imported and trusted. LDAPS connections should now work.", Severity.Success);
+                await LoadTrustedCerts();
+                await TestConnection();
+            }
+            else
+            {
+                Snackbar.Add($"Import failed: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _importing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveTrustedCert(string thumbprint)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Remove Trusted Certificate",
+            "This will remove the certificate from the trust store. LDAPS connections using this certificate may stop working.",
+            "Remove", cancelText: "Cancel");
+        if (confirmed != true) return;
+
+        await TrustedCertStore.RemoveCertificateAsync(thumbprint);
+        Snackbar.Add("Certificate removed from trust store.", Severity.Info);
+        await LoadTrustedCerts();
+    }
+
+    private void EnableLdaps()
+    {
+        EnterEditMode();
+        _editModel!.UseLdaps = true;
+        _editModel.LdapPort = 636;
+    }
+
     private record AdStatusResult
     {
         public bool Enabled { get; init; }
@@ -505,6 +749,8 @@
         public string Domain { get; init; } = "";
         public bool Reachable { get; init; }
         public long LatencyMs { get; init; }
+        public string? Error { get; init; }
+        public LucidAdmin.Web.Services.LdapsStatus? Ldaps { get; init; }
     }
 
     private string GetBindDisplayText(LucidAdmin.Web.Models.ActiveDirectoryOptions config)

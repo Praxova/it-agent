@@ -17,7 +17,21 @@ public interface IAdSettingsService
     Task<AdTestResult> TestConnectionAsync();
 }
 
-public record AdTestResult(bool Enabled, string Server, string Domain, bool Reachable, long LatencyMs);
+public record AdTestResult(
+    bool Enabled,
+    string Server,
+    string Domain,
+    bool Reachable,
+    long LatencyMs,
+    string? Error = null,
+    LdapsStatus? Ldaps = null);
+
+public record LdapsStatus(
+    bool PortOpen,
+    bool TlsHandshakeSuccess,
+    bool CertTrusted,
+    string? TlsError,
+    TlsCertificateInfo? ServerCertificate);
 
 public class AdSettingsService : IAdSettingsService
 {
@@ -25,6 +39,7 @@ public class AdSettingsService : IAdSettingsService
     private readonly IConfigurationRoot _configurationRoot;
     private readonly ICredentialService _credentialService;
     private readonly IServiceAccountRepository _serviceAccountRepository;
+    private readonly ITlsCertificateProbeService _tlsProbe;
     private readonly ILogger<AdSettingsService> _logger;
 
     public AdSettingsService(
@@ -32,12 +47,14 @@ public class AdSettingsService : IAdSettingsService
         IConfiguration configuration,
         ICredentialService credentialService,
         IServiceAccountRepository serviceAccountRepository,
+        ITlsCertificateProbeService tlsProbe,
         ILogger<AdSettingsService> logger)
     {
         _adOptions = adOptions;
         _configurationRoot = (IConfigurationRoot)configuration;
         _credentialService = credentialService;
         _serviceAccountRepository = serviceAccountRepository;
+        _tlsProbe = tlsProbe;
         _logger = logger;
     }
 
@@ -156,10 +173,15 @@ public class AdSettingsService : IAdSettingsService
         // Resolve bind credentials
         var (bindDn, bindPassword) = await ResolveBindCredentialsAsync(config);
 
+        bool reachable = false;
+        long latencyMs = 0;
+        string? error = null;
+
+        // Step 1: Test the configured LDAP connection
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var reachable = await Task.Run(() =>
+            reachable = await Task.Run(() =>
             {
                 using var connection = new LdapConnection(
                     new LdapDirectoryIdentifier(config.LdapServer, config.LdapPort));
@@ -184,14 +206,85 @@ public class AdSettingsService : IAdSettingsService
                 return true;
             });
             sw.Stop();
-
-            return new AdTestResult(true, config.LdapServer, config.Domain, reachable, sw.ElapsedMilliseconds);
+            latencyMs = sw.ElapsedMilliseconds;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "AD connection test failed");
-            return new AdTestResult(true, config.LdapServer, config.Domain, false, 0);
+            error = DiagnoseLdapError(ex, config);
         }
+
+        // Step 2: LDAPS probe — always probe port 636 to get cert info
+        LdapsStatus? ldapsStatus = null;
+        try
+        {
+            var probeResult = await _tlsProbe.ProbeCertificateAsync(config.LdapServer, 636);
+
+            if (probeResult.Connected && probeResult.ServerCertificate != null)
+            {
+                // Determine if the cert is trusted by attempting a validated TLS connection
+                var isTrusted = reachable && config.UseLdaps; // If LDAPS connection succeeded, cert is trusted
+
+                ldapsStatus = new LdapsStatus(
+                    PortOpen: true,
+                    TlsHandshakeSuccess: probeResult.Error == null,
+                    CertTrusted: isTrusted,
+                    TlsError: probeResult.Error,
+                    ServerCertificate: probeResult.ServerCertificate);
+            }
+            else if (probeResult.Connected)
+            {
+                ldapsStatus = new LdapsStatus(
+                    PortOpen: true,
+                    TlsHandshakeSuccess: false,
+                    CertTrusted: false,
+                    TlsError: probeResult.Error ?? "No certificate presented",
+                    ServerCertificate: null);
+            }
+            else
+            {
+                ldapsStatus = new LdapsStatus(
+                    PortOpen: false,
+                    TlsHandshakeSuccess: false,
+                    CertTrusted: false,
+                    TlsError: probeResult.Error,
+                    ServerCertificate: null);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "LDAPS probe failed for {Server}", config.LdapServer);
+        }
+
+        return new AdTestResult(true, config.LdapServer, config.Domain, reachable, latencyMs, error, ldapsStatus);
+    }
+
+    private static string DiagnoseLdapError(Exception ex, ActiveDirectoryOptions config)
+    {
+        var msg = ex.Message;
+        var inner = ex.InnerException?.Message ?? "";
+        var combined = $"{msg} {inner}".ToLowerInvariant();
+
+        if (config.UseLdaps)
+        {
+            if (combined.Contains("remote certificate") || combined.Contains("certificate is invalid") ||
+                combined.Contains("ssl") || combined.Contains("tls"))
+                return "TLS certificate is not trusted. Import the DC certificate using the 'Trust This Certificate' button below.";
+
+            if (combined.Contains("unavailable"))
+                return "LDAPS connection failed — the server certificate may not be trusted, or port 636 is blocked.";
+        }
+
+        if (combined.Contains("refused"))
+            return $"Connection refused on port {config.LdapPort} — verify the server address and port.";
+
+        if (combined.Contains("timeout") || combined.Contains("timed out"))
+            return $"Connection timed out — a firewall may be blocking port {config.LdapPort}.";
+
+        if (combined.Contains("credential") || combined.Contains("password") || combined.Contains("bind"))
+            return "Authentication failed — check the bind credentials.";
+
+        return $"Connection failed: {msg}";
     }
 
     /// <summary>

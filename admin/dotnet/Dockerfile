@@ -36,7 +36,7 @@ RUN apt-get update && \
 COPY --from=build /app/publish .
 
 # Create data and logs directories
-RUN mkdir -p /app/data /app/logs
+RUN mkdir -p /app/data /app/logs /app/data/trusted-certs /app/data/certs
 
 # Trust custom CA certificates (internal CAs, mkcert dev certs, etc.)
 # Drop .crt files into docker/certs/ca-trust/ and rebuild

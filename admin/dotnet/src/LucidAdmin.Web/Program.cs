@@ -193,6 +193,8 @@ builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.Ca
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
 builder.Services.AddSingleton<WorkflowRequirementsService>();
 builder.Services.AddScoped<IAdSettingsService, AdSettingsService>();
+builder.Services.AddScoped<ITlsCertificateProbeService, TlsCertificateProbeService>();
+builder.Services.AddSingleton<ITrustedCertificateStore, TrustedCertificateStore>();
 
 // AD settings override file (portal-managed, persists in data volume)
 var adSettingsPath = Path.Combine(
@@ -322,6 +324,11 @@ using (var scope = app.Services.CreateScope())
         await userRepository.UpdateAsync(adminUser);
         Log.Information("Admin user still has default password — MustChangePassword set to true");
     }
+
+    // Restore trusted certificates from data volume into OS trust store
+    // This must happen early — before any TLS connections (LDAPS, tool servers, etc.)
+    var trustedCertStore = app.Services.GetRequiredService<ITrustedCertificateStore>();
+    await trustedCertStore.RestoreAllAsync();
 
     // Seal/Unseal: Initialize or unseal the secrets store
     var sealManager = app.Services.GetRequiredService<ISealManager>();
@@ -507,6 +514,7 @@ app.MapClarificationEndpoints();
 app.MapSettingsEndpoints();
 app.MapSystemEndpoints();
 app.MapPkiEndpoints();
+app.MapTrustEndpoints();
 
 // Map Blazor
 app.MapRazorComponents<LucidAdmin.Web.Components.App>()
