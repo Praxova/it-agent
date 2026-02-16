@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Credentials;
@@ -55,6 +57,10 @@ public class DatabaseCredentialProvider : ICredentialProvider
             // Serialize credentials to JSON
             var json = JsonSerializer.Serialize(credentials.Values);
 
+            // Compute SHA-256 fingerprint for change detection
+            var fingerprint = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+
             // Encrypt
             var (ciphertext, nonce) = _encryptionService.Encrypt(json);
 
@@ -63,6 +69,9 @@ public class DatabaseCredentialProvider : ICredentialProvider
             account.CredentialNonce = nonce;
             account.CredentialsUpdatedAt = DateTime.UtcNow;
             account.CredentialStorage = CredentialStorageType.Database;
+            account.CredentialFingerprint = fingerprint;
+            if (credentials.ExpiresAt.HasValue)
+                account.CredentialExpiresAt = credentials.ExpiresAt;
 
             await _repository.UpdateAsync(account, ct);
 

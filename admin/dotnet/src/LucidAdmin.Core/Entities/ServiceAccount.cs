@@ -65,6 +65,23 @@ public class ServiceAccount : BaseEntity
     /// </summary>
     public DateTime? CredentialsUpdatedAt { get; set; }
 
+    /// <summary>
+    /// When this credential expires (null = no expiration set)
+    /// </summary>
+    public DateTime? CredentialExpiresAt { get; set; }
+
+    /// <summary>
+    /// When credentials were last deliberately rotated (distinct from CredentialsUpdatedAt
+    /// which tracks any update including initial creation)
+    /// </summary>
+    public DateTime? LastRotatedAt { get; set; }
+
+    /// <summary>
+    /// SHA-256 fingerprint of the plaintext credential for change detection.
+    /// Allows checking if a credential changed without decrypting it.
+    /// </summary>
+    public string? CredentialFingerprint { get; set; }
+
     // === Status ===
     public bool IsEnabled { get; set; } = true;
     public HealthStatus HealthStatus { get; set; } = HealthStatus.Unknown;
