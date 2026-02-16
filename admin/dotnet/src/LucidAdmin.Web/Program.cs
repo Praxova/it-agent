@@ -3,6 +3,7 @@ using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
+using LucidAdmin.Core.Security;
 using LucidAdmin.Infrastructure;
 using LucidAdmin.Infrastructure.Data;
 using LucidAdmin.Infrastructure.Data.Seeding;
@@ -207,6 +208,12 @@ builder.Services.Configure<ActiveDirectoryOptions>(
 builder.Services.AddScoped<LocalAuthenticationProvider>();
 builder.Services.AddScoped<LdapAuthenticationProvider>();
 builder.Services.AddScoped<LucidAdmin.Web.Services.IAuthenticationService, LucidAdmin.Web.Services.AuthenticationService>();
+
+// Global JSON options — SecretString protection
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new SecretStringJsonConverter());
+});
 
 // MVC Controllers for Account management
 builder.Services.AddControllers();
