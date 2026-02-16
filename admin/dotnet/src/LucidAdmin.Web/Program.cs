@@ -354,9 +354,68 @@ using (var scope = app.Services.CreateScope())
         Log.Warning("Secrets store is SEALED. Use POST /api/v1/system/unseal to provide the master passphrase.");
     }
 
-    // Initialize JWT key manager only when unsealed (requires encryption)
+    // Initialize crypto services only when unsealed (requires encryption)
     if (sealManager.IsUnsealed)
     {
+        // --- Internal PKI: load or generate CA, ensure portal has a valid cert ---
+        var pkiService = app.Services.GetRequiredService<IInternalPkiService>();
+
+        // Try loading existing CA first
+        if (!pkiService.IsInitialized)
+            await pkiService.LoadAsync();
+
+        if (!pkiService.IsInitialized)
+        {
+            await pkiService.InitializeAsync();
+            Log.Information("Internal PKI initialized — CA generated and stored encrypted");
+        }
+
+        // Ensure admin portal has a valid TLS certificate
+        var portalCertName = "admin-portal";
+        var dataDir = builder.Configuration.GetValue<string>("DataDirectory") ?? "/app/data";
+        var certDir = Path.Combine(dataDir, "certs");
+        Directory.CreateDirectory(certDir);
+
+        var certPath = Path.Combine(certDir, "portal-cert.pem");
+        var keyPath = Path.Combine(certDir, "portal-key.pem");
+
+        if (await pkiService.NeedsRenewalAsync(portalCertName))
+        {
+            // Check if this is a renewal vs first-time issuance
+            var isRenewal = File.Exists(certPath);
+            if (isRenewal)
+            {
+                var (certPem, keyPem) = await pkiService.RenewCertificateAsync(portalCertName);
+                await File.WriteAllTextAsync(certPath, certPem);
+                await File.WriteAllTextAsync(keyPath, keyPem);
+                Log.Information("Admin portal TLS certificate renewed");
+            }
+            else
+            {
+                // First time: issue portal cert
+                var (certPem, keyPem) = await pkiService.IssueCertificateAsync(
+                    name: portalCertName,
+                    commonName: "praxova-admin-portal",
+                    sanDnsNames: new[] { "praxova-admin-portal", "admin-portal", "localhost" },
+                    sanIpAddresses: new[] { "127.0.0.1", "::1" },
+                    lifetimeDays: 90);
+                await File.WriteAllTextAsync(certPath, certPem);
+                await File.WriteAllTextAsync(keyPath, keyPem);
+                Log.Information("Admin portal TLS certificate issued");
+            }
+        }
+
+        // Set restrictive permissions on private key (Linux only)
+        if (!OperatingSystem.IsWindows() && File.Exists(keyPath))
+        {
+            File.SetUnixFileMode(keyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        // Write CA cert for trust bundle
+        var caCertPath = Path.Combine(certDir, "ca.pem");
+        await File.WriteAllTextAsync(caCertPath, pkiService.GetCaCertificatePem());
+
+        // --- JWT key manager ---
         var jwtKeyManager = app.Services.GetRequiredService<IJwtKeyManager>();
         await jwtKeyManager.InitializeAsync();
 
@@ -369,7 +428,7 @@ using (var scope = app.Services.CreateScope())
     }
     else
     {
-        Log.Warning("JWT key manager skipped — secrets store is sealed. API authentication will not work until unsealed.");
+        Log.Warning("Crypto services skipped — secrets store is sealed. PKI and API authentication will not work until unsealed.");
     }
 
     // Seed built-in rulesets
@@ -447,6 +506,7 @@ app.MapApprovalEndpoints();
 app.MapClarificationEndpoints();
 app.MapSettingsEndpoints();
 app.MapSystemEndpoints();
+app.MapPkiEndpoints();
 
 // Map Blazor
 app.MapRazorComponents<LucidAdmin.Web.Components.App>()

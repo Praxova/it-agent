@@ -69,6 +69,9 @@ public static class DependencyInjection
         // JWT Key Manager (singleton — holds key in memory for app lifetime)
         services.AddSingleton<IJwtKeyManager, JwtKeyManager>();
 
+        // Internal PKI (singleton — holds CA cert+key in memory for signing)
+        services.AddSingleton<IInternalPkiService, InternalPkiService>();
+
         // Credential Providers
         services.AddScoped<ICredentialProvider, DatabaseCredentialProvider>();
         services.AddScoped<ICredentialProvider, NoneCredentialProvider>();

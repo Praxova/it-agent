@@ -28,6 +28,7 @@ public class LucidDbContext : DbContext
     public DbSet<Clarification> Clarifications { get; set; } = null!;
     public DbSet<TicketCategory> TicketCategories { get; set; } = null!;
     public DbSet<SystemSecret> SystemSecrets { get; set; } = null!;
+    public DbSet<IssuedCertificate> IssuedCertificates { get; set; } = null!;
 
     public LucidDbContext(DbContextOptions<LucidDbContext> options) : base(options) { }
 

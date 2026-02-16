@@ -23,14 +23,13 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:5000;https://+:5001"
       ASPNETCORE_ENVIRONMENT: Production
-      Kestrel__Certificates__Default__Path: /app/certs/cert.pem
-      Kestrel__Certificates__Default__KeyPath: /app/certs/key.pem
+      Kestrel__Certificates__Default__Path: /app/data/certs/portal-cert.pem
+      Kestrel__Certificates__Default__KeyPath: /app/data/certs/portal-key.pem
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
       PRAXOVA_UNSEAL_PASSPHRASE: "${PRAXOVA_UNSEAL_PASSPHRASE:-dev-passphrase-change-in-production}"
     volumes:
-      - ./docker/certs:/app/certs:ro
       - admin-data:/app/data
       - admin-logs:/app/logs
     restart: unless-stopped
