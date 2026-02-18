@@ -13,6 +13,7 @@
 services:
   # ── Admin Portal (Blazor Server + REST API) ──────────────────
   admin-portal:
+    image: praxova-admin:latest
     build:
       context: .
       dockerfile: admin/dotnet/Dockerfile
@@ -44,6 +45,7 @@ services:
 
   # ── Helpdesk Agent Instance 1 ────────────────────────────────
   agent-helpdesk-01:
+    image: praxova-agent:latest
     build:
       context: ./agent
       dockerfile: Dockerfile
