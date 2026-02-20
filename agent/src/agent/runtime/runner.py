@@ -93,6 +93,9 @@ class AgentRunner:
         self._config_version: str | None = None
         self._poll_count: int = 0
 
+        # Awaiting configuration (e.g., no LLM provider assigned yet)
+        self._awaiting_configuration: bool = False
+
         # Heartbeat timing
         self._last_heartbeat_time: float = 0
 
@@ -111,8 +114,14 @@ class AgentRunner:
 
         # Create LLM driver
         if not export.llm_provider:
-            raise RuntimeError("No LLM provider configured for agent")
+            logger.warning(
+                "No LLM provider configured — agent is waiting for configuration. "
+                "Assign an LLM service account in the admin portal."
+            )
+            self._awaiting_configuration = True
+            return
 
+        self._awaiting_configuration = False
         llm_driver = create_prompt_driver(export.llm_provider)
         logger.info(f"Created LLM driver: {export.llm_provider.provider_type}")
 
@@ -182,6 +191,23 @@ class AgentRunner:
 
         self._running = True
         self._started_at = datetime.utcnow()
+
+        # If awaiting configuration, wait and periodically re-check
+        if self._awaiting_configuration:
+            logger.warning("Agent waiting for LLM configuration. Will retry every 60s.")
+            await self._report_heartbeat()
+            while self._awaiting_configuration and self._running:
+                await asyncio.sleep(60)
+                if not self._running:
+                    break
+                await self._try_reload_configuration()
+                if (time.time() - self._last_heartbeat_time) >= self.heartbeat_interval:
+                    await self._report_heartbeat()
+            if not self._running:
+                await self._send_shutdown_heartbeat()
+                logger.info("Agent stopped cleanly")
+                return
+            logger.info("LLM provider now configured. Starting normal operation.")
 
         logger.info(f"Agent '{self.agent_name}' starting main loop...")
 
@@ -285,7 +311,8 @@ class AgentRunner:
         heartbeat = {
             "agentName": self.agent_name,
             "hostname": socket.gethostname(),
-            "status": "running" if self._enabled_cache else "disabled",
+            "status": "awaiting_configuration" if self._awaiting_configuration
+                      else ("running" if self._enabled_cache else "disabled"),
             "uptime": int(uptime),
             "ticketsProcessed": self._tickets_processed,
             "ticketsSucceeded": self._tickets_succeeded,
@@ -350,6 +377,16 @@ class AgentRunner:
         except Exception as e:
             logger.debug(f"Config version check failed: {e}")
             return False
+
+    async def _try_reload_configuration(self):
+        """Re-fetch configuration to check if LLM provider has been assigned."""
+        try:
+            logger.debug("Re-checking agent configuration...")
+            await self.initialize()
+            if not self._awaiting_configuration:
+                logger.info("LLM provider detected on configuration reload")
+        except Exception as e:
+            logger.debug(f"Configuration reload failed: {e}")
 
     async def _send_shutdown_heartbeat(self):
         """Send a final heartbeat with status='stopped' during shutdown."""
