@@ -56,4 +56,10 @@ EXPOSE 5001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:5000/api/health/ || exit 1
 
-ENTRYPOINT ["dotnet", "LucidAdmin.Web.dll"]
+# Entrypoint installs the Praxova CA into the OS trust store before
+# starting .NET — required because OpenSSL caches the trust store at
+# process init, and the CA is generated at runtime on first boot.
+COPY admin/dotnet/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

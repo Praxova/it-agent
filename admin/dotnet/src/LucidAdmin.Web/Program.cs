@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
@@ -254,11 +255,56 @@ builder.Services.AddScoped(sp =>
     // authenticated requests to our own API endpoints
     var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
     var navigationManager = sp.GetRequiredService<NavigationManager>();
+    var pkiService = sp.GetRequiredService<IInternalPkiService>();
 
     var handler = new HttpClientHandler
     {
         UseCookies = false
     };
+
+    // Trust the Praxova internal CA for Blazor self-calls.
+    //
+    // Why this is needed: OpenSSL (used by .NET on Linux) caches the system
+    // trust store at process startup. The Praxova CA is generated AFTER the
+    // .NET process starts (inside InternalPkiService), so update-ca-certificates
+    // runs too late for the current process. On subsequent container restarts,
+    // the docker-entrypoint.sh installs the CA before .NET launches, making
+    // this unnecessary — but on first boot, this is the only path that works.
+    //
+    // This is NOT a security bypass. It performs full X.509 chain validation
+    // against the Praxova CA as a custom trust anchor.
+    if (pkiService.IsInitialized)
+    {
+        try
+        {
+            var caPem = pkiService.GetCaCertificatePem();
+            var caCert = X509Certificate2.CreateFromPem(caPem);
+
+            handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) =>
+            {
+                // If standard OS trust validation passes, accept immediately
+                if (errors == System.Net.Security.SslPolicyErrors.None)
+                    return true;
+
+                // Standard validation failed — try the Praxova CA explicitly
+                if (cert == null)
+                    return false;
+
+                using var customChain = new X509Chain();
+                customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                customChain.ChainPolicy.CustomTrustStore.Add(caCert);
+                customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+                return customChain.Build(new X509Certificate2(cert));
+            };
+        }
+        catch (Exception ex)
+        {
+            // If CA loading fails, fall through to default validation.
+            // This means first-boot with sealed store will use OS trust only.
+            Log.Warning(ex, "Could not configure Praxova CA trust for Blazor HttpClient");
+        }
+    }
 
     var baseUri = new Uri(navigationManager.BaseUri);
     var httpClient = new HttpClient(handler)
