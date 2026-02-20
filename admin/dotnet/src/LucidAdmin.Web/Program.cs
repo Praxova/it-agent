@@ -257,21 +257,10 @@ builder.Services.AddScoped(sp =>
 
     var handler = new HttpClientHandler
     {
-        UseCookies = false // We'll handle cookies manually
+        UseCookies = false
     };
 
-    // For loopback HTTPS calls (Blazor server calling its own API),
-    // trust the server certificate. This is safe because:
-    // 1. It's the server calling itself — no external trust needed
-    // 2. The real TLS trust is between the client browser and the server
-    // Production deployments with proper CA trust can remove this.
     var baseUri = new Uri(navigationManager.BaseUri);
-    if (baseUri.IsLoopback || baseUri.Host.EndsWith(".local"))
-    {
-        handler.ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-    }
-
     var httpClient = new HttpClient(handler)
     {
         BaseAddress = baseUri
@@ -422,6 +411,40 @@ using (var scope = app.Services.CreateScope())
         var caCertPath = Path.Combine(certDir, "ca.pem");
         await File.WriteAllTextAsync(caCertPath, pkiService.GetCaCertificatePem());
 
+        // Add Praxova CA to container OS trust store so all HttpClient calls trust our certs
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var osTrustDir = "/usr/local/share/ca-certificates";
+                if (Directory.Exists(osTrustDir))
+                {
+                    var osTrustPath = Path.Combine(osTrustDir, "praxova-internal-ca.crt");
+                    File.Copy(caCertPath, osTrustPath, overwrite: true);
+
+                    using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "update-ca-certificates",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false
+                    });
+                    if (process != null)
+                    {
+                        await process.WaitForExitAsync();
+                        if (process.ExitCode == 0)
+                            Log.Information("Praxova CA installed in OS trust store");
+                        else
+                            Log.Warning("update-ca-certificates exited with code {Code}", process.ExitCode);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not install Praxova CA in OS trust store");
+            }
+        }
+
         // --- JWT key manager ---
         var jwtKeyManager = app.Services.GetRequiredService<IJwtKeyManager>();
         await jwtKeyManager.InitializeAsync();
@@ -472,7 +495,13 @@ if (app.Environment.IsDevelopment())
 else
 {
     app.UseHsts();
-    app.UseHttpsRedirection();
+    // HTTPS redirect for everything except the trust bundle endpoint.
+    // Trust bundle must stay accessible over HTTP — it's the bootstrap mechanism
+    // that enables agents to fetch the CA before they can use HTTPS.
+    app.UseWhen(
+        context => !(context.Request.Path.StartsWithSegments("/api/pki/trust-bundle") &&
+                     context.Request.Scheme == "http"),
+        branch => branch.UseHttpsRedirection());
 }
 
 // TODO: TD-007 — Add API key authentication middleware
