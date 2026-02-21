@@ -32,6 +32,13 @@ public static class AgentConfigurationEndpoints
             .WithName("ReportAgentRuntimeHeartbeat")
             .Produces<AgentRuntimeHeartbeatResponse>(StatusCodes.Status200OK)
             .Produces<ConfigurationErrorResponse>(StatusCodes.Status404NotFound);
+
+        // POST /api/agents/by-name/{name}/runtime/heartbeat
+        // Matches the URL pattern the agent runtime sends
+        group.MapPost("/by-name/{name}/runtime/heartbeat", ReportAgentHeartbeat)
+            .WithName("ReportAgentRuntimeHeartbeatByName")
+            .Produces<AgentRuntimeHeartbeatResponse>(StatusCodes.Status200OK)
+            .Produces<ConfigurationErrorResponse>(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> GetAgentConfiguration(

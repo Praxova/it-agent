@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+import os
 import signal
 import socket
 import time
@@ -67,12 +68,18 @@ class AgentRunner:
         self.poll_interval = poll_interval
         self.heartbeat_interval = heartbeat_interval
 
+        # API key for portal authentication
+        self._api_key = os.environ.get("LUCID_API_KEY", "")
+
         self._running = False
         self._config_loader: ConfigLoader | None = None
         self._engine: WorkflowEngine | None = None
         self._snow_client: ServiceNowClient | None = None
         self._capability_router: CapabilityRouter | None = None
         self._trigger: TriggerProvider | None = None
+
+        # Shared HTTP client for portal communication (created in initialize())
+        self._portal_client: httpx.AsyncClient | None = None
 
         # Stats
         self._tickets_processed = 0
@@ -99,12 +106,40 @@ class AgentRunner:
         # Heartbeat timing
         self._last_heartbeat_time: float = 0
 
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Return auth headers if API key is configured."""
+        if self._api_key:
+            return {"X-API-Key": self._api_key}
+        return {}
+
+    def _ensure_portal_client(self) -> httpx.AsyncClient:
+        """Get or create the shared portal HTTP client."""
+        if self._portal_client is None or self._portal_client.is_closed:
+            headers: dict[str, str] = {"User-Agent": "LucidAgent/1.0"}
+            if self._api_key:
+                headers["X-API-Key"] = self._api_key
+                logger.info("Portal client configured with API key authentication")
+            else:
+                logger.warning(
+                    "No LUCID_API_KEY set — portal calls will be unauthenticated. "
+                    "Set LUCID_API_KEY for credential fetch, heartbeats, and approvals."
+                )
+            self._portal_client = httpx.AsyncClient(
+                headers=headers, timeout=10.0
+            )
+        return self._portal_client
+
     async def initialize(self):
         """Initialize the agent with configuration from Admin Portal."""
         logger.info(f"Initializing agent '{self.agent_name}'...")
 
+        # Ensure shared HTTP client exists
+        self._ensure_portal_client()
+
         # Load configuration
-        self._config_loader = ConfigLoader(self.admin_portal_url, self.agent_name)
+        self._config_loader = ConfigLoader(
+            self.admin_portal_url, self.agent_name, api_key=self._api_key
+        )
         export = await self._config_loader.load()
 
         logger.info(f"Loaded configuration: {export.agent.display_name or export.agent.name}")
@@ -127,7 +162,7 @@ class AgentRunner:
 
         # Create ServiceNow client
         if export.service_now:
-            snow_creds = self._config_loader.get_servicenow_credentials()
+            snow_creds = await self._config_loader.get_servicenow_credentials()
             if snow_creds:
                 sn_config = export.service_now.config
                 instance_url = _get_config_value(sn_config, "instance_url", "")
@@ -205,6 +240,7 @@ class AgentRunner:
                     await self._report_heartbeat()
             if not self._running:
                 await self._send_shutdown_heartbeat()
+                await self._close_portal_client()
                 logger.info("Agent stopped cleanly")
                 return
             logger.info("LLM provider now configured. Starting normal operation.")
@@ -259,7 +295,17 @@ class AgentRunner:
 
         # Send final shutdown heartbeat
         await self._send_shutdown_heartbeat()
+
+        # Close shared HTTP client
+        await self._close_portal_client()
+
         logger.info("Agent stopped cleanly")
+
+    async def _close_portal_client(self):
+        """Close the shared portal HTTP client."""
+        if self._portal_client and not self._portal_client.is_closed:
+            await self._portal_client.aclose()
+            self._portal_client = None
 
     async def _check_enabled(self) -> bool:
         """
@@ -277,20 +323,20 @@ class AgentRunner:
             return self._enabled_cache
 
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/export"
-                response = await client.get(url, timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/export"
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
 
-                # Navigate to the enabled field
-                agent_data = data.get("agent", data)
-                enabled = agent_data.get("isEnabled", agent_data.get("is_enabled", True))
+            # Navigate to the enabled field
+            agent_data = data.get("agent", data)
+            enabled = agent_data.get("isEnabled", agent_data.get("is_enabled", True))
 
-                self._enabled_cache = bool(enabled)
-                self._enabled_cache_time = now
+            self._enabled_cache = bool(enabled)
+            self._enabled_cache_time = now
 
-                return self._enabled_cache
+            return self._enabled_cache
 
         except Exception as e:
             logger.warning(f"Failed to check agent enabled status: {e}. "
@@ -330,20 +376,20 @@ class AgentRunner:
             f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/heartbeat",
         ]
 
+        client = self._ensure_portal_client()
         for url in urls_to_try:
             try:
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(url, json=heartbeat, timeout=10.0)
-                    if response.status_code < 400:
-                        logger.debug("Heartbeat sent successfully")
-                        self._last_heartbeat_time = time.time()
-                        return
-                    elif response.status_code == 404:
-                        continue  # Try next URL
-                    else:
-                        logger.warning(f"Heartbeat returned {response.status_code}")
-                        self._last_heartbeat_time = time.time()
-                        return
+                response = await client.post(url, json=heartbeat)
+                if response.status_code < 400:
+                    logger.debug("Heartbeat sent successfully")
+                    self._last_heartbeat_time = time.time()
+                    return
+                elif response.status_code == 404:
+                    continue  # Try next URL
+                else:
+                    logger.warning(f"Heartbeat returned {response.status_code}")
+                    self._last_heartbeat_time = time.time()
+                    return
             except Exception as e:
                 logger.debug(f"Heartbeat to {url} failed: {e}")
                 continue
@@ -359,20 +405,20 @@ class AgentRunner:
         stored version. Returns True if config needs reload.
         """
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/export"
-                response = await client.get(url, timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/export"
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
 
-                new_version = data.get("exportedAt",
-                              data.get("exported_at", ""))
+            new_version = data.get("exportedAt",
+                          data.get("exported_at", ""))
 
-                if new_version and new_version != self._config_version:
-                    logger.info(f"Config version changed: {self._config_version} -> {new_version}")
-                    return True
+            if new_version and new_version != self._config_version:
+                logger.info(f"Config version changed: {self._config_version} -> {new_version}")
+                return True
 
-                return False
+            return False
 
         except Exception as e:
             logger.debug(f"Config version check failed: {e}")
@@ -403,8 +449,8 @@ class AgentRunner:
 
         url = f"{self.admin_portal_url}/api/agents/by-name/{self.agent_name}/runtime/heartbeat"
         try:
-            async with httpx.AsyncClient() as client:
-                await client.post(url, json=final_heartbeat, timeout=5.0)
+            client = self._ensure_portal_client()
+            await client.post(url, json=final_heartbeat, timeout=5.0)
         except Exception:
             pass  # Best effort on shutdown
 
@@ -496,16 +542,16 @@ class AgentRunner:
             return
 
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/approvals/actionable"
-                params = {"agentName": self.agent_name}
-                response = await client.get(url, params=params, timeout=10.0)
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/approvals/actionable"
+            params = {"agentName": self.agent_name}
+            response = await client.get(url, params=params)
 
-                if response.status_code == 404:
-                    # Endpoint not available (older portal), skip silently
-                    return
-                response.raise_for_status()
-                decisions = response.json()
+            if response.status_code == 404:
+                # Endpoint not available (older portal), skip silently
+                return
+            response.raise_for_status()
+            decisions = response.json()
 
             if not decisions:
                 return
@@ -669,11 +715,11 @@ class AgentRunner:
     async def _acknowledge_approval(self, approval_id: str):
         """Acknowledge an approval decision so it won't be returned again."""
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/approvals/{approval_id}/acknowledge"
-                response = await client.post(url, json={"agentName": self.agent_name}, timeout=10.0)
-                if response.status_code < 400:
-                    logger.debug(f"Acknowledged approval {approval_id}")
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/approvals/{approval_id}/acknowledge"
+            response = await client.post(url, json={"agentName": self.agent_name})
+            if response.status_code < 400:
+                logger.debug(f"Acknowledged approval {approval_id}")
         except Exception as e:
             logger.warning(f"Failed to acknowledge approval {approval_id}: {e}")
 
@@ -707,15 +753,15 @@ class AgentRunner:
             return
 
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/clarifications/pending"
-                params = {"agentName": self.agent_name}
-                response = await client.get(url, params=params, timeout=10.0)
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/clarifications/pending"
+            params = {"agentName": self.agent_name}
+            response = await client.get(url, params=params)
 
-                if response.status_code == 404:
-                    return  # Endpoint not available
-                response.raise_for_status()
-                clarifications = response.json()
+            if response.status_code == 404:
+                return  # Endpoint not available
+            response.raise_for_status()
+            clarifications = response.json()
 
             if not clarifications:
                 return
@@ -754,14 +800,13 @@ class AgentRunner:
 
         # Resolve the clarification in portal
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/resolve"
-                response = await client.post(
-                    url,
-                    json={"userReply": user_reply},
-                    timeout=10.0,
-                )
-                response.raise_for_status()
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/resolve"
+            response = await client.post(
+                url,
+                json={"userReply": user_reply},
+            )
+            response.raise_for_status()
         except Exception as e:
             logger.error(f"Failed to resolve clarification {clarification_id}: {e}")
             return
@@ -855,15 +900,14 @@ class AgentRunner:
     async def _acknowledge_clarification(self, clarification_id: str):
         """Acknowledge a clarification so it won't be returned again."""
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/acknowledge"
-                response = await client.post(
-                    url,
-                    json={"agentName": self.agent_name},
-                    timeout=10.0,
-                )
-                if response.status_code < 400:
-                    logger.debug(f"Acknowledged clarification {clarification_id}")
+            client = self._ensure_portal_client()
+            url = f"{self.admin_portal_url}/api/clarifications/{clarification_id}/acknowledge"
+            response = await client.post(
+                url,
+                json={"agentName": self.agent_name},
+            )
+            if response.status_code < 400:
+                logger.debug(f"Acknowledged clarification {clarification_id}")
         except Exception as e:
             logger.warning(f"Failed to acknowledge clarification {clarification_id}: {e}")
 

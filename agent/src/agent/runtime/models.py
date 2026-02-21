@@ -127,6 +127,7 @@ class ProviderExportInfo(BaseModel):
     """LLM or ServiceNow provider configuration."""
     model_config = ConfigDict(populate_by_name=True)
 
+    service_account_id: str | None = Field(None, alias="serviceAccountId")
     provider_type: str = Field(alias="providerType")
     config: dict[str, Any] = {}
     credentials: CredentialReference | None = None

@@ -55,6 +55,7 @@ public record CredentialReference
 
 public record ProviderExportInfo
 {
+    public Guid? ServiceAccountId { get; init; }
     public required string ServiceAccountName { get; init; }
     public required string ProviderType { get; init; }
     public required Dictionary<string, object?> Config { get; init; }
@@ -63,6 +64,7 @@ public record ProviderExportInfo
 
 public record ServiceNowExportInfo
 {
+    public Guid? ServiceAccountId { get; init; }
     public required string ServiceAccountName { get; init; }
     public required string ProviderType { get; init; }
     public required Dictionary<string, object?> Config { get; init; }

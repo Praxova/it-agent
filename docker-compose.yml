@@ -62,9 +62,15 @@ services:
       POLL_INTERVAL: "30"
       HEARTBEAT_INTERVAL: "60"
       LOG_LEVEL: INFO
+      LUCID_API_KEY: "${LUCID_API_KEY:-}"
       SERVICENOW_USERNAME: admin
       SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
       OLLAMA_HOST: http://ollama:11434
+      # Trust the portal's auto-generated CA (shared volume, bypasses HTTP→HTTPS redirect bug)
+      SSL_CERT_FILE: /portal-data/certs/ca.pem
+      REQUESTS_CA_BUNDLE: /portal-data/certs/ca.pem
+    volumes:
+      - admin-data:/portal-data:ro
     restart: unless-stopped
     networks:
       - lucid-net

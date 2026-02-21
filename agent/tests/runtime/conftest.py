@@ -12,6 +12,7 @@ from agent.runtime.models import (
     RulesetExportInfo,
     RuleExportInfo,
     ProviderExportInfo,
+    ServiceNowExportInfo,
     CredentialReference,
     StepType,
 )
@@ -278,9 +279,9 @@ def sample_export(
         ),
         workflow=password_reset_workflow,
         rulesets=sample_rulesets,
-        example_sets=[],
+        example_sets={},
         llm_provider=sample_llm_provider,
-        service_now=ProviderExportInfo(
+        service_now=ServiceNowExportInfo(
             provider_type="servicenow-basic",
             config={"instance_url": "https://test.service-now.com"},
             credentials=CredentialReference(

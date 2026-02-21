@@ -144,6 +144,7 @@ public class AgentExportService : IAgentExportService
 
         return new ProviderExportInfo
         {
+            ServiceAccountId = account.Id,
             ServiceAccountName = account.Name,
             ProviderType = account.Provider,
             Config = ParseConfigJson(account.Configuration),
@@ -161,6 +162,7 @@ public class AgentExportService : IAgentExportService
 
         return new ServiceNowExportInfo
         {
+            ServiceAccountId = account.Id,
             ServiceAccountName = account.Name,
             ProviderType = account.Provider,
             Config = ParseConfigJson(account.Configuration),
