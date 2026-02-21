@@ -96,8 +96,9 @@ var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "LucidAdmin";
 
 builder.Services.AddAuthentication(options =>
 {
-    // Default scheme for Blazor is Cookie
-    options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    // Combined scheme routes to ApiKey, JWT, or Cookie based on request headers
+    options.DefaultScheme = "Combined";
+    // Challenge still goes to Cookie (redirects Blazor UI to login page)
     options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
 })
 .AddCookie(options =>
@@ -154,18 +155,24 @@ builder.Services.AddAuthentication(options =>
 {
     options.ForwardDefaultSelector = context =>
     {
-        // Check for API key in headers
         var apiKeyHeader = context.Request.Headers["X-API-Key"].FirstOrDefault();
         var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
 
+        // API Key header or "ApiKey xxx" auth header
         if (!string.IsNullOrEmpty(apiKeyHeader) ||
             (authHeader?.StartsWith("ApiKey ", StringComparison.OrdinalIgnoreCase) ?? false))
         {
             return "ApiKey";
         }
 
-        // Default to JWT Bearer for API requests
-        return JwtBearerDefaults.AuthenticationScheme;
+        // Bearer token (JWT)
+        if (authHeader?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ?? false)
+        {
+            return JwtBearerDefaults.AuthenticationScheme;
+        }
+
+        // Fall through to Cookie for Blazor UI and unauthenticated requests
+        return CookieAuthenticationDefaults.AuthenticationScheme;
     };
 });
 
