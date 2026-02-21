@@ -130,8 +130,59 @@ public static class PkiEndpoints
         })
         .WithName("RenewCertificate")
         .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+
+        // POST /api/pki/certificates/issue — Issue a new certificate (admin only)
+        group.MapPost("/certificates/issue", async (
+            IssueCertificateRequest request,
+            IInternalPkiService pkiService) =>
+        {
+            if (!pkiService.IsInitialized)
+                return Results.StatusCode(503);
+
+            if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.CommonName))
+                return Results.BadRequest(new { error = "Name and CommonName are required" });
+
+            try
+            {
+                var (certPem, keyPem) = await pkiService.IssueCertificateAsync(
+                    name: request.Name,
+                    commonName: request.CommonName,
+                    sanDnsNames: request.DnsNames,
+                    sanIpAddresses: request.IpAddresses,
+                    lifetimeDays: request.LifetimeDays ?? 90);
+
+                return Results.Ok(new IssueCertificateResponse(
+                    Name: request.Name,
+                    CertificatePem: certPem,
+                    PrivateKeyPem: keyPem,
+                    CaCertificatePem: pkiService.GetCaCertificatePem()));
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("IssueCertificate")
+        .WithDescription("Issue a new TLS certificate signed by the Praxova internal CA")
+        .RequireAuthorization(AuthorizationPolicies.RequireAdmin)
+        .Produces<IssueCertificateResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status503ServiceUnavailable);
     }
 }
+
+public record IssueCertificateRequest(
+    string Name,
+    string CommonName,
+    string[]? DnsNames = null,
+    string[]? IpAddresses = null,
+    int? LifetimeDays = null);
+
+public record IssueCertificateResponse(
+    string Name,
+    string CertificatePem,
+    string PrivateKeyPem,
+    string CaCertificatePem);
 
 public record CertificateSummary(
     Guid Id,

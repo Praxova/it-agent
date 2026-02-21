@@ -41,6 +41,28 @@ if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azur
     builder.Services.AddScoped<IAzureService, AzureService>();
 }
 
+// Check if HTTPS cert files exist — if not, remove HTTPS endpoint to prevent crash
+var httpsEnabled = true;
+var certPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:Path"];
+var keyPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:KeyPath"];
+
+if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(keyPath))
+{
+    var fullCertPath = Path.IsPathRooted(certPath) ? certPath : Path.Combine(builder.Environment.ContentRootPath, certPath);
+    var fullKeyPath = Path.IsPathRooted(keyPath) ? keyPath : Path.Combine(builder.Environment.ContentRootPath, keyPath);
+
+    if (!File.Exists(fullCertPath) || !File.Exists(fullKeyPath))
+    {
+        Log.Warning("HTTPS certificate files not found at {CertPath} / {KeyPath} — running HTTP only", fullCertPath, fullKeyPath);
+        httpsEnabled = false;
+        builder.Configuration["Kestrel:Endpoints:Https:Url"] = null;
+    }
+    else
+    {
+        Log.Information("HTTPS enabled — cert: {CertPath}", fullCertPath);
+    }
+}
+
 var app = builder.Build();
 
 // Lifecycle logging for service start/stop events
@@ -57,12 +79,19 @@ lifetime.ApplicationStopping.Register(() =>
 lifetime.ApplicationStopped.Register(() =>
     startupLogger.LogInformation("Praxova Tool Server stopped."));
 
-// HTTPS enforcement
-if (!app.Environment.IsDevelopment())
+// HTTPS enforcement (only when cert files are present)
+if (httpsEnabled)
 {
-    app.UseHsts();
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHsts();
+    }
+    app.UseHttpsRedirection();
 }
-app.UseHttpsRedirection();
+else
+{
+    Log.Warning("HTTPS not configured — all traffic is unencrypted");
+}
 
 // Global exception handler
 app.Use(async (context, next) =>
