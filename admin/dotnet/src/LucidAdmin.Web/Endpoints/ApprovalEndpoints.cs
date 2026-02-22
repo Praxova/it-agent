@@ -63,7 +63,7 @@ public static class ApprovalEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/approvals/{approval.Id}", MapToResponse(approval));
-        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
+        }).RequireAuthorization(policy => policy.RequireRole("Agent", "Admin", "Operator"));
 
         // GET /api/approvals/actionable?agentName={name} — Agent polls for decisions
         group.MapGet("/actionable", async (string agentName, LucidDbContext db) =>
@@ -102,7 +102,7 @@ public static class ApprovalEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { id = approval.Id, acknowledgedAt = approval.AcknowledgedAt });
-        }).RequireAuthorization(AuthorizationPolicies.RequireOperator);
+        }).RequireAuthorization(policy => policy.RequireRole("Agent", "Admin", "Operator"));
 
         // ================================================================
         // Portal-facing endpoints
