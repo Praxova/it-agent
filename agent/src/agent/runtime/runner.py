@@ -216,6 +216,7 @@ class AgentRunner:
         # Inject ServiceNow client into engine context (for executors)
         self._engine.servicenow_client = self._snow_client
         self._engine.capability_router = self._capability_router
+        self._engine.portal_client = self._ensure_portal_client()
 
         logger.info("Agent initialized successfully")
 
@@ -709,6 +710,7 @@ class AgentRunner:
         # Share integration points
         child_engine.servicenow_client = self._engine.servicenow_client
         child_engine.capability_router = self._engine.capability_router
+        child_engine.portal_client = self._engine.portal_client
 
         return child_engine
 

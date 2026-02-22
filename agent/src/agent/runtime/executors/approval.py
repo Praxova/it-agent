@@ -96,13 +96,16 @@ class ApprovalExecutor(BaseStepExecutor):
             ),
         }
 
-        # Submit to Admin Portal
+        # Submit to Admin Portal (use authenticated portal client if available)
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"{context.admin_portal_url}/api/approvals"
-                response = await client.post(url, json=body, timeout=15.0)
-                response.raise_for_status()
-                data = response.json()
+            url = f"{context.admin_portal_url}/api/approvals"
+            if context.portal_client:
+                response = await context.portal_client.post(url, json=body, timeout=15.0)
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(url, json=body, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
 
             approval_id = str(data.get("id", ""))
             approval_status = data.get("status", "Pending")

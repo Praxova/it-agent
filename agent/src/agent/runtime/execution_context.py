@@ -64,6 +64,7 @@ class ExecutionContext:
     # Integration points (optional, set by runner)
     servicenow_client: Any = None  # ServiceNowClient
     capability_router: Any = None  # CapabilityRouter
+    portal_client: Any = None  # httpx.AsyncClient with auth headers
 
     # Accumulated results from each step
     step_results: dict[str, StepResult] = field(default_factory=dict)

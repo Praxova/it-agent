@@ -23,6 +23,7 @@ def mock_context():
     ctx.variables = {"agent_name": "test-agent", "ticket_type": "password-reset"}
     ctx.admin_portal_url = "http://localhost:5000"
     ctx.workflow_stack = ["test-workflow"]
+    ctx.portal_client = None
     return ctx
 
 

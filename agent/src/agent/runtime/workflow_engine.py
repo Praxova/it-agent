@@ -71,6 +71,7 @@ class WorkflowEngine:
         # Integration points (set by runner)
         self.servicenow_client: Any = None  # ServiceNowClient
         self.capability_router: Any = None  # CapabilityRouter
+        self.portal_client: Any = None  # httpx.AsyncClient with auth headers
 
         # Build step lookup
         self._steps: dict[str, WorkflowStepExportInfo] = {}
@@ -146,6 +147,7 @@ class WorkflowEngine:
             )
             context.servicenow_client = self.servicenow_client
             context.capability_router = self.capability_router
+            context.portal_client = self.portal_client
             context.variables["agent_name"] = self.agent_name
             context.status = ExecutionStatus.RUNNING
 
