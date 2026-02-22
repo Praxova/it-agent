@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using LucidToolServer.Configuration;
 using LucidToolServer.Endpoints;
 using LucidToolServer.Exceptions;
@@ -41,26 +42,32 @@ if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azur
     builder.Services.AddScoped<IAzureService, AzureService>();
 }
 
-// Check if HTTPS cert files exist — if not, remove HTTPS endpoint to prevent crash
-var httpsEnabled = true;
-var certPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:Path"];
-var keyPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:KeyPath"];
+// HTTPS — configured programmatically (not via appsettings.json, which can't be
+// cleanly disabled at runtime if cert files don't exist yet).
+var httpsEnabled = false;
+var certRelativePath = "certs/toolserver-cert.pem";
+var keyRelativePath = "certs/toolserver-key.pem";
+var fullCertPath = Path.Combine(builder.Environment.ContentRootPath, certRelativePath);
+var fullKeyPath = Path.Combine(builder.Environment.ContentRootPath, keyRelativePath);
 
-if (!string.IsNullOrEmpty(certPath) && !string.IsNullOrEmpty(keyPath))
+if (File.Exists(fullCertPath) && File.Exists(fullKeyPath))
 {
-    var fullCertPath = Path.IsPathRooted(certPath) ? certPath : Path.Combine(builder.Environment.ContentRootPath, certPath);
-    var fullKeyPath = Path.IsPathRooted(keyPath) ? keyPath : Path.Combine(builder.Environment.ContentRootPath, keyPath);
+    httpsEnabled = true;
+    Log.Information("HTTPS enabled — loading cert from {CertPath}", fullCertPath);
 
-    if (!File.Exists(fullCertPath) || !File.Exists(fullKeyPath))
+    builder.WebHost.ConfigureKestrel(serverOptions =>
     {
-        Log.Warning("HTTPS certificate files not found at {CertPath} / {KeyPath} — running HTTP only", fullCertPath, fullKeyPath);
-        httpsEnabled = false;
-        builder.Configuration["Kestrel:Endpoints:Https:Url"] = null;
-    }
-    else
-    {
-        Log.Information("HTTPS enabled — cert: {CertPath}", fullCertPath);
-    }
+        serverOptions.ListenAnyIP(8443, listenOptions =>
+        {
+            var cert = X509Certificate2.CreateFromPemFile(fullCertPath, fullKeyPath);
+            listenOptions.UseHttps(cert);
+        });
+    });
+}
+else
+{
+    Log.Warning("HTTPS certificate files not found at {CertPath} / {KeyPath} — running HTTP only",
+        fullCertPath, fullKeyPath);
 }
 
 var app = builder.Build();
