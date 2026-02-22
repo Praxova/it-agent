@@ -18,15 +18,18 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
     private const string ApiKeySchemePrefix = "ApiKey ";
 
     private readonly IApiKeyService _apiKeyService;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public ApiKeyAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IApiKeyService apiKeyService)
+        IApiKeyService apiKeyService,
+        IServiceScopeFactory scopeFactory)
         : base(options, logger, encoder)
     {
         _apiKeyService = apiKeyService;
+        _scopeFactory = scopeFactory;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -99,13 +102,15 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
-        // Update last used timestamp asynchronously (fire and forget)
+        // Update last used timestamp in a separate DI scope to avoid DbContext concurrency
         var ipAddress = Context.Connection.RemoteIpAddress?.ToString();
         _ = Task.Run(async () =>
         {
             try
             {
-                await _apiKeyService.UpdateLastUsedAsync(key.Id, ipAddress, CancellationToken.None);
+                using var scope = _scopeFactory.CreateScope();
+                var scopedApiKeyService = scope.ServiceProvider.GetRequiredService<IApiKeyService>();
+                await scopedApiKeyService.UpdateLastUsedAsync(key.Id, ipAddress, CancellationToken.None);
             }
             catch (Exception ex)
             {
