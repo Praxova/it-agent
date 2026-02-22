@@ -59,7 +59,10 @@ if (File.Exists(fullCertPath) && File.Exists(fullKeyPath))
     {
         serverOptions.ListenAnyIP(8443, listenOptions =>
         {
-            var cert = X509Certificate2.CreateFromPemFile(fullCertPath, fullKeyPath);
+            var pemCert = X509Certificate2.CreateFromPemFile(fullCertPath, fullKeyPath);
+            // Re-export as PFX to persist the private key — CreateFromPemFile creates
+            // an ephemeral key on Windows that SslStream/Kestrel cannot use for TLS.
+            var cert = new X509Certificate2(pemCert.Export(X509ContentType.Pfx));
             listenOptions.UseHttps(cert);
         });
     });
