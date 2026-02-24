@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ServiceNow Test Ticket Generator for Lucid IT Agent E2E Testing.
+ServiceNow Test Ticket Generator for Praxova IT Agent E2E Testing.
 
 Creates test incidents in a ServiceNow PDI instance with various
 ticket types to exercise different workflow paths.
@@ -498,7 +498,7 @@ def do_cleanup(client: ServiceNowTestClient, group_id: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ServiceNow Test Ticket Generator for Lucid IT Agent",
+        description="ServiceNow Test Ticket Generator for Praxova IT Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Scenarios:

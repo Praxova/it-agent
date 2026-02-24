@@ -1,4 +1,4 @@
-"""Trigger providers for the Lucid IT Agent workflow runtime."""
+"""Trigger providers for the Praxova IT Agent workflow runtime."""
 from .base import TriggerProvider, TriggerType, WorkItem
 from .servicenow_provider import ServiceNowTriggerProvider
 from .manual_provider import ManualTriggerProvider

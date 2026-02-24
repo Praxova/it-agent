@@ -83,7 +83,7 @@ class PasswordResetHandler(BaseHandler):
                     success=True,
                     message=f"Password reset completed for {username}",
                     customer_message=self._build_customer_message(username, temp_password),
-                    work_notes=f"Lucid Agent reset password for {username}. Temporary password provided to user.",
+                    work_notes=f"Praxova Agent reset password for {username}. Temporary password provided to user.",
                     should_close=True,
                 )
             else:
@@ -92,7 +92,7 @@ class PasswordResetHandler(BaseHandler):
                     success=False,
                     message=f"Password reset failed: {error_msg}",
                     customer_message=None,
-                    work_notes=f"Lucid Agent attempted password reset but failed: {error_msg}",
+                    work_notes=f"Praxova Agent attempted password reset but failed: {error_msg}",
                     should_close=False,
                     error=error_msg,
                 )
@@ -103,7 +103,7 @@ class PasswordResetHandler(BaseHandler):
                 success=False,
                 message=f"Exception during password reset: {e}",
                 customer_message=None,
-                work_notes=f"Lucid Agent encountered an error: {e}",
+                work_notes=f"Praxova Agent encountered an error: {e}",
                 should_close=False,
                 error=str(e),
             )
@@ -149,4 +149,4 @@ Your temporary password is: {temp_password}
 
 Please log in and change your password immediately. If you have any issues, reply to this ticket.
 
-— Lucid IT Agent"""
+— Praxova IT Agent"""

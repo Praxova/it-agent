@@ -115,7 +115,7 @@ class AgentRunner:
     def _ensure_portal_client(self) -> httpx.AsyncClient:
         """Get or create the shared portal HTTP client."""
         if self._portal_client is None or self._portal_client.is_closed:
-            headers: dict[str, str] = {"User-Agent": "LucidAgent/1.0"}
+            headers: dict[str, str] = {"User-Agent": "PraxovaAgent/1.0"}
             if self._api_key:
                 headers["X-API-Key"] = self._api_key
                 logger.info("Portal client configured with API key authentication")

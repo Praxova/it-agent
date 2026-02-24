@@ -205,7 +205,7 @@ class AdminPortalClient:
         # Build headers
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "LucidAgent/1.0"
+            "User-Agent": "PraxovaAgent/1.0"
         }
         if self.api_key:
             headers["X-API-Key"] = self.api_key

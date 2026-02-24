@@ -1,6 +1,6 @@
 # Lucid Admin Portal
 
-A .NET 8 web application for managing the Lucid IT Agent system, including service accounts, tool servers, capability mappings, and audit logging.
+A .NET 8 web application for managing the Praxova IT Agent system, including service accounts, tool servers, capability mappings, and audit logging.
 
 ## Architecture
 
@@ -192,4 +192,4 @@ admin/dotnet/
 
 ## License
 
-Proprietary - Lucid IT Agent System
+Proprietary - Praxova IT Agent System

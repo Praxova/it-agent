@@ -33,6 +33,17 @@ public class ToolServerSettings
     public string? DomainName { get; set; }
 
     /// <summary>
+    /// AD service account username for authenticated binds (e.g., "svc-praxova@montanifarms.com").
+    /// If not specified, the tool server runs as the machine account (NTLM/Kerberos).
+    /// </summary>
+    public string? ServiceAccountUsername { get; set; }
+
+    /// <summary>
+    /// AD service account password for authenticated binds.
+    /// </summary>
+    public string? ServiceAccountPassword { get; set; }
+
+    /// <summary>
     /// Allowed UNC paths for software installation packages.
     /// Supports wildcards (e.g., "\\\\fileserver\\software\\*").
     /// If empty, remote software install is disabled.

@@ -323,11 +323,11 @@ def test_full_agent(config):
         
         print_result("Create prompt driver", True, type(driver).__name__)
         
-        # Create agent with Lucid identity ruleset
+        # Create agent with Praxova identity ruleset
         ruleset = Ruleset(
-            name="Lucid IT Agent",
+            name="Praxova IT Agent",
             rules=[
-                Rule("You are Lucid, an AI-powered IT helpdesk assistant."),
+                Rule("You are Praxova, an AI-powered IT helpdesk assistant."),
                 Rule("You help resolve IT support tickets autonomously."),
                 Rule("You are helpful, professional, and concise."),
             ]

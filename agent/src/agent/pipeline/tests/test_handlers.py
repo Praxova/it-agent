@@ -112,7 +112,7 @@ class TestPasswordResetHandler:
 
         assert "testuser" not in message  # Username not in message for security
         assert "TempPass123!" in message
-        assert "Lucid IT Agent" in message
+        assert "Praxova IT Agent" in message
 
 
 class TestGroupAccessHandler:
@@ -229,7 +229,7 @@ class TestGroupAccessHandler:
         assert "testuser" in message
         assert "TestGroup" in message
         assert "added" in message.lower()
-        assert "Lucid IT Agent" in message
+        assert "Praxova IT Agent" in message
 
     def test_build_customer_message_remove(self, handler):
         """Test customer message for removing from group."""
@@ -238,4 +238,4 @@ class TestGroupAccessHandler:
         assert "testuser" in message
         assert "TestGroup" in message
         assert "removed" in message.lower()
-        assert "Lucid IT Agent" in message
+        assert "Praxova IT Agent" in message

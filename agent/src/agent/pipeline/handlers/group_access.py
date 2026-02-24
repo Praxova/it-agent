@@ -109,7 +109,7 @@ class GroupAccessHandler(BaseHandler):
                     success=True,
                     message=f"Successfully {past_tense} {username} {'to' if is_add else 'from'} {group_name}",
                     customer_message=self._build_customer_message(username, group_name, is_add),
-                    work_notes=f"Lucid Agent {past_tense} {username} {'to' if is_add else 'from'} group {group_name}",
+                    work_notes=f"Praxova Agent {past_tense} {username} {'to' if is_add else 'from'} group {group_name}",
                     should_close=True,
                 )
             else:
@@ -117,7 +117,7 @@ class GroupAccessHandler(BaseHandler):
                     success=False,
                     message=f"Group {action} failed: {result_text}",
                     customer_message=None,
-                    work_notes=f"Lucid Agent attempted to {action} {username} {'to' if is_add else 'from'} {group_name} but failed: {result_text}",
+                    work_notes=f"Praxova Agent attempted to {action} {username} {'to' if is_add else 'from'} {group_name} but failed: {result_text}",
                     should_close=False,
                     error=result_text,
                 )
@@ -128,7 +128,7 @@ class GroupAccessHandler(BaseHandler):
                 success=False,
                 message=f"Exception during group {action}: {e}",
                 customer_message=None,
-                work_notes=f"Lucid Agent encountered an error: {e}",
+                work_notes=f"Praxova Agent encountered an error: {e}",
                 should_close=False,
                 error=str(e),
             )
@@ -151,10 +151,10 @@ User {username} has been added to the {group_name} group. The new permissions sh
 
 If you have any issues accessing the requested resources, please reply to this ticket.
 
-— Lucid IT Agent"""
+— Praxova IT Agent"""
         else:
             return f"""Your access removal request has been completed.
 
 User {username} has been removed from the {group_name} group. The change should take effect within a few minutes.
 
-— Lucid IT Agent"""
+— Praxova IT Agent"""

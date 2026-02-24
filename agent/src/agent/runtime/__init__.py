@@ -1,4 +1,4 @@
-"""Lucid IT Agent workflow runtime."""
+"""Praxova IT Agent workflow runtime."""
 from .models import (
     AgentExport,
     WorkflowExportInfo,

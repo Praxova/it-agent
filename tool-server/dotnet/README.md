@@ -1,6 +1,6 @@
 # Lucid Tool Server (.NET 8)
 
-.NET 8 implementation of the Lucid IT Agent Tool Server for native Windows/Active Directory integration.
+.NET 8 implementation of the Praxova IT Agent Tool Server for native Windows/Active Directory integration.
 
 ## Project Structure
 
@@ -171,4 +171,4 @@ Key differences from the Python implementation:
 
 ## License
 
-Part of the Lucid IT Agent project.
+Part of the Praxova IT Agent project.

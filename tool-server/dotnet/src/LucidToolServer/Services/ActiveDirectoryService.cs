@@ -41,9 +41,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -90,9 +88,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -160,9 +156,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -223,9 +217,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
 
                 if (group == null)
@@ -266,9 +258,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -301,9 +291,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
         {
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
                 // Try to get the computer name to test connectivity
                 _ = context.ConnectedServer;
                 _logger.LogInformation("Successfully connected to Active Directory");
@@ -326,9 +314,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
 
                 var results = new List<UserSearchResult>();
 
@@ -423,9 +409,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
 
                 var results = new List<GroupListItem>();
 
@@ -499,9 +483,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = string.IsNullOrEmpty(_settings.DomainName)
-                    ? new PrincipalContext(ContextType.Domain)
-                    : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+                using var context = CreatePrincipalContext();
 
                 var results = new List<GroupListItem>();
 
@@ -575,9 +557,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
         {
             _logger.LogInformation("Looking up computers for user: {Username}", username);
 
-            using var context = string.IsNullOrEmpty(_settings.DomainName)
-                ? new PrincipalContext(ContextType.Domain)
-                : new PrincipalContext(ContextType.Domain, _settings.DomainName);
+            using var context = CreatePrincipalContext();
 
             using var user = FindUserByMultipleStrategies(context, username);
             if (user == null)
@@ -648,6 +628,24 @@ public class ActiveDirectoryService : IActiveDirectoryService
             return DateTime.FromFileTimeUtc(fileTime).ToString("o");
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Create a PrincipalContext using configured domain and optional service account credentials.
+    /// </summary>
+    private PrincipalContext CreatePrincipalContext()
+    {
+        if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
+            && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+        {
+            return string.IsNullOrEmpty(_settings.DomainName)
+                ? new PrincipalContext(ContextType.Domain, null, _settings.ServiceAccountUsername, _settings.ServiceAccountPassword)
+                : new PrincipalContext(ContextType.Domain, _settings.DomainName, _settings.ServiceAccountUsername, _settings.ServiceAccountPassword);
+        }
+
+        return string.IsNullOrEmpty(_settings.DomainName)
+            ? new PrincipalContext(ContextType.Domain)
+            : new PrincipalContext(ContextType.Domain, _settings.DomainName);
     }
 
     /// <summary>

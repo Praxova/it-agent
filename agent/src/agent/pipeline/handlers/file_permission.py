@@ -103,7 +103,7 @@ class FilePermissionHandler(BaseHandler):
                     success=True,
                     message=f"Granted {permission} permission to {username} on {path}",
                     customer_message=self._build_customer_message(username, path, permission),
-                    work_notes=f"Lucid Agent granted {permission} permission to {username} on {path}",
+                    work_notes=f"Praxova Agent granted {permission} permission to {username} on {path}",
                     should_close=True,
                 )
             else:
@@ -111,7 +111,7 @@ class FilePermissionHandler(BaseHandler):
                     success=False,
                     message=f"Permission grant failed: {result_text}",
                     customer_message=None,
-                    work_notes=f"Lucid Agent attempted to grant {permission} to {username} on {path} but failed: {result_text}",
+                    work_notes=f"Praxova Agent attempted to grant {permission} to {username} on {path} but failed: {result_text}",
                     should_close=False,
                     error=result_text,
                 )
@@ -122,7 +122,7 @@ class FilePermissionHandler(BaseHandler):
                 success=False,
                 message=f"Exception during permission grant: {e}",
                 customer_message=None,
-                work_notes=f"Lucid Agent encountered an error: {e}",
+                work_notes=f"Praxova Agent encountered an error: {e}",
                 should_close=False,
                 error=str(e),
             )
@@ -147,4 +147,4 @@ The new permissions should be active within a few minutes. You may need to log o
 
 If you have any issues accessing the requested location, please reply to this ticket.
 
-— Lucid IT Agent"""
+— Praxova IT Agent"""

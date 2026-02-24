@@ -105,7 +105,7 @@ class EscalateExecutor(BaseStepExecutor):
     def _build_work_notes(self, context: ExecutionContext, reason: str) -> str:
         """Build detailed work notes for escalation."""
         lines = [
-            "=== Lucid IT Agent - Automated Processing Escalation ===",
+            "=== Praxova IT Agent - Automated Processing Escalation ===",
             "",
             f"Reason: {reason}",
             "",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lucid IT Agent - Main Entry Point.
+"""Praxova IT Agent - Main Entry Point.
 
 Usage:
     python -m agent.main --once     # Process queue once and exit
@@ -31,7 +31,7 @@ def parse_args():
         Parsed arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Lucid IT Agent - Automated IT helpdesk",
+        description="Praxova IT Agent - Automated IT helpdesk",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 

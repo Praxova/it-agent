@@ -1,4 +1,4 @@
-"""Command-line interface for Lucid IT Agent."""
+"""Command-line interface for Praxova IT Agent."""
 from __future__ import annotations
 import argparse
 import asyncio
@@ -27,7 +27,7 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description="Lucid IT Agent - AI-powered IT helpdesk automation"
+        description="Praxova IT Agent - AI-powered IT helpdesk automation"
     )
 
     parser.add_argument(
@@ -75,7 +75,7 @@ def main():
     setup_logging(args.log_level)
     logger = logging.getLogger(__name__)
 
-    logger.info(f"Lucid IT Agent starting...")
+    logger.info(f"Praxova IT Agent starting...")
     logger.info(f"  Admin Portal: {args.admin_url}")
     logger.info(f"  Agent Name: {args.agent_name}")
     logger.info(f"  Poll Interval: {args.poll_interval}s")

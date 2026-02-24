@@ -98,7 +98,7 @@ class UpdateTicketExecutor(BaseStepExecutor):
                 ticket_type = context.get_variable("ticket_type", "request")
                 affected_user = context.get_variable("affected_user", "N/A")
 
-                resolution = f"Automated resolution by Lucid IT Agent\n"
+                resolution = f"Automated resolution by Praxova IT Agent\n"
                 resolution += f"Ticket Type: {ticket_type}\n"
                 resolution += f"Affected User: {affected_user}\n"
 

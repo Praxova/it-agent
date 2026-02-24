@@ -55,7 +55,7 @@ class ServiceNowTriggerProvider(TriggerProvider):
         await self._client.set_state(ticket.sys_id, "2")  # In Progress
         await self._client.add_work_note(
             ticket.sys_id,
-            "Ticket picked up by Lucid IT Agent for automated processing."
+            "Ticket picked up by Praxova IT Agent for automated processing."
         )
 
     async def complete(self, item: WorkItem, context: ExecutionContext) -> None:
@@ -68,7 +68,7 @@ class ServiceNowTriggerProvider(TriggerProvider):
                 await self._client.add_work_note(ticket.sys_id, success_note)
                 await self._client.set_state(
                     ticket.sys_id, "6",  # Resolved
-                    close_notes=f"Resolved by Lucid IT Agent - {context.get_variable('ticket_type', 'automated')}"
+                    close_notes=f"Resolved by Praxova IT Agent - {context.get_variable('ticket_type', 'automated')}"
                 )
         except Exception as e:
             logger.error(f"Failed to write completion notes for {item.display_id}: {e}")
@@ -81,7 +81,7 @@ class ServiceNowTriggerProvider(TriggerProvider):
             escalation_notes = context.get_variable("escalation_work_notes")
             if not escalation_notes:
                 escalation_notes = (
-                    f"Lucid IT Agent escalation:\n"
+                    f"Praxova IT Agent escalation:\n"
                     f"Reason: {context.escalation_reason}\n"
                     f"Ticket Type: {context.get_variable('ticket_type', 'Unknown')}\n"
                     f"Confidence: {context.get_variable('confidence', 'N/A')}"
@@ -133,7 +133,7 @@ class ServiceNowTriggerProvider(TriggerProvider):
     def _build_completion_note(self, context: ExecutionContext) -> str:
         """Build work note summarizing successful completion."""
         lines = [
-            "=== Lucid IT Agent - Automated Resolution ===",
+            "=== Praxova IT Agent - Automated Resolution ===",
             "",
             f"Ticket Type: {context.get_variable('ticket_type', 'request')}",
             f"Affected User: {context.get_variable('affected_user', 'N/A')}",

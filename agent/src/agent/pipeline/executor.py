@@ -302,7 +302,7 @@ class TicketExecutor:
         await self._update_ticket_with_result(ticket, classification, result)
 
     async def _claim_ticket(self, ticket: Ticket):
-        """Assign ticket to Lucid Agent.
+        """Assign ticket to Praxova Agent.
 
         Args:
             ticket: The ticket to claim.
@@ -314,7 +314,7 @@ class TicketExecutor:
             TicketUpdate(
                 state=TicketState.IN_PROGRESS,
                 assigned_to=self.config.agent_user,
-                work_notes="Ticket claimed by Lucid IT Agent for automated processing.",
+                work_notes="Ticket claimed by Praxova IT Agent for automated processing.",
             ),
         )
 
@@ -333,7 +333,7 @@ class TicketExecutor:
         """
         logger.info(f"Escalating ticket {ticket.number}: {reason}")
 
-        work_note = f"""Lucid IT Agent could not automatically resolve this ticket.
+        work_note = f"""Praxova IT Agent could not automatically resolve this ticket.
 
 Classification: {classification.ticket_type}
 Confidence: {classification.confidence:.2f}
@@ -383,7 +383,7 @@ This ticket has been reassigned to {self.config.escalation_group} for manual rev
             # Close ticket if handler says to
             if result.should_close:
                 await self._connector.close_ticket(
-                    ticket.id, resolution=f"Resolved by Lucid IT Agent. {result.message}"
+                    ticket.id, resolution=f"Resolved by Praxova IT Agent. {result.message}"
                 )
         else:
             logger.warning(f"Ticket {ticket.number} handler failed: {result.error}")
@@ -391,7 +391,7 @@ This ticket has been reassigned to {self.config.escalation_group} for manual rev
             # Add work notes about failure
             await self._connector.add_work_note(
                 ticket.id,
-                f"Lucid Agent attempted to process but encountered an error:\n{result.error}\n\nEscalating to human queue.",
+                f"Praxova Agent attempted to process but encountered an error:\n{result.error}\n\nEscalating to human queue.",
             )
 
             # Escalate

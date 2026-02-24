@@ -1,6 +1,6 @@
 # Ticket Classifier
 
-AI-powered ticket classification for the Lucid IT Agent using few-shot prompting with Ollama.
+AI-powered ticket classification for the Praxova IT Agent using few-shot prompting with Ollama.
 
 ## Overview
 

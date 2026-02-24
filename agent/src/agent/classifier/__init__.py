@@ -1,4 +1,4 @@
-"""Ticket classifier module for Lucid IT Agent."""
+"""Ticket classifier module for Praxova IT Agent."""
 
 from .classifier import TicketClassifier
 from .models import ClassificationResult, TicketType
