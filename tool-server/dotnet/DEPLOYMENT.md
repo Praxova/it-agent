@@ -1,10 +1,67 @@
 # Praxova IT Agent Tool Server — Deployment Guide
 
-## Silent Installation (SCCM / GPO / Intune)
+## Recommended: Setup EXE (PraxovaToolServer-Setup.exe)
+
+The Setup EXE is the preferred distribution artifact. It embeds the VC++
+Redistributable and the MSI installer in a single file. Prerequisites are
+detected automatically and only installed if missing.
+
+> The tool server is published **self-contained** — the .NET runtime is
+> bundled in the app. Only the VC++ Redistributable is a true prerequisite.
+
+### Interactive install
+
+Double-click `PraxovaToolServer-Setup.exe` or run from an elevated prompt.
+
+### Silent install (SCCM / Intune / GPO)
+
+```cmd
+PraxovaToolServer-Setup.exe /quiet ServiceAccount="MONTANIFARMS\svc-toolserver$" DomainName="montanifarms.com"
+```
+
+### Full options (silent)
+
+```cmd
+PraxovaToolServer-Setup.exe /quiet ^
+    ServiceAccount="MONTANIFARMS\svc-toolserver$" ^
+    DomainName="montanifarms.com" ^
+    HttpsPort="8443" ^
+    HttpPort="8080" ^
+    CertPath="C:\certs\toolserver.pfx" ^
+    InstallFolder="D:\Praxova\ToolServer"
+```
+
+### Silent uninstall
+
+```cmd
+PraxovaToolServer-Setup.exe /uninstall /quiet
+```
+
+### Bundle Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ServiceAccount` | `LocalSystem` | Service account. Use `DOMAIN\account$` for gMSA |
+| `ServiceAccountPassword` | *(empty)* | Password for domain accounts (not needed for gMSA/LocalSystem) |
+| `DomainName` | *(empty)* | Active Directory domain name |
+| `HttpsPort` | `8443` | HTTPS port for API traffic |
+| `HttpPort` | `8080` | HTTP port for health checks |
+| `CertPath` | *(empty)* | Path to TLS certificate (PEM or PFX) |
+| `CertKeyPath` | *(empty)* | Path to private key (PEM only, not needed for PFX) |
+| `InstallFolder` | `C:\Program Files\Praxova\ToolServer` | Override installation directory |
+
+> **Note**: Bundle variable names use camelCase (e.g., `ServiceAccount`),
+> not the MSI property names (e.g., `SERVICE_ACCOUNT`). The bundle
+> translates them automatically.
+
+## MSI-Only Installation (Advanced)
+
+For environments where IT manages prerequisites separately (e.g., SCCM
+prerequisite chains), the raw MSI is also available.
 
 ### Full options
 
-```powershell
+```cmd
 msiexec /i PraxovaToolServer.msi /qn ^
     SERVICE_ACCOUNT="MONTANIFARMS\svc-toolserver$" ^
     DOMAIN_NAME="montanifarms.com" ^
@@ -16,17 +73,17 @@ msiexec /i PraxovaToolServer.msi /qn ^
 
 ### Minimal (LocalSystem, default ports)
 
-```powershell
+```cmd
 msiexec /i PraxovaToolServer.msi /qn DOMAIN_NAME="contoso.com"
 ```
 
 ### Silent uninstall
 
-```powershell
+```cmd
 msiexec /x PraxovaToolServer.msi /qn
 ```
 
-## MSI Properties
+### MSI Properties
 
 | Property | Default | Description |
 |----------|---------|-------------|
@@ -75,20 +132,33 @@ Invoke-RestMethod http://localhost:8080/api/v1/health
 
 ## Building the Installer
 
-From the `tool-server/dotnet/` directory:
+### From Linux (via SSH to build VM)
+
+```bash
+make build-toolserver-msi
+```
+
+Output in `build/artifacts/`:
+- `PraxovaToolServer-Setup.exe` — Setup EXE with embedded prerequisites
+- `*.msi` — Raw MSI installer
+- `praxova-toolserver.zip` — Published binaries
+
+### From Windows (directly on build VM)
 
 ```powershell
+cd tool-server\dotnet
 .\scripts\build-installer.ps1
 ```
 
 Output:
-- `publish/msi/` — MSI installer (for SCCM/GPO deployment)
-- `publish/setup/` — EXE bootstrapper (includes prerequisite detection)
+- `publish/setup/PraxovaToolServer-Setup.exe` — Setup EXE bundle
+- `publish/msi/` — MSI installer
 
 ## Prerequisites
 
-The EXE bootstrapper (`PraxovaToolServer-Setup.exe`) automatically detects and installs:
-- .NET 8 ASP.NET Core Runtime
-- Visual C++ Redistributable 2015-2022
+The Setup EXE (`PraxovaToolServer-Setup.exe`) embeds and automatically installs:
+- **Visual C++ Redistributable 2015-2022 (x64)** — skipped if already present
 
-For MSI-only deployment (SCCM/GPO), ensure prerequisites are installed separately.
+The .NET runtime is **not** required — the tool server is published self-contained.
+
+For MSI-only deployment, ensure the VC++ Redistributable is installed separately.

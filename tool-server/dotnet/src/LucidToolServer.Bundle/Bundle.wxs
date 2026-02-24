@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!--
+    Praxova IT Agent Tool Server — Bootstrapper Bundle
+    Produces: PraxovaToolServer-Setup.exe
+
+    Embeds:
+      1. VC++ Redistributable 2015-2022 (x64) — skipped if already installed
+      2. PraxovaToolServer.msi — the main product installer
+
+    The tool server is published self-contained, so the .NET / ASP.NET Core
+    runtime is NOT required. Only the VC++ Redistributable is a true prereq.
+
+    Silent install:
+      PraxovaToolServer-Setup.exe /quiet ServiceAccount="DOMAIN\user" DomainName="contoso.com"
+
+    Silent uninstall:
+      PraxovaToolServer-Setup.exe /uninstall /quiet
+  -->
+
+  <Bundle Name="Praxova IT Agent Tool Server Setup"
+          Version="1.0.0.0"
+          Manufacturer="Praxova"
+          UpgradeCode="75E0E3D8-433C-4932-B984-65A17DD50C8C"
+          IconSourceFile="..\LucidToolServer.Installer\Assets\icon.ico">
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Overridable Variables — passed through to MSI properties
+         Set on command line: Setup.exe /quiet ServiceAccount="DOMAIN\user"
+         ══════════════════════════════════════════════════════════════ -->
+    <Variable Name="ServiceAccount"         Type="string" Value="LocalSystem"  bal:Overridable="yes" />
+    <Variable Name="ServiceAccountPassword" Type="string" Value=""             bal:Overridable="yes" />
+    <Variable Name="CertPath"               Type="string" Value=""             bal:Overridable="yes" />
+    <Variable Name="CertKeyPath"            Type="string" Value=""             bal:Overridable="yes" />
+    <Variable Name="DomainName"             Type="string" Value=""             bal:Overridable="yes" />
+    <Variable Name="HttpsPort"              Type="string" Value="8443"         bal:Overridable="yes" />
+    <Variable Name="HttpPort"               Type="string" Value="8080"         bal:Overridable="yes" />
+    <Variable Name="InstallFolder"          Type="string" Value=""             bal:Overridable="yes" />
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Prerequisite Detection
+         VC++ Redistributable 2015-2022 (x64): HKLM\SOFTWARE\Microsoft\
+         VisualStudio\14.0\VC\Runtimes\x64 → Installed = 1
+         ══════════════════════════════════════════════════════════════ -->
+    <util:RegistrySearch Id="VCREDIST_INSTALLED"
+                         Root="HKLM"
+                         Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+                         Value="Installed"
+                         Result="value"
+                         Variable="VCRedistInstalled" />
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Bootstrapper UI
+         ══════════════════════════════════════════════════════════════ -->
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        LicenseUrl="https://www.apache.org/licenses/LICENSE-2.0"
+        Theme="hyperlinkLargeLicense"
+        LogoFile="..\LucidToolServer.Installer\Assets\icon.ico" />
+    </BootstrapperApplication>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Installation Chain — executed in order
+         ══════════════════════════════════════════════════════════════ -->
+    <Chain>
+      <!--
+        Visual C++ Redistributable 2015-2022 (x64)
+        Embedded in the EXE via SourceFile. Only installs when not detected.
+        Vital="no" because a newer VC++ version may already satisfy the
+        dependency under a different registry key.
+      -->
+      <ExePackage Id="VCRedist2022_x64"
+                  Name="Visual C++ Redistributable 2015-2022 (x64)"
+                  SourceFile="prereqs\vc_redist.x64.exe"
+                  InstallCommand="/install /quiet /norestart"
+                  RepairCommand="/repair /quiet /norestart"
+                  UninstallCommand="/uninstall /quiet /norestart"
+                  PerMachine="yes"
+                  DetectCondition="VCRedistInstalled = 1"
+                  Vital="no"
+                  Compressed="yes"
+                  Cache="remove">
+        <ExitCode Value="3010" Behavior="scheduleReboot" />
+      </ExePackage>
+
+      <!--
+        Main MSI Installer
+        MsiProperty elements pass overridable bundle variables into MSI properties.
+      -->
+      <MsiPackage Id="PraxovaToolServerMsi"
+                  SourceFile="$(var.LucidToolServer.Installer.TargetPath)"
+                  Vital="yes">
+        <MsiProperty Name="SERVICE_ACCOUNT"          Value="[ServiceAccount]" />
+        <MsiProperty Name="SERVICE_ACCOUNT_PASSWORD"  Value="[ServiceAccountPassword]" />
+        <MsiProperty Name="CERT_PATH"                Value="[CertPath]" />
+        <MsiProperty Name="CERT_KEY_PATH"            Value="[CertKeyPath]" />
+        <MsiProperty Name="DOMAIN_NAME"              Value="[DomainName]" />
+        <MsiProperty Name="HTTPS_PORT"               Value="[HttpsPort]" />
+        <MsiProperty Name="HTTP_PORT"                Value="[HttpPort]" />
+        <MsiProperty Name="INSTALLFOLDER"            Value="[InstallFolder]" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

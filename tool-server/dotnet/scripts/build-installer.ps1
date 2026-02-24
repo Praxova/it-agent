@@ -1,27 +1,30 @@
 <#
 .SYNOPSIS
-    Builds the Praxova Tool Server MSI installer and EXE bootstrapper.
+    Builds the Praxova Tool Server MSI installer and Setup EXE bootstrapper.
 
 .DESCRIPTION
-    Publishes the tool server, builds the MSI, and optionally builds
-    the EXE bootstrapper (with prerequisites).
+    Publishes the tool server, builds the MSI, downloads prerequisites,
+    and builds the Setup EXE bundle (with embedded VC++ Redistributable).
 
 .PARAMETER Configuration
     Build configuration. Default: Release
 
-.PARAMETER BootstrapperOnly
-    Skip the MSI build and only build the EXE bootstrapper.
+.PARAMETER SkipBundle
+    Skip the Setup EXE bundle build (produce MSI only).
 
 .EXAMPLE
     .\build-installer.ps1
 
 .EXAMPLE
     .\build-installer.ps1 -Configuration Debug
+
+.EXAMPLE
+    .\build-installer.ps1 -SkipBundle
 #>
 
 param(
     [string]$Configuration = "Release",
-    [switch]$BootstrapperOnly
+    [switch]$SkipBundle
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,37 +34,64 @@ $PublishDir = Join-Path $SolutionDir "publish"
 Write-Host "Building Praxova Tool Server Installer" -ForegroundColor Cyan
 Write-Host "=======================================" -ForegroundColor Cyan
 
-# Step 1: Publish the tool server
+# Step 1: Publish the tool server (self-contained)
 Write-Host ""
-Write-Host "[1/3] Publishing Tool Server..." -ForegroundColor Yellow
+Write-Host "[1/4] Publishing Tool Server (self-contained, win-x64)..." -ForegroundColor Yellow
 dotnet publish "$SolutionDir\src\LucidToolServer\LucidToolServer.csproj" `
     -c $Configuration `
     -r win-x64 `
-    --self-contained false `
+    --self-contained true `
     -o "$PublishDir\app"
 
 # Step 2: Build the MSI
 Write-Host ""
-Write-Host "[2/3] Building MSI installer..." -ForegroundColor Yellow
+Write-Host "[2/4] Building MSI installer..." -ForegroundColor Yellow
 dotnet build "$SolutionDir\src\LucidToolServer.Installer\LucidToolServer.Installer.wixproj" `
     -c $Configuration `
     -o "$PublishDir\msi"
 
-# Step 3: Build the EXE bootstrapper (optional)
-if (-not $BootstrapperOnly) {
+# Step 3: Download prerequisites
+if (-not $SkipBundle) {
     Write-Host ""
-    Write-Host "[3/3] Building EXE bootstrapper..." -ForegroundColor Yellow
-    # Build the bundle project if it exists
-    $bundleProj = "$SolutionDir\src\LucidToolServer.Installer\Prerequisites\Bundle.wixproj"
+    Write-Host "[3/4] Downloading prerequisites..." -ForegroundColor Yellow
+
+    $prereqDir = Join-Path $SolutionDir "src\LucidToolServer.Bundle\prereqs"
+    New-Item -Path $prereqDir -ItemType Directory -Force | Out-Null
+    $vcRedistPath = Join-Path $prereqDir "vc_redist.x64.exe"
+
+    if (-not (Test-Path $vcRedistPath)) {
+        Write-Host "  Downloading VC++ Redistributable 2015-2022 (x64)..." -ForegroundColor Cyan
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+            -OutFile $vcRedistPath -UseBasicParsing
+        $sizeMB = [math]::Round((Get-Item $vcRedistPath).Length / 1MB, 1)
+        Write-Host "  Downloaded: $sizeMB MB" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  VC++ Redistributable already cached." -ForegroundColor Green
+    }
+
+    # Step 4: Build the Setup EXE bundle
+    Write-Host ""
+    Write-Host "[4/4] Building Setup EXE bundle..." -ForegroundColor Yellow
+    $bundleProj = "$SolutionDir\src\LucidToolServer.Bundle\LucidToolServer.Bundle.wixproj"
     if (Test-Path $bundleProj) {
         dotnet build $bundleProj -c $Configuration -o "$PublishDir\setup"
     }
     else {
-        Write-Host "  Skipping bootstrapper (Bundle.wixproj not found)" -ForegroundColor Yellow
+        Write-Host "  ERROR: Bundle project not found at $bundleProj" -ForegroundColor Red
+        exit 1
     }
+}
+else {
+    Write-Host ""
+    Write-Host "[3/4] Skipping prerequisites download (-SkipBundle)" -ForegroundColor Yellow
+    Write-Host "[4/4] Skipping Setup EXE bundle (-SkipBundle)" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "Build complete!" -ForegroundColor Green
-Write-Host "  MSI: $PublishDir\msi\" -ForegroundColor Cyan
-Write-Host "  EXE: $PublishDir\setup\" -ForegroundColor Cyan
+Write-Host "  MSI:   $PublishDir\msi\" -ForegroundColor Cyan
+if (-not $SkipBundle) {
+    Write-Host "  Setup: $PublishDir\setup\PraxovaToolServer-Setup.exe" -ForegroundColor Cyan
+}

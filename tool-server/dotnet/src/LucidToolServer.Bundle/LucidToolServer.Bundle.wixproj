@@ -1,0 +1,18 @@
+<Project Sdk="WixToolset.Sdk/5.0.1">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>PraxovaToolServer-Setup</OutputName>
+  </PropertyGroup>
+
+  <!-- WiX extensions for bootstrapper UI and registry detection -->
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="5.0.1" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.1" />
+  </ItemGroup>
+
+  <!-- Reference the MSI installer project — resolves $(var.LucidToolServer.Installer.TargetPath) -->
+  <ItemGroup>
+    <ProjectReference Include="..\LucidToolServer.Installer\LucidToolServer.Installer.wixproj" />
+  </ItemGroup>
+</Project>
