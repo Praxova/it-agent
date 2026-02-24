@@ -102,21 +102,24 @@ class ExecuteExecutor(BaseStepExecutor):
         url = f"{context.admin_portal_url}/api/capabilities/{capability}/servers"
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, timeout=10.0)
+            if context.portal_client:
+                response = await context.portal_client.get(url, timeout=10.0)
+            else:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(url, timeout=10.0)
 
-                if response.status_code == 404:
-                    return None
-
-                response.raise_for_status()
-                data = response.json()
-                servers = data.get("servers", []) if isinstance(data, dict) else data
-
-                if servers and len(servers) > 0:
-                    # Return first healthy server
-                    return servers[0].get("url")
-
+            if response.status_code == 404:
                 return None
+
+            response.raise_for_status()
+            data = response.json()
+            servers = data.get("servers", []) if isinstance(data, dict) else data
+
+            if servers and len(servers) > 0:
+                # Return first healthy server
+                return servers[0].get("url")
+
+            return None
 
         except Exception as e:
             logger.error(f"Failed to query capability routing: {e}")

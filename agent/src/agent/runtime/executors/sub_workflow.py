@@ -122,6 +122,7 @@ class SubWorkflowExecutor(BaseStepExecutor):
             # Share integration points
             child_engine.servicenow_client = context.servicenow_client
             child_engine.capability_router = context.capability_router
+            child_engine.portal_client = context.portal_client
 
             # Execute sub-workflow with SHARED context (Approach B)
             child_result = await child_engine.execute(

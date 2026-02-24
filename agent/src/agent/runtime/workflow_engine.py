@@ -323,6 +323,7 @@ class WorkflowEngine:
         # Inject integration points
         context.servicenow_client = self.servicenow_client
         context.capability_router = self.capability_router
+        context.portal_client = self.portal_client
         context.status = ExecutionStatus.RUNNING
 
         # Restore workflow stack from snapshot, or initialize fresh
