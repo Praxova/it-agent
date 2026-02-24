@@ -55,6 +55,7 @@ help:
 	@printf "$(BOLD)CORE TARGETS$(RESET)\n"
 	@printf "  $(GREEN)make build$(RESET)               Build all images + save tarballs\n"
 	@printf "  $(GREEN)make build-skip-ollama$(RESET)   Build but skip the ~3GB ollama tarball\n"
+	@printf "  $(GREEN)make build-all$(RESET)            Build containers + tool server\n"
 	@printf "  $(GREEN)make build-toolserver$(RESET)    Build tool server on Windows build VM\n"
 	@printf "  $(GREEN)make deploy$(RESET)              build then deploy to VM 110\n"
 	@printf "  $(GREEN)make deploy-only$(RESET)         Deploy existing tarballs (no rebuild)\n"
@@ -158,6 +159,10 @@ build-toolserver-msi:
 	@printf "\n$(BOLD)$(CYAN)-- Building tool server + MSI on Windows build VM --$(RESET)\n"
 	$(SCRIPTS_DIR)/build-toolserver.sh --msi
 	@printf "$(GREEN)OK: Tool server + MSI build complete$(RESET)\n"
+
+.PHONY: build-all
+build-all: build build-toolserver
+	@printf "\n$(BOLD)$(GREEN)OK: All builds complete (containers + tool server)$(RESET)\n"
 
 # =============================================================================
 # Internal pre-deploy guard (not meant to be called directly)
