@@ -1,6 +1,6 @@
 # ADR-015: Secrets Management & Credential Security
 
-**Status**: Proposed  
+**Status**: Accepted — Part A (Encrypted Internal Store) Implemented; Parts B and C post-launch  
 **Date**: 2026-02-15  
 **Decision Makers**: Alton  
 **Related**: ADR-006 (ServiceAccount Pattern), ADR-014 (Certificate Management Agent), ADR-008 (Agent Configuration)

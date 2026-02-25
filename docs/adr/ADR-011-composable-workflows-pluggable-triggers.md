@@ -1,7 +1,7 @@
 # Architecture Vision: Composable Workflows & Pluggable Triggers
 # ADR-011: Evolution Toward a Modular Workflow Platform
 
-**Status**: Draft — For Discussion  
+**Status**: Accepted — Implemented (E2E validated 2026-02-06)  
 **Date**: 2026-02-04  
 **Decision Makers**: Alton  
 

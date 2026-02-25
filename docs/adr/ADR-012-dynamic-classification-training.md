@@ -1,6 +1,6 @@
 # ADR-012: Dynamic Classification Training via Portal
 
-**Status**: Proposed  
+**Status**: Accepted — Implemented  
 **Date**: 2026-02-06  
 **Decision Makers**: Alton  
 **Depends On**: ADR-011 (Composable Workflows — Complete)  

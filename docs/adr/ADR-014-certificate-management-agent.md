@@ -1,6 +1,6 @@
 # ADR-014: Certificate Management Agent & Internal PKI
 
-**Status**: Proposed  
+**Status**: Accepted — Part A (Internal PKI) Implemented; Parts B and C post-launch  
 **Date**: 2026-02-15  
 **Decision Makers**: Alton  
 **Related**: ADR-006 (Admin Portal), ADR-011 (Composable Workflows), ADR-008 (Agent Configuration)

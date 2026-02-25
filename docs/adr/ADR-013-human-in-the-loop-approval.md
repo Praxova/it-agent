@@ -1,6 +1,6 @@
 # ADR-013: Human-in-the-Loop Approval Steps
 
-**Status**: Proposed  
+**Status**: Accepted — Implemented (all phases complete 2026-02-06)  
 **Date**: 2026-02-06  
 **Decision Makers**: Alton  
 **Depends On**: ADR-011 (Composable Workflows — Complete)
