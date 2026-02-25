@@ -444,26 +444,50 @@ No additional configuration needed on the VM — it works automatically when the
 
 ### SSL Certificate Trust Bootstrap
 
-**Status:** Workaround in place. Requires application team fix.
+**Status:** Partially implemented. Entrypoint logic is correct; portal-side redirect fix pending.
 
-**The problem:** The agent's entrypoint script fetches the portal's CA certificate over HTTP (`GET /api/pki/trust-bundle`) before establishing HTTPS trust. The portal redirects this request to HTTPS (307), creating a chicken-and-egg: the agent can't follow the redirect without the certificate it's trying to fetch.
+**Intended mechanism:** The agent uses two separate portal URLs:
+- `ADMIN_PORTAL_BOOTSTRAP_URL` — HTTP, used only during startup to fetch the CA and check health
+- `ADMIN_PORTAL_URL` — HTTPS, used for all runtime API calls
 
-**Workaround in place:** The agent reads the CA directly from a shared Docker volume:
+At startup, `docker-entrypoint.sh` fetches `${ADMIN_PORTAL_BOOTSTRAP_URL}/api/pki/trust-bundle`
+over plain HTTP, validates the PEM response, combines it with the system CA bundle, then sets
+`SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` to the combined bundle before launching the agent
+process. This is the correct architecture — no shared volumes, no tight coupling between containers.
+
+**Current gap:** The portal's HTTP→HTTPS redirect middleware fires before the
+`/api/pki/trust-bundle` endpoint can serve its response. The entrypoint receives a 301/307
+redirect, the curl fetch fails, and the script emits a warning and continues. The HTTPS
+runtime calls then fail because the portal's CA is not trusted.
+
+**Active workaround (in docker-compose.yml):**
 
 ```yaml
-# In docker-compose.yml agent service:
-environment:
-  SSL_CERT_FILE: /portal-data/certs/ca.pem
-  REQUESTS_CA_BUNDLE: /portal-data/certs/ca.pem
+# Agent service environment — TEMPORARY, remove when portal fix is applied
+SSL_CERT_FILE: /portal-data/certs/ca.pem
+REQUESTS_CA_BUNDLE: /portal-data/certs/ca.pem
 volumes:
   - admin-data:/portal-data:ro
 ```
 
-The portal writes its auto-generated CA to `admin-data:/app/data/certs/ca.pem`. The agent reads it from the same volume at `/portal-data/certs/ca.pem`. This works because both containers share the volume.
+The shared volume works reliably but is an infrastructure-layer coupling that should not be
+permanent. The correct fix is a one-line change in the portal's ASP.NET middleware pipeline:
+exempt `/api/pki/trust-bundle` from the HTTPS redirect. Once done, remove the three lines
+above from docker-compose.yml.
 
-**Required fix (application team):** Exempt `/api/pki/trust-bundle` from the portal's HTTP→HTTPS redirect middleware. This endpoint is specifically designed to be fetched over HTTP as the bootstrap mechanism — it must serve over plain HTTP.
+**Required portal fix:** In `LucidAdmin.Web/Program.cs`, exclude the trust-bundle endpoint
+from `UseHttpsRedirection()`:
 
-See `docs/infra-handoff-ssl-trust-bootstrap.md` for full technical details.
+```csharp
+// Before UseHttpsRedirection, exclude the bootstrap endpoint:
+app.UseWhen(
+    ctx => !ctx.Request.Path.StartsWithSegments("/api/pki/trust-bundle"),
+    branch => branch.UseHttpsRedirection()
+);
+```
+
+After applying this fix, the entrypoint fetch will succeed and the shared volume workaround
+can be removed from docker-compose.yml.
 
 ### Docker Group on Template Clones
 
@@ -674,8 +698,11 @@ The pipeline saves images as `.tar` files and transfers them via rsync instead o
 **Why rsync instead of `docker save | ssh | docker load`?**
 The Ollama image is ~3GB. rsync's `--append` and block-level delta detection means interrupted transfers resume from where they left off. Piping through SSH has no resume capability and would restart from zero on any interruption.
 
-**Why a shared volume for SSL trust instead of the HTTP endpoint?**
-The portal's HTTP→HTTPS redirect fires before the `/api/pki/trust-bundle` endpoint can serve its response, creating a bootstrap deadlock. The shared volume is a reliable workaround until the application team exempts that endpoint from redirect middleware. See `docs/infra-handoff-ssl-trust-bootstrap.md`.
+**Why a shared volume for SSL trust instead of the HTTP bootstrap endpoint?**
+The portal's HTTP→HTTPS redirect fires before the `/api/pki/trust-bundle` endpoint can serve
+its response. The shared volume is a reliable workaround until the portal exempts that endpoint
+from redirect middleware. See Known Issues section for the required portal fix and the exact
+workaround lines in docker-compose.yml to remove once it's resolved.
 
 **Why build on the workstation, not on the Docker host VM?**
 The workstation has significantly more CPU/RAM, faster storage, and the full development toolchain. The VM exists purely as a test target for validating GPU passthrough and deployment scripts. Building on the workstation keeps build times fast and avoids network dependency during development.

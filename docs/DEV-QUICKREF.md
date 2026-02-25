@@ -404,8 +404,8 @@ All internal TLS uses certs from the portal's internal PKI (RSA 4096 CA, 90-day 
 
 | Connection | Trust Mechanism |
 |---|---|
-| Agent → Portal (HTTPS) | Agent entrypoint fetches CA via `GET /api/pki/trust-bundle` (HTTP), sets `SSL_CERT_FILE` |
-| Agent → Tool Server (HTTPS) | Same CA — agent trusts it from portal bundle fetch |
+| Agent → Portal (HTTPS) | Entrypoint fetches CA via HTTP (`GET /api/pki/trust-bundle`), sets `SSL_CERT_FILE` before agent starts. **Note:** shared volume workaround still active in docker-compose.yml pending portal redirect fix — see infra runbook. |
+| Agent → Tool Server (HTTPS) | Same CA — trusted from bootstrap fetch |
 | Portal → Portal (self-calls) | Custom X509Chain validation against own CA in Program.cs |
 | Portal → Tool Server (health checks) | OS trust store (`update-ca-certificates` in container entrypoint) |
 | External (browser, curl) | Must add `-k` / skip verification, or import CA manually |
