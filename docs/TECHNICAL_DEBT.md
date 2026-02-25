@@ -182,3 +182,28 @@ Operators and administrators should authenticate against the domain (montanifarm
 Cannot ship MVP. The first thing shown in training videos must be changing the default password. Shipping with `admin/admin` and no AD integration would undermine credibility with any enterprise audience. The break-glass account requirement also means this can't be solved by "just use AD" — both paths must work.
 
 *Last updated: 2026-02-08*
+
+---
+
+## TD-008: Ollama Does Not Support TLS — LLM Inference Traffic Unencrypted (MEDIUM)
+
+**Location:** Docker Compose `ollama` service, Admin Portal LLM service account configuration
+**Discovered:** 2026-02-15 during SSL migration for demo prep
+**Workaround:** Running Ollama on isolated Docker bridge network (`praxova-network`) with no external port exposure in production. Acceptable for demo; not for enterprise deployment.
+
+**Problem:**
+Ollama has no native TLS support — it only serves plain HTTP on port 11434. While the traffic is LLM prompts and completions (not credentials or PII in most cases), enterprise security policies universally require all inter-service traffic to be encrypted. Security teams will not accept "it's only inference traffic" as justification. This was identified when the full stack was moved to SSL and Ollama was the only component that could not participate.
+
+**Options for Proper Fix (in order of complexity):**
+1. **TLS-terminating reverse proxy** (Quick) — Add an Nginx/Caddy sidecar container that terminates TLS and proxies to `ollama:11434`. Minimal disruption, works with existing Ollama images. Agent/portal connect to the proxy via HTTPS.
+2. **Switch to llama.cpp server** (Medium) — llama.cpp's built-in HTTP server supports `--ssl-cert-file` and `--ssl-key-file` natively. Requires manual model file management (no `ollama pull`), but gives full TLS control. The existing LLM driver factory (ADR-006) makes the backend swap transparent to agent code.
+3. **Switch to vLLM or TGI** (Production-grade) — Both support TLS, production batching, token streaming, and multi-model serving. Higher operational complexity but purpose-built for enterprise LLM serving at scale.
+
+All options are transparent to the agent thanks to the pluggable driver factory pattern in ADR-006. No agent code changes required regardless of which path is chosen.
+
+**Risk if Deferred:**
+- Enterprise security audits will flag unencrypted traffic between services, even on internal networks.
+- Blocks deployment in environments with strict network encryption policies (financial, healthcare, government).
+- Demo/MVP acceptable with the Docker network isolation mitigation, but must be resolved before first customer deployment.
+
+*Last updated: 2026-02-15*

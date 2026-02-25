@@ -1,0 +1,16 @@
+username,first_name,last_name,display_name,department,role,email_prefix,tech_literacy,communication_style,manager_username,common_issues
+jsmith,John,Smith,John Smith,Engineering,Software Developer,john.smith,high,terse,,password_reset|group_access_add
+mjohnson,Mary,Johnson,Mary Johnson,Finance,Senior Accountant,mary.johnson,low,rambling,dchen,password_reset|file_permission
+bwilson,Bob,Wilson,Bob Wilson,IT,Systems Administrator,bob.wilson,high,normal,,group_access_add|group_access_remove|file_permission
+agarcia,Ana,Garcia,Ana Garcia,Marketing,Marketing Coordinator,ana.garcia,medium,verbose,,password_reset|file_permission
+twilson,Tom,Wilson,Tom Wilson,Sales,Account Executive,tom.wilson,low,angry,,password_reset
+klee,Kevin,Lee,Kevin Lee,Engineering,Engineering Lead,kevin.lee,high,terse,,group_access_add|group_access_remove
+spark,Sarah,Park,Sarah Park,Human Resources,HR Coordinator,sarah.park,medium,formal,,password_reset|group_access_add
+jdavis,Jim,Davis,Jim Davis,Finance,Financial Analyst,jim.davis,medium,normal,,file_permission|password_reset
+cdiaz,Carol,Diaz,Carol Diaz,Engineering,QA Engineer,carol.diaz,high,normal,,group_access_add|file_permission
+dchen,David,Chen,David Chen,Finance,Finance Manager,david.chen,medium,formal,,group_access_add|group_access_remove
+ang,Alice,Ng,Alice Ng,Marketing,Content Writer,alice.ng,medium,verbose,,password_reset
+blee,Bob,Lee,Bob Lee,IT,Network Technician,bob.lee,high,terse,,group_access_add|file_permission
+rharrington,Robert,Harrington,Robert Harrington III,Executive,VP of Operations,robert.harrington,low,terse,,password_reset
+pjones,Patricia,Jones,Patricia Jones,Accounting,AP Specialist,patricia.jones,low,rambling,,password_reset|file_permission
+mrodriguez,Mike,Rodriguez,Mike Rodriguez,Sales,Regional Sales Manager,mike.rodriguez,low,angry,,password_reset

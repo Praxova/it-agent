@@ -1,0 +1,15 @@
+group_name,description,category,initial_members
+Finance-ReadOnly,Read-only access to Finance department resources,department,mjohnson|jdavis|dchen
+Finance-Write,Write access to Finance department resources,department,dchen
+Engineering-Dev,Engineering development team access,department,jsmith|klee|cdiaz
+Marketing-Team,Marketing department shared resources,department,agarcia|ang
+HR-Confidential,HR confidential document access,department,spark
+IT-Helpdesk,IT Helpdesk team membership,department,bwilson|blee
+IT-Admins,IT Administrators group,privileged,bwilson
+VPN-Users,Remote VPN access,access,jsmith|mjohnson|twilson|klee
+RemoteDesktop-Users,Remote Desktop access,access,bwilson|blee
+Project-Alpha,Project Alpha team resources,project,jsmith|cdiaz|agarcia
+Old-Project-Team,Legacy project group (pending cleanup),project,klee|jdavis
+Sales-Team,Sales department shared resources,department,twilson|mrodriguez
+Accounting-Reports,Accounting reports access,department,pjones|mjohnson
+Executive-Shared,Executive team shared resources,department,rharrington|dchen

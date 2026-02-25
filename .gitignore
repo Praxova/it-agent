@@ -204,3 +204,14 @@ tool-server/dotnet/src/LucidToolServer/certs/*.pfx
 tool-server/dotnet/src/LucidToolServer/certs/*.key
 tool-server/dotnet/src/LucidToolServer/certs/*.crt
 !tool-server/dotnet/src/LucidToolServer/certs/ca-trust/.gitkeep
+
+# Stray cert files at project root — should never be committed here
+/*.pem
+/*.pfx
+/*.key
+/*.crt
+/*.cer
+/*.json.cert
+
+# Tool server compiled output — built by build scripts, not source controlled
+tool-server/dotnet/publish/

@@ -1,0 +1,10 @@
+# Credentials (auto-loaded by Packer)
+*.auto.pkrvars.hcl
+
+# Packer cache (downloaded plugins)
+packer_cache/
+
+# Plugin binaries
+.packer.d/
+# Packer Windows template — has its own git repo, managed separately
+windows-server-2022/

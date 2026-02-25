@@ -51,7 +51,7 @@ try {
     $toolServerIp = $resolved.IPAddressToString
     Write-Host "Resolved $ToolServerHost -> $toolServerIp" -ForegroundColor Cyan
 } catch {
-    Write-Warning "Could not resolve $ToolServerHost — using hostname only for SANs"
+    Write-Warning "Could not resolve $ToolServerHost -- using hostname only for SANs"
 }
 
 # Build SAN lists
@@ -75,24 +75,14 @@ if (-not $AdminCredential) {
 
 Write-Host "`n--- Authenticating to Admin Portal ---" -ForegroundColor Yellow
 
-# Trust the portal's self-signed cert for this session
-# (Portal uses Praxova internal CA which Windows doesn't trust yet)
-$trustAllCerts = @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCertsPolicy : ICertificatePolicy {
-    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
-}
-"@
+# Trust the portal's self-signed cert for this session.
+# Portal uses Praxova internal CA which Windows does not trust yet.
+# Uses .NET callback directly -- avoids Add-Type with C# 'using' statements
+# which break PowerShell 5.1 parser (it mistakes them for PS using directives).
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+[System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
-try { Add-Type -TypeDefinition $trustAllCerts } catch {}
-[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
-# Also for newer .NET HttpClient
-if ([System.Net.ServicePointManager]::SecurityProtocol -notmatch 'Tls12') {
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-}
-
-# Use -SkipCertificateCheck if available (PS 7+)
+# Use -SkipCertificateCheck if available (PS 7+), otherwise the callback above handles it
 $skipCertParam = @{}
 if ($PSVersionTable.PSVersion.Major -ge 7) {
     $skipCertParam = @{ SkipCertificateCheck = $true }
@@ -106,7 +96,7 @@ $loginBody = @{
 $loginResponse = Invoke-RestMethod -Uri "$PortalUrl/api/auth/login" -Method POST -Body $loginBody -ContentType "application/json" @skipCertParam
 $token = $loginResponse.token
 if (-not $token) {
-    throw "Login failed — no token returned"
+    throw "Login failed -- no token returned. Check portal URL and credentials."
 }
 Write-Host "Authenticated successfully" -ForegroundColor Green
 
@@ -129,7 +119,7 @@ $issueBody = @{
 $certResponse = Invoke-RestMethod -Uri "$PortalUrl/api/pki/certificates/issue" -Method POST -Headers $authHeaders -Body $issueBody @skipCertParam
 
 if (-not $certResponse.certificatePem) {
-    throw "Certificate issuance failed — no PEM in response"
+    throw "Certificate issuance failed -- no PEM in response"
 }
 
 Write-Host "Certificate issued successfully" -ForegroundColor Green
@@ -145,10 +135,12 @@ if (!(Test-Path $remoteCertDir)) {
     Write-Host "Created $remoteCertDir"
 }
 
-# Write cert files
-$certResponse.certificatePem | Out-File -FilePath "$remoteCertDir\toolserver-cert.pem" -Encoding UTF8 -NoNewline
-$certResponse.privateKeyPem | Out-File -FilePath "$remoteCertDir\toolserver-key.pem" -Encoding UTF8 -NoNewline
-$certResponse.caCertificatePem | Out-File -FilePath "$remoteCertDir\ca.pem" -Encoding UTF8 -NoNewline
+# Write cert files (using .NET directly to avoid UTF-8 BOM that PowerShell 5.1 adds,
+# which breaks .NET PEM parsing during TLS handshake)
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$remoteCertDir\toolserver-cert.pem", $certResponse.certificatePem, $utf8NoBom)
+[System.IO.File]::WriteAllText("$remoteCertDir\toolserver-key.pem", $certResponse.privateKeyPem, $utf8NoBom)
+[System.IO.File]::WriteAllText("$remoteCertDir\ca.pem", $certResponse.caCertificatePem, $utf8NoBom)
 
 Write-Host "Deployed cert, key, and CA to $remoteCertDir" -ForegroundColor Green
 
@@ -226,10 +218,7 @@ try {
 }
 
 Write-Host "`n=== Certificate provisioning complete ===" -ForegroundColor Green
-Write-Host @"
-
-Next steps:
-1. Update tool server URL in Admin Portal to: https://${ToolServerHost}:8443
-2. Verify agent can reach tool server over HTTPS
-3. Run end-to-end ticket test
-"@
+Write-Host "Next steps:"
+Write-Host "  1. Update tool server URL in Admin Portal to: https://${ToolServerHost}:8443"
+Write-Host "  2. Verify agent can reach tool server over HTTPS"
+Write-Host "  3. Run end-to-end ticket test"

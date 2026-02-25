@@ -1,0 +1,13 @@
+share_path,description,department,access_type
+\\fileserver\finance\Q4-Reports,Q4 financial reports,Finance,read
+\\fileserver\finance\budgets,Annual budget documents,Finance,read
+\\fileserver\shared\project-alpha,Project Alpha shared files,Engineering,read
+\\fileserver\shared\team-docs,Cross-team documentation,General,write
+\\fileserver\projects\active,Active project workspace,Engineering,write
+\\fileserver\hr\policies,HR policy documents,HR,read
+\\fileserver\hr\onboarding,New hire onboarding materials,HR,read
+\\nas01\departments\marketing\campaigns,Marketing campaign assets,Marketing,read
+\\nas01\departments\marketing\brand,Brand asset library,Marketing,read
+\\fileserver\it\scripts,IT automation scripts,IT,read
+\\fileserver\executive\board-materials,Board meeting materials,Executive,read
+\\fileserver\accounting\ap-invoices,Accounts payable invoices,Accounting,write

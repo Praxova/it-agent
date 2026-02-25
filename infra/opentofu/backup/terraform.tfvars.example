@@ -1,0 +1,11 @@
+# ============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# terraform.tfvars is gitignored — never commit real credentials
+# ============================================================================
+
+proxmox_url       = "https://10.0.0.2:8006"
+proxmox_api_token = "tofu@pve!automation=YOUR-SECRET-UUID-HERE"
+proxmox_node      = "pia-dev"
+
+# Update this to match the ISO filename on your Proxmox local storage
+windows_iso       = "local:iso/SERVER_EVAL_x64FRE_en-us.iso"

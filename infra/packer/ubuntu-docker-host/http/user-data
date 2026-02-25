@@ -1,0 +1,63 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  # --- Locale and keyboard ---
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # --- Network: static IP during build so Packer can find us ---
+  network:
+    version: 2
+    ethernets:
+      id0:
+        match:
+          driver: virtio*
+        addresses:
+          - 10.0.0.50/24
+        routes:
+          - to: default
+            via: 10.0.0.1
+        nameservers:
+          addresses:
+            - 10.0.0.1
+            - 8.8.8.8
+
+  # --- Storage: LVM on the full disk ---
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all
+
+  # --- Identity ---
+  identity:
+    hostname: ubuntu-docker-template
+    username: packer
+    # Hash of "packer" — Packer connects with plain text "packer" over SSH
+    password: "$6$/CS7ZTC1NCkVDPYK$FEcyZdXt8UbpgDg/uWXyEY87Ng7Qa65c5dR5QKYeSikXHNuM4qy95KfNtqe3zUSYs6qVpZoKxso8mqn26hEPv."
+
+  # --- SSH: enable for Packer to connect ---
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  # --- Packages: MINIMAL set only ---
+  # Only include packages available on the ISO or guaranteed to install
+  # offline. Everything else (docker, nvidia, qemu-guest-agent, etc.)
+  # gets installed by Packer provisioners AFTER first boot when
+  # networking is fully up and apt repos are reachable.
+  packages:
+    - openssh-server
+
+  # --- Late commands: run inside the target before first reboot ---
+  late-commands:
+    # Grant packer user passwordless sudo (provisioners need this)
+    - echo 'packer ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/packer
+    - chmod 440 /target/etc/sudoers.d/packer
+
+  # --- Don't prompt for updates during install ---
+  updates: security
+
+  # --- Automatically reboot when done ---
+  shutdown: reboot

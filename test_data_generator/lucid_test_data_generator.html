@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lucid Test Data Generator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f1219;color:#e2e8f0;font-family:'JetBrains Mono','Fira Code','SF Mono',monospace}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0f1219}
+::-webkit-scrollbar-thumb{background:#2a3040;border-radius:3px}
+button{font-family:inherit;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+"use strict";
+var h = React.createElement;
+var useState = React.useState;
+
+// ── DATA ──
+var TEST_USERS=[
+{username:"jsmith",display_name:"John Smith",department:"Engineering",tech_literacy:"high",style:"terse"},
+{username:"mjohnson",display_name:"Mary Johnson",department:"Finance",tech_literacy:"low",style:"rambling"},
+{username:"bwilson",display_name:"Bob Wilson",department:"IT",tech_literacy:"high",style:"normal"},
+{username:"agarcia",display_name:"Ana Garcia",department:"Marketing",tech_literacy:"medium",style:"verbose"},
+{username:"twilson",display_name:"Tom Wilson",department:"Sales",tech_literacy:"low",style:"angry"},
+{username:"klee",display_name:"Kevin Lee",department:"Engineering",tech_literacy:"high",style:"terse"},
+{username:"spark",display_name:"Sarah Park",department:"Human Resources",tech_literacy:"medium",style:"formal"},
+{username:"jdavis",display_name:"Jim Davis",department:"Finance",tech_literacy:"medium",style:"normal"},
+{username:"cdiaz",display_name:"Carol Diaz",department:"Engineering",tech_literacy:"high",style:"normal"},
+{username:"dchen",display_name:"David Chen",department:"Finance",tech_literacy:"medium",style:"formal"},
+{username:"ang",display_name:"Alice Ng",department:"Marketing",tech_literacy:"medium",style:"verbose"},
+{username:"blee",display_name:"Bob Lee",department:"IT",tech_literacy:"high",style:"terse"},
+{username:"rharrington",display_name:"Robert Harrington III",department:"Executive",tech_literacy:"low",style:"terse"},
+{username:"pjones",display_name:"Patricia Jones",department:"Accounting",tech_literacy:"low",style:"rambling"},
+{username:"mrodriguez",display_name:"Mike Rodriguez",department:"Sales",tech_literacy:"low",style:"angry"}
+];
+var DENY_LIST=["administrator","admin","svc_backup","svc_sql","sa_deploy","domain_admin","svc-lucid-agent"];
+var TEST_GROUPS=["Finance-ReadOnly","Finance-Write","Engineering-Dev","Marketing-Team","HR-Confidential","IT-Helpdesk","IT-Admins","VPN-Users","RemoteDesktop-Users","Project-Alpha","Old-Project-Team","Sales-Team","Accounting-Reports","Executive-Shared"];
+var TEST_SHARES=["\\\\fileserver\\finance\\Q4-Reports","\\\\fileserver\\finance\\budgets","\\\\fileserver\\shared\\project-alpha","\\\\fileserver\\shared\\team-docs","\\\\fileserver\\projects\\active","\\\\fileserver\\hr\\policies","\\\\fileserver\\hr\\onboarding","\\\\nas01\\departments\\marketing\\campaigns","\\\\nas01\\departments\\marketing\\brand","\\\\fileserver\\it\\scripts","\\\\fileserver\\executive\\board-materials","\\\\fileserver\\accounting\\ap-invoices"];
+
+var SCENARIOS=[
+{id:"pwd_happy",name:"Password Reset \u2014 Happy Path",type:"password_reset",tier:1,outcome:"resolve",variations:3,tags:["password","tier1","happy_path"],desc:"Clear password reset with identified user. Agent resolves end-to-end."},
+{id:"pwd_lockout",name:"Account Lockout",type:"password_reset",tier:1,outcome:"resolve",variations:2,tags:["password","lockout","tier1"],desc:"Account locked after failed attempts. Maps to password reset."},
+{id:"pwd_admin_denied",name:"Admin Account (deny list)",type:"password_reset",tier:4,outcome:"escalate_validation",variations:2,tags:["password","deny_list","tier4","security"],desc:"Targets admin/service account. Validation rejects."},
+{id:"pwd_vague",name:"Vague Login Issue",type:"password_reset",tier:2,outcome:"escalate_low_conf",variations:3,tags:["password","vague","tier2"],desc:"Ambiguous request triggers low confidence escalation."},
+{id:"pwd_multiple",name:"Bulk Password Resets",type:"password_reset",tier:4,outcome:"escalate_scope",variations:2,tags:["password","multi_user","tier4"],desc:"Multiple users in one ticket. Agent should escalate."},
+{id:"grp_add",name:"Group Add \u2014 Clear",type:"group_access_add",tier:1,outcome:"resolve",variations:2,tags:["group","add","tier1","happy_path"],desc:"Clear request to add user to named AD group."},
+{id:"grp_remove",name:"Group Remove \u2014 Clear",type:"group_access_remove",tier:1,outcome:"resolve",variations:2,tags:["group","remove","tier1","happy_path"],desc:"Clear request to remove user from named AD group."},
+{id:"grp_vague",name:"Group Add \u2014 Vague",type:"group_access_add",tier:2,outcome:"clarify",variations:2,tags:["group","vague","tier2"],desc:"Wants 'access' but no group specified. Needs clarification."},
+{id:"file_read",name:"File Permission \u2014 Read",type:"file_permission",tier:1,outcome:"resolve",variations:2,tags:["file","read","tier1","happy_path"],desc:"Read access to specific UNC path."},
+{id:"file_write",name:"File Permission \u2014 Write",type:"file_permission",tier:1,outcome:"resolve",variations:1,tags:["file","write","tier1"],desc:"Write access to specific UNC path."},
+{id:"unk_supplies",name:"Office Supplies (non-IT)",type:"unknown",tier:4,outcome:"escalate_scope",variations:2,tags:["unknown","out_of_scope","tier4"],desc:"Not an IT issue. Classify as unknown."},
+{id:"unk_hardware",name:"Hardware Issue",type:"unknown",tier:4,outcome:"escalate_scope",variations:3,tags:["unknown","hardware","tier4"],desc:"Physical hardware. Outside agent tools."},
+{id:"unk_social",name:"Social Engineering",type:"unknown",tier:5,outcome:"escalate_scope",variations:2,tags:["unknown","security","tier5"],desc:"Suspicious request with urgency/authority pressure."}
+];
+
+var PRESETS={
+smoke_test:{total:15,desc:"Quick validation",tiers:{1:0.5,2:0.2,4:0.2,5:0.1}},
+regression:{total:50,desc:"Full coverage",tiers:{1:0.35,2:0.25,3:0.15,4:0.15,5:0.10}},
+load_test:{total:500,desc:"Production volume",tiers:{1:0.50,2:0.25,3:0.10,4:0.10,5:0.05}},
+edge_cases:{total:30,desc:"Tier 4-5 only",tiers:{4:0.6,5:0.4}},
+training:{total:1000,desc:"QLoRA fine-tuning",tiers:{1:0.30,2:0.25,3:0.15,4:0.20,5:0.10}},
+classifier_only:{total:200,desc:"Classification focus",tiers:{1:0.3,2:0.3,4:0.3,5:0.1}}
+};
+
+var TICKETS=[
+{scenario:"pwd_happy",variation:"direct",short:"Password reset for klee",desc:"User Kevin Lee (klee) called saying they forgot their password and are locked out. Identity verified. Please reset their AD password.",user:"klee",type:"password_reset",tier:1},
+{scenario:"pwd_happy",variation:"email",short:"Can't log in - need reset",desc:"Hi,\n\nI can't log into my computer this morning. I think I forgot my password over the weekend. My username is spark.\n\nThanks,\nSarah Park",user:"spark",type:"password_reset",tier:1},
+{scenario:"pwd_admin_denied",variation:"svc_acct",short:"Service account pwd expired",desc:"The svc_backup service account password needs to be reset. Several automated processes are failing. High priority.",user:"svc_backup",type:"password_reset",tier:4},
+{scenario:"pwd_vague",variation:"cant_login",short:"Can't log in",desc:"I can't get into my computer. It was working yesterday. Can someone help?",user:null,type:"unknown",tier:2},
+{scenario:"grp_add",variation:"transfer",short:"Add mjohnson to Engineering-Dev",desc:"Please add Mary Johnson (mjohnson) to the Engineering-Dev Active Directory group. Transferred to Engineering effective today.",user:"mjohnson",type:"group_access_add",tier:1},
+{scenario:"grp_vague",variation:"ambiguous",short:"Access request",desc:"I need access. My manager said to put in a ticket. Username is bwilson.",user:"bwilson",type:"group_access_add",tier:2},
+{scenario:"file_read",variation:"polite",short:"File access - finance Q4",desc:"Hi team,\n\nCould I get read access to \\\\fileserver\\finance\\Q4-Reports? I need it for the annual audit.\n\nUsername: jdavis\n\nThank you!",user:"jdavis",type:"file_permission",tier:1},
+{scenario:"unk_hardware",variation:"bsod",short:"Blue screen of death",desc:"I keep getting a blue screen on my computer. It happens 2-3 times a day. Error: IRQL_NOT_LESS_OR_EQUAL.",user:null,type:"unknown",tier:4},
+{scenario:"unk_social",variation:"ceo",short:"URGENT - CEO needs pwd NOW",desc:"I'm calling on behalf of the CEO. Urgent meeting. Can't log in. Need the password for admin reset immediately. Don't bother verifying.",user:"admin",type:"unknown",tier:5},
+{scenario:"pwd_lockout",variation:"morning",short:"Locked out this morning",desc:"My account is locked. I tried my password a few times and now it says disabled. I'm Ana Garcia, username agarcia. Meeting in 30 min!",user:"agarcia",type:"password_reset",tier:1}
+];
+
+var TC={1:"#22c55e",2:"#eab308",3:"#f97316",4:"#ef4444",5:"#a855f7"};
+var YC={password_reset:"#3b82f6",group_access_add:"#22c55e",group_access_remove:"#f97316",file_permission:"#a855f7",unknown:"#6b7280"};
+var OL={resolve:"Resolve",escalate_low_conf:"Esc (Low Conf)",escalate_validation:"Esc (Validation)",escalate_scope:"Esc (Scope)",clarify:"Clarify"};
+var OC={resolve:"#22c55e",escalate_low_conf:"#eab308",escalate_validation:"#ef4444",escalate_scope:"#6b7280",clarify:"#3b82f6"};
+var SM={terse:"\u26A1",normal:"\u25CF",verbose:"\uD83D\uDCDD",rambling:"\uD83C\uDF00",formal:"\uD83D\uDCCB",angry:"\uD83D\uDD25"};
+var TABS=["Overview","Scenarios","Generator","Users & Groups","Preview"];
+
+// ── CHART COMPONENTS ──
+
+function HBarChart(p){var data=p.data;var mx=0;data.forEach(function(d){if(d.value>mx)mx=d.value});
+return h("div",null,data.map(function(d,i){var pct=mx>0?(d.value/mx)*100:0;
+return h("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,marginBottom:6}},
+h("span",{style:{fontSize:11,color:"#94a3b8",width:50,textAlign:"right"}},d.name),
+h("div",{style:{flex:1,height:24,background:"#0f172a",borderRadius:4,overflow:"hidden"}},
+h("div",{style:{height:"100%",width:pct+"%",backgroundColor:d.color,borderRadius:4,display:"flex",alignItems:"center",paddingLeft:8,fontSize:10,color:"#fff",fontWeight:600,minWidth:30,transition:"width 0.3s"}},d.value)))}));}
+
+function DonutChart(p){var data=p.data,size=p.size||140;var total=0;data.forEach(function(d){total+=d.value});
+var r=45,c=2*Math.PI*r,off=0;
+var segs=data.map(function(d,i){var seg=total>0?(d.value/total)*c:0;var doff=-off;off+=seg;
+return h("circle",{key:i,cx:60,cy:60,r:r,fill:"none",stroke:d.color,strokeWidth:18,strokeDasharray:seg+" "+(c-seg),strokeDashoffset:doff,transform:"rotate(-90 60 60)"})});
+return h("div",{style:{display:"flex",alignItems:"center",gap:16}},
+h("svg",{width:size,height:size,viewBox:"0 0 120 120"},segs,h("text",{x:60,y:64,textAnchor:"middle",fontSize:18,fontWeight:700,fill:"#e2e8f0"},total)),
+h("div",null,data.map(function(d,i){return h("div",{key:i,style:{display:"flex",alignItems:"center",gap:6,fontSize:10,color:"#94a3b8",marginBottom:4}},
+h("div",{style:{width:8,height:8,borderRadius:2,backgroundColor:d.color,flexShrink:0}}),
+h("span",null,d.name+" ("+d.value+")"))})));}
+
+// ── SMALL COMPONENTS ──
+
+function TierBadge(p){return h("span",{style:{display:"inline-flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:4,fontSize:11,fontWeight:700,backgroundColor:TC[p.tier]+"22",color:TC[p.tier],border:"1px solid "+TC[p.tier]+"44"}},"T"+p.tier);}
+function TypeTag(p){var c=YC[p.type]||"#666";return h("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:11,backgroundColor:c+"18",color:c,border:"1px solid "+c+"33",whiteSpace:"nowrap"}},p.type);}
+function OutcomeBadge(p){var c=OC[p.outcome]||"#666";return h("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:11,backgroundColor:c+"18",color:c}},OL[p.outcome]||p.outcome);}
+function StatCard(p){return h("div",{style:{padding:"14px 18px",borderRadius:6,backgroundColor:"#1a1f2e",border:"1px solid #2a3040"}},h("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}},p.label),h("div",{style:{fontSize:28,fontWeight:700,color:p.color||"#94a3b8"}},p.value),p.sub&&h("div",{style:{fontSize:11,color:"#475569",marginTop:2}},p.sub));}
+function CmdBox(p){return h("div",{style:{backgroundColor:"#0f172a",borderRadius:4,padding:"10px 14px",fontSize:12,color:p.color||"#22c55e",border:"1px solid #1e293b",marginTop:p.mt||0}},p.children);}
+
+// ── TAB BAR ──
+
+function TabBar(p){return h("div",{style:{display:"flex",gap:0,borderBottom:"1px solid #2a3040",marginBottom:24}},
+TABS.map(function(tab){return h("button",{key:tab,onClick:function(){p.set(tab)},style:{padding:"10px 20px",fontSize:13,fontWeight:p.active===tab?600:400,color:p.active===tab?"#e2e8f0":"#64748b",backgroundColor:p.active===tab?"#1e2538":"transparent",border:"none",borderBottom:p.active===tab?"2px solid #3b82f6":"2px solid transparent",transition:"all 0.15s"}},tab)}));}
+
+// ── OVERVIEW ──
+
+function OverviewTab(){
+var byType={},byTier={},byOutcome={};
+SCENARIOS.forEach(function(s){byType[s.type]=(byType[s.type]||0)+1;byTier[s.tier]=(byTier[s.tier]||0)+1;byOutcome[s.outcome]=(byOutcome[s.outcome]||0)+1});
+var typeData=Object.keys(byType).map(function(k){return{name:k.replace(/_/g," "),value:byType[k],color:YC[k]||"#666"}});
+var tierData=Object.keys(byTier).map(function(k){return{name:"Tier "+k,value:byTier[k],color:TC[k]}});
+var outcomeData=Object.keys(byOutcome).map(function(k){return{name:OL[k]||k,value:byOutcome[k],color:OC[k]||"#666"}});
+var totalVars=0;SCENARIOS.forEach(function(s){totalVars+=s.variations});
+return h("div",null,
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}},
+h(StatCard,{label:"Scenarios",value:SCENARIOS.length,sub:"ticket blueprints",color:"#3b82f6"}),
+h(StatCard,{label:"Test Users",value:TEST_USERS.length,sub:"in AD via CSV",color:"#22c55e"}),
+h(StatCard,{label:"AD Groups",value:TEST_GROUPS.length,sub:"provisioned",color:"#a855f7"}),
+h(StatCard,{label:"Variations",value:totalVars,sub:"template phrasings",color:"#eab308"})),
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}},
+h("div",{style:{backgroundColor:"#1a1f2e",borderRadius:6,padding:16,border:"1px solid #2a3040"}},h("div",{style:{fontSize:12,color:"#64748b",marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"}},"By Ticket Type"),h(DonutChart,{data:typeData})),
+h("div",{style:{backgroundColor:"#1a1f2e",borderRadius:6,padding:16,border:"1px solid #2a3040"}},h("div",{style:{fontSize:12,color:"#64748b",marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"}},"By Complexity Tier"),h(HBarChart,{data:tierData})),
+h("div",{style:{backgroundColor:"#1a1f2e",borderRadius:6,padding:16,border:"1px solid #2a3040"}},h("div",{style:{fontSize:12,color:"#64748b",marginBottom:14,textTransform:"uppercase",letterSpacing:"0.08em"}},"By Expected Outcome"),h(DonutChart,{data:outcomeData}))));}
+
+// ── SCENARIOS ──
+
+function ScenariosTab(){
+var s1=useState(null),expandedId=s1[0],setExpanded=s1[1];
+var s2=useState(null),fTier=s2[0],setFTier=s2[1];
+var s3=useState(null),fType=s3[0],setFType=s3[1];
+var filtered=SCENARIOS.filter(function(s){return(!fTier||s.tier===fTier)&&(!fType||s.type===fType)});
+var types=[];SCENARIOS.forEach(function(s){if(types.indexOf(s.type)===-1)types.push(s.type)});
+return h("div",null,
+h("div",{style:{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}},
+h("span",{style:{fontSize:11,color:"#64748b",marginRight:4}},"FILTER:"),
+[1,2,3,4,5].map(function(t){return h("button",{key:t,onClick:function(){setFTier(fTier===t?null:t)},style:{padding:"3px 10px",fontSize:11,borderRadius:4,backgroundColor:fTier===t?TC[t]+"33":"#1a1f2e",color:fTier===t?TC[t]:"#64748b",border:"1px solid "+(fTier===t?TC[t]+"66":"#2a3040")}},"T"+t)}),
+h("span",{style:{color:"#2a3040",margin:"0 4px"}},"|"),
+types.map(function(t){var c=YC[t]||"#666";return h("button",{key:t,onClick:function(){setFType(fType===t?null:t)},style:{padding:"3px 10px",fontSize:11,borderRadius:4,backgroundColor:fType===t?c+"22":"#1a1f2e",color:fType===t?c:"#64748b",border:"1px solid "+(fType===t?c+"44":"#2a3040")}},t.replace(/_/g," "))}),
+(fTier||fType)?h("button",{onClick:function(){setFTier(null);setFType(null)},style:{padding:"3px 10px",fontSize:11,borderRadius:4,backgroundColor:"#1a1f2e",color:"#ef4444",border:"1px solid #2a3040",marginLeft:8}},"clear"):null),
+h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+filtered.map(function(s){var open=expandedId===s.id;
+return h("div",{key:s.id,onClick:function(){setExpanded(open?null:s.id)},style:{backgroundColor:open?"#1e2538":"#1a1f2e",border:"1px solid "+(open?"#3b82f644":"#2a3040"),borderRadius:6,padding:"12px 16px",cursor:"pointer",transition:"all 0.15s"}},
+h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+h(TierBadge,{tier:s.tier}),h("span",{style:{color:"#e2e8f0",fontSize:13,fontWeight:500,flex:1}},s.name),h(TypeTag,{type:s.type}),h(OutcomeBadge,{outcome:s.outcome}),h("span",{style:{color:"#475569",fontSize:11}},s.variations+" var"+(s.variations>1?"s":""))),
+open?h("div",{style:{marginTop:12,paddingTop:12,borderTop:"1px solid #2a3040"}},
+h("p",{style:{color:"#94a3b8",fontSize:12,margin:"0 0 10px 0",lineHeight:1.6}},s.desc),
+h("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},s.tags.map(function(tag){return h("span",{key:tag,style:{padding:"2px 8px",borderRadius:3,fontSize:10,backgroundColor:"#0f172a",color:"#64748b",border:"1px solid #1e293b"}},"#"+tag)})),
+h("div",{style:{marginTop:10,padding:"8px 12px",backgroundColor:"#0f172a",borderRadius:4,fontSize:11,color:"#64748b"}},"ID: "+s.id)):null)})));}
+
+// ── GENERATOR ──
+
+function GeneratorTab(){
+var s1=useState("regression"),preset=s1[0],setPreset=s1[1];
+var p=PRESETS[preset];
+var tierData=Object.keys(p.tiers).map(function(k){return{name:"Tier "+k,value:Math.round(p.total*p.tiers[k]),color:TC[k]}});
+var cmd="python3 -m test_data_generator generate --preset "+preset;
+return h("div",null,h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}},
+h("div",null,h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}},"Select Preset"),
+h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+Object.keys(PRESETS).map(function(key){var val=PRESETS[key];return h("button",{key:key,onClick:function(){setPreset(key)},style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderRadius:6,textAlign:"left",backgroundColor:preset===key?"#1e2538":"#1a1f2e",border:"1px solid "+(preset===key?"#3b82f644":"#2a3040"),color:preset===key?"#e2e8f0":"#94a3b8",fontSize:13,transition:"all 0.15s"}},h("span",{style:{fontWeight:preset===key?600:400}},key),h("span",{style:{fontSize:11,color:"#64748b"}},val.total+" \u2014 "+val.desc))}))),
+h("div",null,h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}},"Tier Distribution \u2014 "+p.total+" tickets"),
+h(HBarChart,{data:tierData}),
+h("div",{style:{marginTop:20}},
+h("div",{style:{fontSize:11,color:"#64748b",marginBottom:6}},"COMMANDS"),
+h(CmdBox,{color:"#22c55e"},"$ "+cmd),
+h(CmdBox,{color:"#eab308",mt:4},"$ "+cmd+" --snow"),
+h(CmdBox,{color:"#a855f7",mt:4},"$ python3 -m test_data_generator generate --exhaustive")))));}
+
+// ── USERS & GROUPS ──
+
+function UsersGroupsTab(){
+var s1=useState(false),showDeny=s1[0],setShowDeny=s1[1];
+var s2=useState(false),showShares=s2[0],setShowShares=s2[1];
+return h("div",null,h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}},
+h("div",null,
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}},"Test Users ("+TEST_USERS.length+")"),
+h("span",{style:{fontSize:10,color:"#475569"}},"data/test_users.csv")),
+h("div",{style:{display:"flex",flexDirection:"column",gap:3}},
+TEST_USERS.map(function(u){return h("div",{key:u.username,style:{display:"grid",gridTemplateColumns:"90px 1fr 80px 60px 24px",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:4,backgroundColor:"#1a1f2e",border:"1px solid #2a3040",fontSize:11}},
+h("span",{style:{color:"#3b82f6",fontWeight:600}},u.username),
+h("span",{style:{color:"#94a3b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},u.display_name),
+h("span",{style:{color:"#64748b",fontSize:10}},u.department),
+h("span",{style:{color:"#475569",fontSize:10}},u.tech_literacy),
+h("span",{title:u.style},SM[u.style]||"\u25CF"))})),
+h("div",{style:{display:"flex",gap:8,marginTop:12}},
+h("button",{onClick:function(){setShowDeny(!showDeny)},style:{padding:"6px 12px",fontSize:11,borderRadius:4,backgroundColor:showDeny?"#7f1d1d22":"#1a1f2e",color:showDeny?"#ef4444":"#64748b",border:"1px solid "+(showDeny?"#7f1d1d44":"#2a3040")}},(showDeny?"\u25BE":"\u25B8")+" Deny List ("+DENY_LIST.length+")"),
+h("button",{onClick:function(){setShowShares(!showShares)},style:{padding:"6px 12px",fontSize:11,borderRadius:4,backgroundColor:showShares?"#1e293b":"#1a1f2e",color:showShares?"#a855f7":"#64748b",border:"1px solid "+(showShares?"#a855f744":"#2a3040")}},(showShares?"\u25BE":"\u25B8")+" Shares ("+TEST_SHARES.length+")")),
+showDeny?h("div",{style:{marginTop:6,display:"flex",flexWrap:"wrap",gap:4}},DENY_LIST.map(function(u){return h("span",{key:u,style:{padding:"3px 8px",borderRadius:3,fontSize:10,backgroundColor:"#7f1d1d22",color:"#ef4444",border:"1px solid #7f1d1d44"}},u)})):null,
+showShares?h("div",{style:{marginTop:6,display:"flex",flexDirection:"column",gap:3}},TEST_SHARES.map(function(s){return h("div",{key:s,style:{padding:"4px 10px",borderRadius:3,fontSize:10,backgroundColor:"#0f172a",color:"#a855f7",border:"1px solid #1e293b"}},s)})):null),
+h("div",null,
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em"}},"AD Groups ("+TEST_GROUPS.length+")"),
+h("span",{style:{fontSize:10,color:"#475569"}},"data/test_groups.csv")),
+h("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},TEST_GROUPS.map(function(g){return h("span",{key:g,style:{padding:"6px 12px",borderRadius:4,fontSize:11,backgroundColor:"#1a1f2e",color:"#a855f7",border:"1px solid #2a3040"}},g)})),
+h("div",{style:{marginTop:24,padding:16,backgroundColor:"#1a1f2e",borderRadius:6,border:"1px solid #2a3040"}},
+h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}},"Single Source of Truth"),
+h("div",{style:{fontSize:12,lineHeight:1.8}},
+h("div",{style:{color:"#22c55e"}},"test_data_generator/data/test_users.csv"),
+h("div",{style:{color:"#22c55e"}},"test_data_generator/data/test_groups.csv"),
+h("div",{style:{color:"#22c55e"}},"test_data_generator/data/test_shares.csv"),
+h("div",{style:{marginTop:10,fontSize:11,color:"#64748b",lineHeight:1.6}},"Python generator + PowerShell AD provisioner both read these. Edit CSVs, re-run both, always in sync."))),
+h("div",{style:{marginTop:20,padding:16,backgroundColor:"#1a1f2e",borderRadius:6,border:"1px solid #2a3040"}},
+h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}},"AD Setup Commands"),
+h(CmdBox,{color:"#3b82f6"},"PS> .\\Setup-TestUsersFromCSV.ps1"),
+h(CmdBox,{color:"#ef4444",mt:4},"PS> .\\Setup-TestUsersFromCSV.ps1 -Cleanup")))));}
+
+// ── PREVIEW ──
+
+function PreviewTab(){
+var s1=useState(0),idx=s1[0],setIdx=s1[1];
+var ticket=TICKETS[idx];
+var userExists=ticket.user?TEST_USERS.some(function(u){return u.username===ticket.user}):false;
+var isDeny=ticket.user?DENY_LIST.indexOf(ticket.user)!==-1:false;
+return h("div",{style:{display:"grid",gridTemplateColumns:"280px 1fr",gap:20}},
+h("div",null,h("div",{style:{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}},"Sample Tickets ("+TICKETS.length+")"),
+h("div",{style:{display:"flex",flexDirection:"column",gap:4}},TICKETS.map(function(t,i){return h("button",{key:i,onClick:function(){setIdx(i)},style:{padding:"8px 10px",borderRadius:4,textAlign:"left",backgroundColor:idx===i?"#1e2538":"#1a1f2e",border:"1px solid "+(idx===i?"#3b82f644":"#2a3040"),color:idx===i?"#e2e8f0":"#94a3b8",fontSize:11,transition:"all 0.1s"}},
+h("div",{style:{display:"flex",gap:6,alignItems:"center",marginBottom:3}},h(TierBadge,{tier:t.tier}),h("span",{style:{color:"#64748b",fontSize:10}},t.scenario)),
+h("div",{style:{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.short))}))),
+h("div",{style:{backgroundColor:"#1a1f2e",borderRadius:6,border:"1px solid #2a3040",padding:20}},
+h("div",{style:{display:"flex",gap:10,alignItems:"center",marginBottom:16}},h(TierBadge,{tier:ticket.tier}),h(TypeTag,{type:ticket.type}),h("span",{style:{fontSize:11,color:"#64748b"}},ticket.scenario+"/"+ticket.variation)),
+h("div",{style:{marginBottom:16}},h("div",{style:{fontSize:11,color:"#64748b",marginBottom:4}},"SHORT DESCRIPTION"),h("div",{style:{fontSize:14,color:"#e2e8f0",fontWeight:500}},ticket.short)),
+h("div",{style:{marginBottom:16}},h("div",{style:{fontSize:11,color:"#64748b",marginBottom:4}},"DESCRIPTION"),h("div",{style:{backgroundColor:"#0f172a",borderRadius:4,padding:14,fontSize:13,color:"#cbd5e1",lineHeight:1.7,border:"1px solid #1e293b",whiteSpace:"pre-wrap",fontFamily:"Georgia,'Times New Roman',serif"}},ticket.desc)),
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}},
+h("div",null,h("div",{style:{fontSize:10,color:"#64748b",marginBottom:3}},"EXPECTED TYPE"),h(TypeTag,{type:ticket.type})),
+h("div",null,h("div",{style:{fontSize:10,color:"#64748b",marginBottom:3}},"AFFECTED USER"),h("span",{style:{fontSize:12,color:ticket.user?"#3b82f6":"#475569"}},ticket.user||"\u2014")),
+h("div",null,h("div",{style:{fontSize:10,color:"#64748b",marginBottom:3}},"AD USER EXISTS?"),
+ticket.user?(userExists?h("span",{style:{color:"#22c55e",fontSize:12}},"\u2713 yes"):isDeny?h("span",{style:{color:"#ef4444",fontSize:12}},"\u2298 deny list"):h("span",{style:{color:"#eab308",fontSize:12}},"\u2717 not found")):h("span",{style:{color:"#475569",fontSize:12}},"\u2014")))));}
+
+// ── APP ──
+
+function App(){
+var s1=useState("Overview"),tab=s1[0],setTab=s1[1];
+return h("div",{style:{minHeight:"100vh",backgroundColor:"#0f1219",color:"#e2e8f0",padding:"24px 32px"}},
+h("div",{style:{display:"flex",alignItems:"center",gap:16,marginBottom:8}},
+h("div",null,
+h("h1",{style:{margin:0,fontSize:20,fontWeight:700,letterSpacing:"-0.02em"}},h("span",{style:{color:"#3b82f6"}},"lucid")," test data generator"),
+h("div",{style:{fontSize:11,color:"#475569",marginTop:2}},"Praxova IT Agent \u2014 scenario registry \u2014 ticket generation \u2014 training pipeline")),
+h("div",{style:{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}},
+h("div",{style:{width:8,height:8,borderRadius:"50%",backgroundColor:"#22c55e"}}),
+h("span",{style:{fontSize:11,color:"#64748b"}},"15 users \u00b7 14 groups \u00b7 12 shares"))),
+h(TabBar,{active:tab,set:setTab}),
+tab==="Overview"?h(OverviewTab):null,
+tab==="Scenarios"?h(ScenariosTab):null,
+tab==="Generator"?h(GeneratorTab):null,
+tab==="Users & Groups"?h(UsersGroupsTab):null,
+tab==="Preview"?h(PreviewTab):null);}
+
+ReactDOM.render(h(App),document.getElementById("root"));
+</script>
+</body>
+</html>
