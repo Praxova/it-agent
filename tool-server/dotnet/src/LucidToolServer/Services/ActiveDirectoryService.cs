@@ -50,10 +50,37 @@ public class ActiveDirectoryService : IActiveDirectoryService
                     throw new UserNotFoundException($"User '{username}' not found in Active Directory");
                 }
 
-                // Reset password and force password change on next login
-                user.SetPassword(newPassword);
-                user.ExpirePasswordNow();
-                user.Save();
+                var userDn = user.DistinguishedName;
+
+                // Use DirectoryEntry.Invoke("SetPassword") when explicit credentials
+                // are configured — UserPrincipal.SetPassword() fails via COM interop
+                // even with working LDAPS and delegated service accounts.
+                if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
+                    && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+                {
+                    var ldapPath = $"LDAP://{_settings.DomainName}/{userDn}";
+                    _logger.LogDebug("Resetting password via DirectoryEntry for {Username} at {Path}",
+                        username, ldapPath);
+
+                    using var entry = new DirectoryEntry(
+                        ldapPath,
+                        _settings.ServiceAccountUsername,
+                        _settings.ServiceAccountPassword);
+                    entry.Invoke("SetPassword", new object[] { newPassword });
+                    entry.CommitChanges();
+
+                    // Expire password so user must change on next login
+                    entry.Properties["pwdLastSet"].Value = 0;
+                    entry.CommitChanges();
+                }
+                else
+                {
+                    // Fallback: gMSA / process-identity path
+                    _logger.LogDebug("Resetting password via UserPrincipal for {Username}", username);
+                    user.SetPassword(newPassword);
+                    user.ExpirePasswordNow();
+                    user.Save();
+                }
 
                 _logger.LogInformation("Password reset successful for user: {Username}", username);
 
@@ -61,7 +88,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
                     Success: true,
                     Message: $"Password reset successfully for {username}",
                     Username: username,
-                    UserDn: user.DistinguishedName
+                    UserDn: userDn
                 );
             }
             catch (Exception ex) when (ex is not UserNotFoundException && ex is not PermissionDeniedException)
