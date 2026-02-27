@@ -409,6 +409,36 @@ class AdminPortalClient:
                 raise OperationTokenError("portal_unavailable",
                     f"Authorization service unreachable: {e}")
 
+    async def fetch_agent_client_cert(self, agent_name: str) -> tuple[str, str]:
+        """Fetch (or trigger issuance of) the mTLS client certificate for this agent.
+
+        Calls GET /api/pki/certificates/agent/{agent_name}.
+        Returns (cert_pem, key_pem) as strings.
+
+        The portal issues the cert on first call and returns the existing cert
+        (or auto-renews if within 30 days of expiry) on subsequent calls.
+
+        Args:
+            agent_name: The agent's registered name.
+
+        Returns:
+            Tuple of (cert_pem, key_pem).
+
+        Raises:
+            Exception: If the request fails or the portal is unavailable.
+        """
+        url = f"/api/pki/certificates/agent/{agent_name}"
+        logger.info(f"Fetching agent client certificate from: {self.base_url}{url}")
+
+        response = await self._client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        cert_pem = data["certificatePem"]
+        key_pem = data["privateKeyPem"]
+        expires_at = data.get("expiresAt", "unknown")
+        logger.info(f"Agent client certificate received, expires: {expires_at}")
+        return cert_pem, key_pem
+
     async def close(self) -> None:
         """Close the HTTP client."""
         await self._client.aclose()

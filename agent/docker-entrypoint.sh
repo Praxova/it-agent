@@ -62,6 +62,51 @@ else
     echo "  (HTTPS connections to the portal may fail if using auto-generated certificates)"
 fi
 
+# ── Agent Client Certificate Bootstrap ──────────────────────────
+# Fetch the agent's mTLS client certificate from the portal.
+# This cert is presented to the tool server on every operation call.
+# The portal issues it on first call and auto-renews when within 30 days of expiry.
+AGENT_CERT_DIR="/tmp/praxova"
+AGENT_CERT_FILE="${AGENT_CERT_DIR}/agent-client.crt"
+AGENT_CERT_KEY_FILE="${AGENT_CERT_DIR}/agent-client.key"
+
+mkdir -p "${AGENT_CERT_DIR}"
+
+if [ -n "${LUCID_API_KEY}" ] && [ -n "${AGENT_NAME}" ]; then
+    CERT_URL="${ADMIN_PORTAL_URL}/api/pki/certificates/agent/${AGENT_NAME}"
+    echo "Fetching agent client certificate for mTLS..."
+
+    CERT_RESPONSE=$(curl -sf \
+        -H "X-API-Key: ${LUCID_API_KEY}" \
+        --cacert "${COMBINED_BUNDLE}" \
+        "${CERT_URL}" 2>/dev/null)
+
+    if [ $? -eq 0 ] && [ -n "${CERT_RESPONSE}" ]; then
+        # Parse JSON response and extract cert/key PEM fields
+        echo "${CERT_RESPONSE}" | python3 -c "
+import sys, json, os
+data = json.load(sys.stdin)
+cert_file = '${AGENT_CERT_FILE}'
+key_file = '${AGENT_CERT_KEY_FILE}'
+with open(cert_file, 'w') as f:
+    f.write(data['certificatePem'])
+with open(key_file, 'w') as f:
+    f.write(data['privateKeyPem'])
+os.chmod(key_file, 0o600)
+print(f'  Agent client cert written to {cert_file}')
+print(f'  Expires: {data.get(\"expiresAt\", \"unknown\")}')
+"
+        export AGENT_CLIENT_CERT="${AGENT_CERT_FILE}"
+        export AGENT_CLIENT_KEY="${AGENT_CERT_KEY_FILE}"
+        echo "  mTLS client cert bootstrap complete"
+    else
+        echo "  WARNING: Could not fetch agent client cert from ${CERT_URL}"
+        echo "  Tool server calls will proceed without mTLS client cert (may fail if tool server requires it)"
+    fi
+else
+    echo "  Skipping agent client cert bootstrap (LUCID_API_KEY or AGENT_NAME not set)"
+fi
+
 # ── Start Agent ──────────────────────────────────────────────────
 echo "Starting agent..."
 exec python -m agent.runtime.cli \

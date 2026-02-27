@@ -32,6 +32,8 @@ class ToolServerConfig(BaseModel):
         base_url: Base URL of the Tool Server API.
         timeout: Request timeout in seconds.
         verify_ssl: Whether to verify SSL certificates.
+        client_cert_path: Path to agent mTLS client certificate PEM.
+        client_key_path: Path to agent mTLS client private key PEM.
     """
 
     base_url: str = PydanticField(
@@ -41,6 +43,14 @@ class ToolServerConfig(BaseModel):
     timeout: float = PydanticField(default=30.0, description="Request timeout in seconds")
     verify_ssl: bool = PydanticField(
         default=True, description="Whether to verify SSL certificates"
+    )
+    client_cert_path: str | None = PydanticField(
+        default=None,
+        description="Path to agent mTLS client certificate PEM (set by entrypoint from portal)",
+    )
+    client_key_path: str | None = PydanticField(
+        default=None,
+        description="Path to agent mTLS client private key PEM (set by entrypoint from portal)",
     )
 
 
@@ -160,8 +170,19 @@ class BaseToolServerTool(BaseTool):
 
         logger.info(f"Making {method} request to {url}")
 
+        # Build mTLS tuple if both cert and key are configured
+        mtls_cert = None
+        if self.tool_server_config.client_cert_path and self.tool_server_config.client_key_path:
+            mtls_cert = (
+                self.tool_server_config.client_cert_path,
+                self.tool_server_config.client_key_path,
+            )
+            logger.debug("mTLS: presenting client cert %s", self.tool_server_config.client_cert_path)
+
         async with httpx.AsyncClient(
-            timeout=self.tool_server_config.timeout, verify=self.tool_server_config.verify_ssl
+            timeout=self.tool_server_config.timeout,
+            verify=self.tool_server_config.verify_ssl,
+            cert=mtls_cert,
         ) as client:
             try:
                 if method.upper() == "GET":

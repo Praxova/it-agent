@@ -1,6 +1,7 @@
 """File permission handler for ticket processing."""
 
 import logging
+import os
 
 from connectors import Ticket
 
@@ -22,7 +23,11 @@ class FilePermissionHandler(BaseHandler):
         Args:
             tool_server_url: URL of the tool server (without /api/v1).
         """
-        config = ToolServerConfig(base_url=f"{tool_server_url}/api/v1")
+        config = ToolServerConfig(
+            base_url=f"{tool_server_url}/api/v1",
+            client_cert_path=os.environ.get("AGENT_CLIENT_CERT"),
+            client_key_path=os.environ.get("AGENT_CLIENT_KEY"),
+        )
         self._tool = FilePermissionsTool(tool_server_config=config)
 
     @property
