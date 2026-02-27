@@ -230,22 +230,48 @@ public class AccountController : Controller
         return Redirect("/login");
     }
 
+    private static readonly Lazy<HashSet<string>> _commonPasswords = new(() =>
+    {
+        var assembly = typeof(AccountController).Assembly;
+        using var stream = assembly.GetManifestResourceStream("LucidAdmin.Web.Resources.CommonPasswords.txt");
+        if (stream == null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using var reader = new System.IO.StreamReader(stream);
+        var passwords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length > 0)
+                passwords.Add(trimmed);
+        }
+        return passwords;
+    });
+
     internal static string? ValidatePasswordPolicy(string password, string username)
     {
+        if (password.Length > 128)
+            return "Password must be no longer than 128 characters.";
         if (password.Length < 12)
             return "Password must be at least 12 characters long.";
-        if (!Regex.IsMatch(password, @"[A-Z]"))
-            return "Password must contain at least one uppercase letter.";
-        if (!Regex.IsMatch(password, @"[a-z]"))
-            return "Password must contain at least one lowercase letter.";
-        if (!Regex.IsMatch(password, @"[0-9]"))
-            return "Password must contain at least one digit.";
-        if (!Regex.IsMatch(password, @"[!@#$%^&*()\-_+=\[\]{}|;':"",./<>?\\]"))
-            return "Password must contain at least one special character.";
+
+        int complexityScore = 0;
+        if (Regex.IsMatch(password, @"[A-Z]")) complexityScore++;
+        if (Regex.IsMatch(password, @"[a-z]")) complexityScore++;
+        if (Regex.IsMatch(password, @"[0-9]")) complexityScore++;
+        if (Regex.IsMatch(password, @"[!@#$%^&*()\-_+=\[\]{}|;':"",./<>?\\]")) complexityScore++;
+
+        if (complexityScore < 3)
+            return "Password must contain at least 3 of: uppercase letter, lowercase letter, number, special character.";
+
         if (password.Contains("admin", StringComparison.OrdinalIgnoreCase))
             return "Password cannot contain the word 'admin'.";
         if (username.Length >= 3 && password.Contains(username, StringComparison.OrdinalIgnoreCase))
             return "Password cannot contain your username.";
+
+        if (_commonPasswords.Value.Contains(password))
+            return "This password is too commonly used — please choose a different password.";
+
         return null;
     }
 }
