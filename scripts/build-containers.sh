@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ARTIFACTS_DIR="${PROJECT_ROOT}/build/artifacts"
 
 # Defaults
-SKIP_OLLAMA=false
+SKIP_LLM=false
 TAG=""
 
 usage() {
@@ -23,10 +23,10 @@ Arguments:
   TAG                 Release tag (default: git describe --tags --always)
 
 Options:
-  --skip-ollama       Always skip saving ollama image tarball
+  --skip-llm          Skip building the LLM server image (large CUDA build)
   -h, --help          Show this help message
 
-Note: By default, the ollama tarball is skipped if it already exists
+Note: By default, the LLM tarball is skipped if it already exists
 in the artifacts directory (it's large and rarely changes).
 EOF
     exit 0
@@ -35,7 +35,7 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-ollama) SKIP_OLLAMA=true; shift ;;
+        --skip-llm) SKIP_LLM=true; shift ;;
         -h|--help) usage ;;
         -*) echo "ERROR: Unknown option: $1" >&2; exit 1 ;;
         *) TAG="$1"; shift ;;
@@ -73,11 +73,15 @@ docker build \
     -f "${PROJECT_ROOT}/agent/Dockerfile" \
     "${PROJECT_ROOT}/agent"
 
-# ── Pull ollama ──────────────────────────────────────────────────
-if [[ "$SKIP_OLLAMA" != "true" ]]; then
+# ── Build LLM server ────────────────────────────────────────────
+if [[ "$SKIP_LLM" != "true" ]]; then
     echo ""
-    echo "── Pulling ollama/ollama:latest ────────────────────────────"
-    docker pull ollama/ollama:latest
+    echo "── Building praxova-llm:${TAG} ──────────────────────────────"
+    docker build \
+        -t "praxova-llm:${TAG}" \
+        -t "praxova-llm:latest" \
+        -f "${PROJECT_ROOT}/docker/llama-server/Dockerfile" \
+        "${PROJECT_ROOT}/docker/llama-server"
 fi
 
 # ── Save tarballs ────────────────────────────────────────────────
@@ -92,14 +96,14 @@ echo "  Saving praxova-agent:${TAG}..."
 docker save "praxova-agent:${TAG}" "praxova-agent:latest" \
     -o "${ARTIFACTS_DIR}/praxova-agent-${TAG}.tar"
 
-OLLAMA_TAR="${ARTIFACTS_DIR}/ollama-latest.tar"
-if [[ "$SKIP_OLLAMA" == "true" ]]; then
-    echo "  Skipping ollama (--skip-ollama)"
-elif [[ -f "$OLLAMA_TAR" ]]; then
-    echo "  Skipping ollama (tarball already cached at ${OLLAMA_TAR})"
+LLM_TAR="${ARTIFACTS_DIR}/praxova-llm-${TAG}.tar"
+if [[ "$SKIP_LLM" == "true" ]]; then
+    echo "  Skipping LLM server (--skip-llm)"
+elif [[ -f "$LLM_TAR" ]]; then
+    echo "  Skipping LLM server (tarball already cached at ${LLM_TAR})"
 else
-    echo "  Saving ollama/ollama:latest (this may take a while)..."
-    docker save "ollama/ollama:latest" -o "$OLLAMA_TAR"
+    echo "  Saving praxova-llm:${TAG}..."
+    docker save "praxova-llm:${TAG}" "praxova-llm:latest" -o "$LLM_TAR"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────

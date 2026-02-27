@@ -5,7 +5,6 @@ from typing import Any
 
 from griptape.drivers.prompt import BasePromptDriver
 from griptape.drivers.prompt.anthropic import AnthropicPromptDriver
-from griptape.drivers.prompt.ollama import OllamaPromptDriver
 from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 
 from agent.config.admin_client import LlmProviderConfig
@@ -17,7 +16,7 @@ class DriverFactory:
     """Factory for creating Griptape PromptDrivers from ServiceAccount configuration.
 
     Supports multiple LLM providers:
-    - llm-ollama: Ollama local LLM server
+    - llm-local: Local llama.cpp server (OpenAI-compatible API with TLS)
     - llm-openai: OpenAI API (GPT-3.5, GPT-4, etc.)
     - llm-anthropic: Anthropic API (Claude)
     """
@@ -39,8 +38,8 @@ class DriverFactory:
 
         logger.info(f"Creating PromptDriver for provider: {provider}")
 
-        if provider == "llm-ollama":
-            return DriverFactory._create_ollama_driver(provider_config)
+        if provider == "llm-local":
+            return DriverFactory._create_local_llm_driver(provider_config)
         elif provider == "llm-openai":
             return DriverFactory._create_openai_driver(provider_config)
         elif provider == "llm-anthropic":
@@ -48,46 +47,43 @@ class DriverFactory:
         else:
             raise ValueError(
                 f"Unsupported LLM provider: {provider}. "
-                f"Supported providers: llm-ollama, llm-openai, llm-anthropic"
+                f"Supported providers: llm-local, llm-openai, llm-anthropic"
             )
 
     @staticmethod
-    def _create_ollama_driver(provider_config: LlmProviderConfig) -> OllamaPromptDriver:
-        """Create Ollama PromptDriver.
+    def _create_local_llm_driver(provider_config: LlmProviderConfig) -> OpenAiChatPromptDriver:
+        """Create local llama.cpp PromptDriver (OpenAI-compatible API).
 
         Expected configuration:
-        - model: Model name (e.g., "llama3.1", "mistral")
-        - base_url: Ollama server URL (e.g., "http://localhost:11434")
+        - model: Model name/alias (e.g., "llama3.1")
+        - base_url: llama.cpp server URL (e.g., "https://llm:8443/v1")
         - temperature: (optional) Sampling temperature (default: 0.1)
 
         Args:
             provider_config: Provider configuration from Admin Portal.
 
         Returns:
-            Configured OllamaPromptDriver.
+            Configured OpenAiChatPromptDriver pointing at the local llama.cpp server.
 
         Raises:
             ValueError: If required configuration is missing.
         """
-        # Get model from property (which checks both config and direct attribute)
         model = provider_config.model
         if not model:
-            raise ValueError("Ollama configuration missing 'model'")
+            raise ValueError("Local LLM configuration missing 'model'")
 
-        # Get base_url from property (which handles different key names)
         base_url = provider_config.base_url
         if not base_url:
-            raise ValueError("Ollama configuration missing 'base_url'")
+            raise ValueError("Local LLM configuration missing 'base_url'")
 
-        # Get temperature from property (defaults to 0.1)
         temperature = provider_config.temperature
 
-        logger.info(f"Creating Ollama driver: model={model}, host={base_url}")
+        logger.info(f"Creating local LLM driver: model={model}, base_url={base_url}")
 
-        return OllamaPromptDriver(
+        return OpenAiChatPromptDriver(
             model=model,
-            host=base_url,
-            options={"temperature": temperature},
+            base_url=base_url,
+            api_key="no-key-required",
         )
 
     @staticmethod

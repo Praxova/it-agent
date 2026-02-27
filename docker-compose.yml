@@ -72,27 +72,30 @@ services:
       LUCID_API_KEY: "${LUCID_API_KEY:-}"
       SERVICENOW_USERNAME: admin
       SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
-      OLLAMA_HOST: http://ollama:11434
+      LLM_BASE_URL: https://llm:8443/v1
     restart: unless-stopped
     networks:
       - lucid-net
     depends_on:
       admin-portal:
         condition: service_healthy
-      ollama:
-        condition: service_started
+      llm:
+        condition: service_healthy
 
-  # ── Ollama LLM Server ───────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: praxova-ollama
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    ports:
-      - "11434:11434"
+  # ── LLM Server (llama.cpp with native TLS) ─────────────────
+  llm:
+    image: praxova-llm:latest
+    build:
+      context: ./docker/llama-server
+      dockerfile: Dockerfile
+    container_name: praxova-llm
+    environment:
+      ADMIN_PORTAL_BOOTSTRAP_URL: http://admin-portal:5000
+      ADMIN_PORTAL_URL: https://admin-portal:5001
+      LUCID_API_KEY: "${LUCID_API_KEY:-}"
     volumes:
-      - ollama-models:/root/.ollama
+      - llm-models:/models
+      - llm-certs:/certs
     deploy:
       resources:
         reservations:
@@ -103,14 +106,25 @@ services:
     restart: unless-stopped
     networks:
       - lucid-net
+    depends_on:
+      admin-portal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-kf", "https://localhost:8443/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
 
 volumes:
   admin-data:
     name: praxova-admin-data
   admin-logs:
     name: praxova-admin-logs
-  ollama-models:
-    name: praxova-ollama-models
+  llm-models:
+    name: praxova-llm-models
+  llm-certs:
+    name: praxova-llm-certs
 
 networks:
   lucid-net:

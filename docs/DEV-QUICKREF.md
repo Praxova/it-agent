@@ -1,7 +1,7 @@
 # Praxova IT Agent — Dev Quick Reference
 
 > Build, deploy, and test cheat sheet for the Praxova stack.
-> Last updated: 2026-02-21
+> Last updated: 2026-02-27
 
 ---
 
@@ -20,7 +20,7 @@
 |-----------|-------|-------|
 | praxova-admin-portal | 5000 (HTTP), 5001 (HTTPS) | praxova-admin:latest |
 | praxova-agent-helpdesk-01 | — | praxova-agent:latest |
-| praxova-ollama | 11434 | ollama/ollama:latest |
+| praxova-llm | 8443 (HTTPS) | praxova-llm:latest |
 
 **ServiceNow PDI**: https://dev341394.service-now.com
 
@@ -36,14 +36,14 @@ cd /home/alton/Documents/lucid-it-agent
 # Build images and save as tarballs in build/artifacts/
 scripts/build-containers.sh
 
-# Skip ollama tarball (it's huge and rarely changes)
-scripts/build-containers.sh --skip-ollama
+# Skip LLM server build (large CUDA build, rarely changes)
+scripts/build-containers.sh --skip-llm
 ```
 
 Outputs:
 - `build/artifacts/praxova-admin-<tag>.tar`
 - `build/artifacts/praxova-agent-<tag>.tar`
-- `build/artifacts/ollama-latest.tar` (unless skipped)
+- `build/artifacts/praxova-llm-<tag>.tar` (unless skipped)
 
 ### Tool Server (.NET, built on Windows)
 
@@ -96,8 +96,8 @@ docker compose down -v
 # Deploy tarballs to a remote host via SSH
 scripts/deploy-containers.sh deploy@10.0.0.10 v1.0.0
 
-# Skip ollama (already deployed)
-scripts/deploy-containers.sh --skip-ollama deploy@10.0.0.10 v1.0.0
+# Skip LLM server (already deployed)
+scripts/deploy-containers.sh --skip-llm deploy@10.0.0.10 v1.0.0
 
 # Custom .env file
 scripts/deploy-containers.sh deploy@10.0.0.10 v1.0.0 /path/to/.env
@@ -206,20 +206,27 @@ LUCID_API_KEY=
 
 ---
 
-## 6. Ollama (LLM)
+## 6. LLM Server (llama.cpp)
+
+The LLM server runs llama.cpp with native TLS. It auto-provisions a certificate
+from the portal PKI on first startup.
 
 ```bash
-# Container ollama (used by docker agent)
-docker compose exec ollama ollama list
-docker compose exec ollama ollama pull llama3.1
+# Place your GGUF model file in the llm-models volume
+docker volume inspect praxova-llm-models   # Find mount point
+# Copy model into the volume (e.g., from a download):
+sudo cp llama-3.1-8b-instruct.Q4_K_M.gguf \
+    /var/lib/docker/volumes/praxova-llm-models/_data/model.gguf
 
-# Local ollama (used by manual agent runs)
-ollama serve          # Start (if not running as service)
-ollama list           # Check models
-ollama pull llama3.1  # Download model
+# Check LLM server logs
+docker compose logs -f llm
+
+# Health check (uses self-signed cert from portal CA)
+curl -sk https://localhost:8443/health
 ```
 
-> ⚠️ Don't run local `ollama serve` and container Ollama simultaneously — port 11434 conflict.
+> The LLM server image includes a full CUDA build of llama.cpp. First build takes
+> 10-15 minutes. Subsequent builds use Docker layer cache.
 
 ---
 
@@ -246,8 +253,8 @@ curl -s http://localhost:5000/api/agents/by-name/test-agent/export | jq
 curl -s http://tool01:8080/api/v1/health | jq            # HTTP
 curl -sk https://tool01:8443/api/v1/health | jq          # HTTPS (after cert provisioning)
 
-# ── Ollama ───────────────────────────────────────────────
-curl -s http://localhost:11434/api/tags | jq '.models[].name'
+# ── LLM Server ────────────────────────────────────────────
+curl -sk https://localhost:8443/health | jq
 
 # ── ServiceNow ───────────────────────────────────────────
 curl -s -u admin:$SERVICENOW_PASSWORD \
@@ -257,7 +264,7 @@ curl -s -u admin:$SERVICENOW_PASSWORD \
 docker compose ps
 docker compose logs -f admin-portal       # Portal logs
 docker compose logs -f agent-helpdesk-01  # Agent logs
-docker compose logs -f ollama             # Ollama logs
+docker compose logs -f llm               # LLM server logs
 ```
 
 ---
@@ -293,9 +300,9 @@ dotnet test
 cd /home/alton/Documents/lucid-it-agent/tool-server/dotnet
 dotnet test
 
-# Ollama integration tests
+# LLM integration tests
 cd /home/alton/Documents/lucid-it-agent/agent
-python scripts/test_ollama_integration.py
+python scripts/test_llm_integration.py
 ```
 
 ---
@@ -308,7 +315,7 @@ When everything needs to go out together:
 cd /home/alton/Documents/lucid-it-agent
 
 # 1. Build containers (make sure to record the <TAG>)
-scripts/build-containers.sh --skip-ollama
+scripts/build-containers.sh
 
 # 2. Build tool server
 scripts/build-toolserver.sh
@@ -331,8 +338,8 @@ docker compose logs -f admin-portal  # Watch for "Application started"
 
 # 7. Generate API key in portal UI → add to .env (see section 4)
 
-# 8. Pull LLM model into container ollama (first time only)
-docker compose exec ollama ollama pull llama3.1
+# 8. Copy GGUF model into LLM volume (first time only)
+#    See section 6 for details on placing the model file
 
 # 9. Restart agent to pick up API key
 docker restart praxova-agent-helpdesk-01
@@ -373,7 +380,8 @@ After reset you must:
 - Re-generate the agent API key (old one is gone)
 - Re-provision tool server TLS cert (old CA is gone)
 
-> Ollama models persist in a separate volume (`praxova-ollama-models`) — not affected by reset.
+> LLM models persist in a separate volume (`praxova-llm-models`) — not affected by reset.
+> LLM server certs (`praxova-llm-certs`) will be re-provisioned automatically on next startup.
 
 ---
 
@@ -395,7 +403,7 @@ git commit -m "description"
 |---------|------|-------|-------|
 | Admin Portal | 5000 | 5001 | Blazor UI + REST API |
 | Tool Server | 8080 | 8443 | AD/file operations (on tool01) |
-| Ollama | 11434 | — | LLM inference |
+| LLM Server | — | 8443 | llama.cpp with native TLS |
 | ServiceNow PDI | — | 443 | External SaaS |
 
 ## Appendix: Trust Chain
@@ -405,6 +413,7 @@ All internal TLS uses certs from the portal's internal PKI (RSA 4096 CA, 90-day 
 | Connection | Trust Mechanism |
 |---|---|
 | Agent → Portal (HTTPS) | Entrypoint fetches CA via HTTP (`GET /api/pki/trust-bundle`), sets `SSL_CERT_FILE` before agent starts. **Note:** shared volume workaround still active in docker-compose.yml pending portal redirect fix — see infra runbook. |
+| Agent → LLM Server (HTTPS) | Same CA — trusted from bootstrap fetch. LLM server also bootstraps CA trust + provisions its own cert from portal PKI. |
 | Agent → Tool Server (HTTPS) | Same CA — trusted from bootstrap fetch |
 | Portal → Portal (self-calls) | Custom X509Chain validation against own CA in Program.cs |
 | Portal → Tool Server (health checks) | OS trust store (`update-ca-certificates` in container entrypoint) |
