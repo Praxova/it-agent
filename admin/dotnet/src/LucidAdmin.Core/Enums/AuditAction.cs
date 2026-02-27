@@ -52,5 +52,9 @@ public enum AuditAction
     // API key operations
     ApiKeyCreated,
     ApiKeyRevoked,
-    ApiKeyUsed
+    ApiKeyUsed,
+
+    // Operation token operations
+    OperationTokenIssued,
+    OperationTokenDenied
 }

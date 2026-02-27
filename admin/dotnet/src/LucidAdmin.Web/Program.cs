@@ -201,6 +201,8 @@ builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.Ca
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
 builder.Services.AddSingleton<WorkflowRequirementsService>();
 builder.Services.AddSingleton<RecoveryKeyPresenter>();
+builder.Services.AddScoped<OperationTokenService>();
+builder.Services.AddSingleton<OperationTokenRateLimiter>();
 builder.Services.AddScoped<IAdSettingsService, AdSettingsService>();
 builder.Services.AddScoped<ITlsCertificateProbeService, TlsCertificateProbeService>();
 builder.Services.AddSingleton<ITrustedCertificateStore, TrustedCertificateStore>();
@@ -334,6 +336,18 @@ builder.Services.AddScoped(sp =>
 });
 
 var app = builder.Build();
+
+// Background cleanup for operation token nonces (runs every minute)
+var nonceCleanupTimer = new System.Threading.Timer(_ =>
+{
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var tokenService = scope.ServiceProvider.GetRequiredService<OperationTokenService>();
+        tokenService.CleanupExpiredNonces();
+    }
+    catch { /* Swallow — cleanup failures must not crash the portal */ }
+}, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
 // Database migration and seeding
 using (var scope = app.Services.CreateScope())
@@ -641,6 +655,7 @@ app.MapExampleSetEndpoints();
 app.MapWorkflowEndpoints();
 app.MapManualSubmissionEndpoints();
 app.MapApprovalEndpoints();
+app.MapAuthzEndpoints();
 app.MapClarificationEndpoints();
 app.MapSettingsEndpoints();
 app.MapSystemEndpoints();
