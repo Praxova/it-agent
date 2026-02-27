@@ -33,8 +33,8 @@ ENV_EXAMPLE   := $(PROJECT_DIR)/.env.example
 # ── Required .env keys (checked before every deploy) ─────────────────────────
 REQUIRED_ENV_KEYS :=
 
-# ── Default LLM model ────────────────────────────────────────────────────────
-LLM_MODEL := llama3.1
+# ── LLM model URL (GGUF download URL, required for make pull-model) ─────────
+LLM_MODEL_URL ?=
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RESET  := \033[0m
@@ -54,17 +54,17 @@ help:
 	@printf "$(BOLD)lucid-it-agent pipeline$(RESET)  TAG=$(TAG)  HOST=$(HOST)\n\n"
 	@printf "$(BOLD)CORE TARGETS$(RESET)\n"
 	@printf "  $(GREEN)make build$(RESET)               Build all images + save tarballs\n"
-	@printf "  $(GREEN)make build-skip-ollama$(RESET)   Build but skip the ~3GB ollama tarball\n"
+	@printf "  $(GREEN)make build-skip-llm$(RESET)      Build but skip the LLM server image\n"
 	@printf "  $(GREEN)make build-all$(RESET)            Build containers + tool server\n"
 	@printf "  $(GREEN)make build-toolserver$(RESET)    Build tool server on Windows build VM\n"
 	@printf "  $(GREEN)make build-toolserver-msi$(RESET)  Build tool server + MSI + Setup EXE\n"
 	@printf "  $(GREEN)make deploy$(RESET)              build then deploy to VM 110\n"
 	@printf "  $(GREEN)make deploy-only$(RESET)         Deploy existing tarballs (no rebuild)\n"
-	@printf "  $(GREEN)make deploy-skip-ollama$(RESET)  Deploy without reloading ollama image\n"
-	@printf "  $(GREEN)make ship$(RESET)                Build + deploy, skip ollama (daily workflow)\n"
+	@printf "  $(GREEN)make deploy-skip-llm$(RESET)     Deploy without reloading LLM server image\n"
+	@printf "  $(GREEN)make ship$(RESET)                Build + deploy, skip LLM server (daily workflow)\n"
 	@printf "  $(GREEN)make full$(RESET)                Full from-scratch sequence\n"
 	@printf "\n$(BOLD)MODEL$(RESET)\n"
-	@printf "  $(GREEN)make pull-model$(RESET)          Pull $(LLM_MODEL) inside ollama on remote\n"
+	@printf "  $(GREEN)make pull-model$(RESET)          Download GGUF model into LLM server volume on remote\n"
 	@printf "\n$(BOLD)INFRA CHECKS$(RESET)\n"
 	@printf "  $(GREEN)make verify-gpu$(RESET)          Check nvidia-smi + CUDA container on remote\n"
 	@printf "  $(GREEN)make ping$(RESET)                SSH connectivity check\n"
@@ -94,7 +94,7 @@ help:
 	@printf "  TAG=$(TAG)\n"
 	@printf "  HOST=$(HOST)\n"
 	@printf "  ENV_FILE=$(ENV_FILE)\n"
-	@printf "  LLM_MODEL=$(LLM_MODEL)\n"
+	@printf "  LLM_MODEL_URL=$(LLM_MODEL_URL)\n"
 
 # =============================================================================
 # Environment management
@@ -143,11 +143,11 @@ build:
 	$(SCRIPTS_DIR)/build-containers.sh $(TAG)
 	@printf "$(GREEN)OK: Build complete -- artifacts in build/artifacts/$(RESET)\n"
 
-.PHONY: build-skip-ollama
-build-skip-ollama:
-	@printf "\n$(BOLD)$(CYAN)-- Building images (skipping ollama tarball) --$(RESET)\n"
+.PHONY: build-skip-llm
+build-skip-llm:
+	@printf "\n$(BOLD)$(CYAN)-- Building images (skipping LLM server) --$(RESET)\n"
 	@mkdir -p $(ARTIFACTS_DIR)
-	$(SCRIPTS_DIR)/build-containers.sh --skip-ollama $(TAG)
+	$(SCRIPTS_DIR)/build-containers.sh --skip-llm $(TAG)
 	@printf "$(GREEN)OK: Build complete$(RESET)\n"
 
 .PHONY: build-toolserver build-toolserver-msi
@@ -188,10 +188,10 @@ deploy-only: _pre-deploy
 		printf "$(YELLOW)WARNING: deploy-containers.sh exited non-zero. Run: make status$(RESET)\n"
 	@printf "$(GREEN)OK: Deploy step complete$(RESET)\n"
 
-.PHONY: deploy-skip-ollama
-deploy-skip-ollama: _pre-deploy
-	@printf "\n$(BOLD)$(CYAN)-- Deploying (skipping ollama reload) --$(RESET)\n"
-	$(SCRIPTS_DIR)/deploy-containers.sh --skip-ollama $(HOST) $(TAG) $(ENV_FILE) || \
+.PHONY: deploy-skip-llm
+deploy-skip-llm: _pre-deploy
+	@printf "\n$(BOLD)$(CYAN)-- Deploying (skipping LLM server reload) --$(RESET)\n"
+	$(SCRIPTS_DIR)/deploy-containers.sh --skip-llm $(HOST) $(TAG) $(ENV_FILE) || \
 		printf "$(YELLOW)WARNING: deploy-containers.sh exited non-zero. Run: make status$(RESET)\n"
 	@printf "$(GREEN)OK: Deploy step complete$(RESET)\n"
 
@@ -210,16 +210,21 @@ full: build _pre-deploy
 	@printf "\n  Next steps:\n"
 	@printf "    1. Visit portal, API Keys, New Key, Role Agent\n"
 	@printf "    2. Add LUCID_API_KEY to .env\n"
-	@printf "    3. Run: make deploy-skip-ollama\n"
+	@printf "    3. Run: make deploy-skip-llm\n"
 
 # =============================================================================
 # Model management
 # =============================================================================
 .PHONY: pull-model
 pull-model:
-	@printf "\n$(BOLD)$(CYAN)-- Pulling $(LLM_MODEL) on $(HOST) --$(RESET)\n"
-	ssh $(HOST) "cd /opt/praxova && docker compose exec ollama ollama pull $(LLM_MODEL)"
-	@printf "$(GREEN)OK: Model pull complete$(RESET)\n"
+	@if [ -z "$(LLM_MODEL_URL)" ]; then \
+		printf "$(RED)ERROR: LLM_MODEL_URL is required.$(RESET)\n"; \
+		printf "Usage: make pull-model LLM_MODEL_URL=https://huggingface.co/.../model-Q4_K_M.gguf\n"; \
+		exit 1; \
+	fi
+	@printf "\n$(BOLD)$(CYAN)-- Downloading GGUF model to LLM server volume on $(HOST) --$(RESET)\n"
+	ssh $(HOST) "cd /opt/praxova && docker compose run --rm --entrypoint '' llm curl -L -o /models/model.gguf '$(LLM_MODEL_URL)'"
+	@printf "$(GREEN)OK: Model download complete. Restart LLM server: make status$(RESET)\n"
 
 # =============================================================================
 # Infra / status checks
@@ -328,9 +333,9 @@ test-list:
 	python agent/scripts/create_test_tickets.py --list
 
 # =============================================================================
-# Convenience: build + deploy, skip ollama (most common daily workflow)
+# Convenience: build + deploy, skip LLM server (most common daily workflow)
 # =============================================================================
 .PHONY: ship
 
-ship: build-skip-ollama deploy-skip-ollama
-	@printf "\n$(BOLD)$(GREEN)OK: Build + deploy complete (ollama unchanged)$(RESET)\n"
+ship: build-skip-llm deploy-skip-llm
+	@printf "\n$(BOLD)$(GREEN)OK: Build + deploy complete (LLM server unchanged)$(RESET)\n"

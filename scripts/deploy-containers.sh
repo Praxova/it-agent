@@ -11,7 +11,7 @@ ARTIFACTS_DIR="${PROJECT_ROOT}/build/artifacts"
 REMOTE_DIR="/opt/praxova"
 
 # Defaults
-SKIP_OLLAMA=false
+SKIP_LLM=false
 
 usage() {
     cat <<EOF
@@ -25,7 +25,7 @@ Arguments:
   ENV_FILE       Path to .env file (default: .env in project root)
 
 Options:
-  --skip-ollama  Skip deploying ollama image tarball
+  --skip-llm     Skip deploying LLM server image tarball
   -h, --help     Show this help message
 
 Prerequisites:
@@ -39,7 +39,7 @@ EOF
 # Parse options
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --skip-ollama) SKIP_OLLAMA=true; shift ;;
+        --skip-llm) SKIP_LLM=true; shift ;;
         -h|--help) usage ;;
         -*) echo "ERROR: Unknown option: $1" >&2; exit 1 ;;
         *) break ;;
@@ -53,7 +53,7 @@ ENV_FILE="${3:-${PROJECT_ROOT}/.env}"
 # ── Validate local artifacts ─────────────────────────────────────
 ADMIN_TAR="${ARTIFACTS_DIR}/praxova-admin-${RELEASE_TAG}.tar"
 AGENT_TAR="${ARTIFACTS_DIR}/praxova-agent-${RELEASE_TAG}.tar"
-OLLAMA_TAR="${ARTIFACTS_DIR}/ollama-latest.tar"
+LLM_TAR="${ARTIFACTS_DIR}/praxova-llm-${RELEASE_TAG}.tar"
 
 for f in "$ADMIN_TAR" "$AGENT_TAR"; do
     if [[ ! -f "$f" ]]; then
@@ -91,9 +91,9 @@ rsync -ahP "$ADMIN_TAR" "${DOCKER_HOST}:${REMOTE_DIR}/"
 echo "  Syncing agent image..."
 rsync -ahP "$AGENT_TAR" "${DOCKER_HOST}:${REMOTE_DIR}/"
 
-if [[ "$SKIP_OLLAMA" != "true" ]] && [[ -f "$OLLAMA_TAR" ]]; then
-    echo "  Syncing ollama image (large — rsync provides resume support)..."
-    rsync -ahP "$OLLAMA_TAR" "${DOCKER_HOST}:${REMOTE_DIR}/"
+if [[ "$SKIP_LLM" != "true" ]] && [[ -f "$LLM_TAR" ]]; then
+    echo "  Syncing LLM server image (large — rsync provides resume support)..."
+    rsync -ahP "$LLM_TAR" "${DOCKER_HOST}:${REMOTE_DIR}/"
 fi
 
 echo "  Copying docker-compose.yml..."
@@ -117,9 +117,9 @@ docker load -i praxova-admin-${RELEASE_TAG}.tar
 echo "  Loading praxova-agent:${RELEASE_TAG}..."
 docker load -i praxova-agent-${RELEASE_TAG}.tar
 
-if [[ -f ollama-latest.tar ]]; then
-    echo "  Loading ollama/ollama:latest..."
-    docker load -i ollama-latest.tar
+if [[ -f praxova-llm-${RELEASE_TAG}.tar ]]; then
+    echo "  Loading praxova-llm:${RELEASE_TAG}..."
+    docker load -i praxova-llm-${RELEASE_TAG}.tar
 fi
 
 echo ""
