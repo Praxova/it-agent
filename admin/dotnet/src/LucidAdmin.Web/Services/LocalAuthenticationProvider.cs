@@ -35,19 +35,6 @@ public class LocalAuthenticationProvider : IAuthenticationProvider
             };
         }
 
-        if (!_passwordHasher.VerifyPassword(password, user.PasswordHash))
-        {
-            // Increment failed login count
-            await _userRepository.IncrementFailedLoginAsync(user.Id);
-            _logger.LogWarning("Failed local login attempt for {Username}", username);
-
-            return new AuthenticationResult
-            {
-                Success = false,
-                ErrorMessage = "Invalid username or password"
-            };
-        }
-
         if (!user.IsEnabled)
         {
             _logger.LogWarning("Login attempt for disabled local user: {Username}", username);
@@ -61,10 +48,24 @@ public class LocalAuthenticationProvider : IAuthenticationProvider
         if (user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTime.UtcNow)
         {
             _logger.LogWarning("Login attempt for locked out user: {Username}", username);
+            var remaining = (int)Math.Ceiling((user.LockoutEnd.Value - DateTime.UtcNow).TotalMinutes);
             return new AuthenticationResult
             {
                 Success = false,
-                ErrorMessage = $"Your account is locked until {user.LockoutEnd.Value:g}."
+                ErrorMessage = $"Account temporarily locked — try again in {remaining} minute{(remaining == 1 ? "" : "s")}."
+            };
+        }
+
+        if (!_passwordHasher.VerifyPassword(password, user.PasswordHash))
+        {
+            // Increment failed login count (may trigger lockout)
+            await _userRepository.IncrementFailedLoginAsync(user.Id);
+            _logger.LogWarning("Failed local login attempt for {Username}", username);
+
+            return new AuthenticationResult
+            {
+                Success = false,
+                ErrorMessage = "Invalid username or password"
             };
         }
 

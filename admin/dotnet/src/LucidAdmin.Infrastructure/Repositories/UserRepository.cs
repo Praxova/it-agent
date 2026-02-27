@@ -44,6 +44,12 @@ public class UserRepository : Repository<User>, IUserRepository
         if (user != null)
         {
             user.FailedLoginAttempts++;
+            // Engage lockout after 5 failures
+            if (user.FailedLoginAttempts >= 5)
+            {
+                user.LockoutEnd = DateTime.UtcNow.AddMinutes(15);
+                // Don't reset counter — operator can see how many attempts were made
+            }
             await UpdateAsync(user, ct);
         }
     }
