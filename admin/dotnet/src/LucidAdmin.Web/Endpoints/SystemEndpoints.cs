@@ -1,5 +1,6 @@
 using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Web.Authorization;
+using LucidAdmin.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LucidAdmin.Web.Endpoints;
@@ -25,6 +26,7 @@ public static class SystemEndpoints
             [FromBody] InitializeRequest request,
             ISealManager sealManager,
             IJwtKeyManager jwtKeyManager,
+            RecoveryKeyPresenter recoveryKeyPresenter,
             ILogger<ISealManager> logger) =>
         {
             if (!sealManager.RequiresInitialization)
@@ -39,7 +41,8 @@ public static class SystemEndpoints
 
             try
             {
-                await sealManager.InitializeAsync(request.Passphrase);
+                var recoveryKey = await sealManager.InitializeAsync(request.Passphrase);
+                recoveryKeyPresenter.SetKey(recoveryKey);
 
                 // Initialize JWT key manager now that we're unsealed
                 await jwtKeyManager.InitializeAsync();
@@ -48,7 +51,7 @@ public static class SystemEndpoints
                         Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>>());
 
                 logger.LogInformation("Secrets store initialized via API");
-                return Results.Ok(new { message = "Secrets store initialized and unsealed." });
+                return Results.Ok(new { message = "Secrets store initialized and unsealed.", recoveryKey });
             }
             catch (Exception ex)
             {
@@ -97,6 +100,31 @@ public static class SystemEndpoints
             logger.LogInformation("Secrets store unsealed via API");
             return Results.Ok(new { message = "Secrets store unsealed." });
         }).WithName("UnsealSecretsStore");
+
+        // Regenerate recovery key — admin only, store must be unsealed
+        group.MapPost("/regenerate-recovery-key", async (
+            ISealManager sealManager,
+            ILogger<ISealManager> logger) =>
+        {
+            if (!sealManager.IsUnsealed)
+            {
+                return Results.BadRequest(new { error = "Secrets store must be unsealed to regenerate the recovery key." });
+            }
+
+            try
+            {
+                var newKey = await sealManager.RegenerateRecoveryKeyAsync();
+                logger.LogInformation("Recovery key regenerated via API");
+                return Results.Ok(new { recoveryKey = newKey });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to regenerate recovery key");
+                return Results.Problem($"Recovery key regeneration failed: {ex.Message}");
+            }
+        })
+        .WithName("RegenerateRecoveryKey")
+        .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
         // Seal — admin only
         group.MapPost("/seal", (ISealManager sealManager, ILogger<ISealManager> logger) =>
