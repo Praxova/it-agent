@@ -21,6 +21,14 @@ services:
     ports:
       - "5000:5000"
       - "5001:5001"
+    env_file:
+      - path: .env
+        required: true
+      # Production: unseal passphrase in a separate root-owned file.
+      # Development: set PRAXOVA_UNSEAL_PASSPHRASE in .env instead.
+      # See docs/security/unseal-configuration.md
+      - path: /etc/praxova/unseal.env
+        required: false
     environment:
       ASPNETCORE_URLS: "http://+:5000;https://+:5001"
       ASPNETCORE_ENVIRONMENT: Production
@@ -29,7 +37,6 @@ services:
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
-      PRAXOVA_UNSEAL_PASSPHRASE: "${PRAXOVA_UNSEAL_PASSPHRASE:-dev-passphrase-change-in-production}"
     volumes:
       - admin-data:/app/data
       - admin-logs:/app/logs
