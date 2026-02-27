@@ -31,7 +31,25 @@ public class AuditEvent : BaseEntity
     /// Additional details as JSON
     /// </summary>
     public string? DetailsJson { get; set; }
-    
+
+    /// <summary>
+    /// Monotonically increasing sequence number. Gaps indicate deleted records.
+    /// Assigned at insert time by AuditChainService.
+    /// </summary>
+    public long SequenceNumber { get; set; }
+
+    /// <summary>
+    /// SHA-256 hash of this record's canonical content (excluding the hash fields).
+    /// Computed at insert time. See AuditChainService.ComputeRecordHash().
+    /// </summary>
+    public string RecordHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// RecordHash of the immediately preceding audit record.
+    /// First record uses SHA-256("PRAXOVA-AUDIT-GENESIS-v1") as the genesis value.
+    /// </summary>
+    public string PreviousRecordHash { get; set; } = string.Empty;
+
     // Navigation
     public ToolServer? ToolServer { get; set; }
     public Agent? Agent { get; set; }
