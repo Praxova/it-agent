@@ -54,7 +54,7 @@ services:
       - 8.8.8.8
       - 1.1.1.1
     environment:
-      # Bootstrap URL — HTTP, used only for health check and trust bundle fetch
+      # Bootstrap URL — HTTP, used by docker-entrypoint.sh to fetch CA trust bundle from /api/pki/trust-bundle
       ADMIN_PORTAL_BOOTSTRAP_URL: http://admin-portal:5000
       # Runtime URL — HTTPS, used for all agent↔portal communication
       ADMIN_PORTAL_URL: https://admin-portal:5001
@@ -66,11 +66,6 @@ services:
       SERVICENOW_USERNAME: admin
       SERVICENOW_PASSWORD: ${SERVICENOW_PASSWORD}
       OLLAMA_HOST: http://ollama:11434
-      # Trust the portal's auto-generated CA (shared volume, bypasses HTTP→HTTPS redirect bug)
-      SSL_CERT_FILE: /portal-data/certs/ca.pem
-      REQUESTS_CA_BUNDLE: /portal-data/certs/ca.pem
-    volumes:
-      - admin-data:/portal-data:ro
     restart: unless-stopped
     networks:
       - lucid-net
