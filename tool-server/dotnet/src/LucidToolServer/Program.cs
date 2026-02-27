@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using LucidToolServer.Configuration;
 using LucidToolServer.Endpoints;
 using LucidToolServer.Exceptions;
@@ -42,6 +43,22 @@ if (!string.IsNullOrEmpty(azureConfig["TenantId"]) && !string.IsNullOrEmpty(azur
     builder.Services.AddScoped<IAzureService, AzureService>();
 }
 
+// Load Praxova CA for mTLS client certificate validation
+X509Certificate2? praxovaCA = null;
+var caRelativePath = "certs/ca.pem";  // Deployed by provision-toolserver-certs.ps1
+var fullCaPath = Path.Combine(builder.Environment.ContentRootPath, caRelativePath);
+
+if (File.Exists(fullCaPath))
+{
+    praxovaCA = new X509Certificate2(fullCaPath);
+    Log.Information("Praxova CA loaded for mTLS — thumbprint: {Thumbprint}",
+        Convert.ToHexString(praxovaCA.GetCertHash(HashAlgorithmName.SHA256)));
+}
+else
+{
+    Log.Warning("Praxova CA not found at {Path} — mTLS client cert validation disabled", fullCaPath);
+}
+
 // HTTPS — configured programmatically (not via appsettings.json, which can't be
 // cleanly disabled at runtime if cert files don't exist yet).
 var httpsEnabled = false;
@@ -63,7 +80,28 @@ if (File.Exists(fullCertPath) && File.Exists(fullKeyPath))
             // Re-export as PFX to persist the private key — CreateFromPemFile creates
             // an ephemeral key on Windows that SslStream/Kestrel cannot use for TLS.
             var cert = new X509Certificate2(pemCert.Export(X509ContentType.Pfx));
-            listenOptions.UseHttps(cert);
+
+            listenOptions.UseHttps(httpsOptions =>
+            {
+                httpsOptions.ServerCertificate = cert;
+                // AllowCertificate = optional at TLS handshake; middleware enforces
+                // requirement for operation endpoints (keeps health check simple)
+                httpsOptions.ClientCertificateMode = ClientCertificateMode.AllowCertificate;
+
+                if (praxovaCA != null)
+                {
+                    httpsOptions.ClientCertificateValidation = (clientCert, chain, errors) =>
+                    {
+                        using var customChain = new X509Chain();
+                        customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                        customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                        customChain.ChainPolicy.CustomTrustStore.Add(praxovaCA);
+                        customChain.ChainPolicy.ApplicationPolicy.Add(
+                            new Oid("1.3.6.1.5.5.7.3.2")); // id-kp-clientAuth
+                        return customChain.Build(clientCert);
+                    };
+                }
+            });
         });
     });
 }
@@ -207,6 +245,55 @@ app.Use(async (context, next) =>
 
         await context.Response.WriteAsJsonAsync(errorResponse);
     }
+});
+
+// mTLS enforcement: require validated client cert for operation POSTs
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? "";
+    var method = context.Request.Method;
+
+    var requiresClientCert =
+        praxovaCA != null &&
+        method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+        path.StartsWith("/api/v1/", StringComparison.OrdinalIgnoreCase) &&
+        !path.Equals("/api/v1/health", StringComparison.OrdinalIgnoreCase);
+
+    if (!requiresClientCert)
+    {
+        await next(context);
+        return;
+    }
+
+    var clientCert = context.Connection.ClientCertificate;
+    if (clientCert == null)
+    {
+        var mLogger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        mLogger.LogWarning("mTLS: No client cert for {Method} {Path}", method, path);
+
+        context.Response.StatusCode = 403;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "client_cert_required",
+            detail = "A valid Praxova agent client certificate is required"
+        });
+        return;
+    }
+
+    // Cert already validated by Kestrel's ClientCertificateValidation callback.
+    // Log expiry warning if within 30 days.
+    var daysLeft = (clientCert.NotAfter.ToUniversalTime() - DateTime.UtcNow).Days;
+    if (daysLeft < 30)
+    {
+        var mLogger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        mLogger.LogWarning(
+            "Agent client cert expires in {Days} days (CN={CN}, expires {Expiry}). " +
+            "Agent will auto-renew on next startup.",
+            daysLeft, clientCert.Subject, clientCert.NotAfter.ToUniversalTime());
+    }
+
+    await next(context);
 });
 
 // Operation token validation middleware
