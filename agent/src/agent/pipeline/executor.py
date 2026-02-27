@@ -206,7 +206,10 @@ class TicketExecutor:
                 processed += 1
                 self._tickets_processed += 1
             except Exception as e:
-                logger.exception(f"Error processing ticket {ticket.number}: {e}")
+                logger.exception(
+                    f"Unhandled exception processing ticket {ticket.number}: {e}"
+                )
+                await self._emergency_escalate(ticket, e)
 
         # Send heartbeat after processing batch
         if self._admin_client and processed > 0:
@@ -273,6 +276,10 @@ class TicketExecutor:
         # Step 4: Find handler
         handler = self._handlers.get(classification.ticket_type)
         if not handler:
+            logger.warning(
+                f"No handler registered for ticket type "
+                f"'{classification.ticket_type}' (ticket {ticket.number})"
+            )
             await self._escalate_ticket(
                 ticket,
                 classification,
@@ -356,6 +363,42 @@ This ticket has been reassigned to {self.config.escalation_group} for manual rev
         # Note: In production, you'd also reassign to escalation_group
         # This requires knowing the sys_id of the group, which we'd look up
 
+    async def _emergency_escalate(self, ticket: Ticket, error: Exception):
+        """Last-resort escalation when an unhandled exception occurs.
+
+        This ensures no ticket is left in limbo — even if classification,
+        handler lookup, or any other step throws an unexpected error, the
+        ticket gets pushed back to the human queue with diagnostic info.
+
+        Args:
+            ticket: The ticket that failed.
+            error: The unhandled exception.
+        """
+        try:
+            work_note = (
+                f"EMERGENCY ESCALATION — Praxova IT Agent encountered an "
+                f"unhandled error while processing this ticket.\n\n"
+                f"Error: {type(error).__name__}: {error}\n\n"
+                f"This ticket has been escalated to {self.config.escalation_group} "
+                f"for manual review. No automated changes were applied."
+            )
+            await self._connector.update_ticket(
+                ticket.id,
+                TicketUpdate(
+                    state=TicketState.IN_PROGRESS,
+                    assigned_to=None,
+                    work_notes=work_note,
+                ),
+            )
+            logger.info(
+                f"Emergency escalation completed for ticket {ticket.number}"
+            )
+        except Exception as escalation_error:
+            logger.critical(
+                f"Failed to emergency-escalate ticket {ticket.number}: "
+                f"{escalation_error} (original error: {error})"
+            )
+
     async def _update_ticket_with_result(
         self,
         ticket: Ticket,
@@ -386,7 +429,12 @@ This ticket has been reassigned to {self.config.escalation_group} for manual rev
                     ticket.id, resolution=f"Resolved by Praxova IT Agent. {result.message}"
                 )
         else:
-            logger.warning(f"Ticket {ticket.number} handler failed: {result.error}")
+            logger.warning(
+                f"Handler failed for ticket {ticket.number} "
+                f"(type={classification.ticket_type}, "
+                f"handler={type(self._handlers.get(classification.ticket_type)).__name__}): "
+                f"{result.error}"
+            )
 
             # Add work notes about failure
             await self._connector.add_work_note(
