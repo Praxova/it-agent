@@ -73,21 +73,60 @@ If `PRAXOVA_UNSEAL_PASSPHRASE` is set in both `.env` and `/etc/praxova/unseal.en
 the value from `unseal.env` takes precedence. This lets you override a dev default
 with the production passphrase without editing `.env`.
 
-## What Happens If the Passphrase Is Lost
+## Recovery Key
 
-If the unseal passphrase is lost, **all stored credentials become unrecoverable**.
-The portal will start but remain sealed — it cannot decrypt any DEKs, and therefore
-cannot decrypt any secrets.
+A **recovery key** is generated alongside the KEK during first-time initialization.
+It provides a second decryption path for the KEK, independent of the passphrase.
+
+The recovery key is formatted as `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`
+(128-bit random, formatted as uppercase hex groups). It is:
+
+- Shown once in the startup log and the UI after first initialization
+- Run through Argon2id (same parameters as the passphrase) before use as an
+  encryption key — brute-force resistance is equivalent to the passphrase path
+- Stored in `SystemSecrets` as `envelope-kek-recovery` (encrypted KEK + salt)
+
+### Using the Recovery Key
+
+If the passphrase is lost, set the recovery key in the environment:
+
+```
+PRAXOVA_RECOVERY_KEY=XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+```
+
+The portal will unseal via the recovery key path and log a warning:
+
+```
+Secrets store unsealed via PRAXOVA_RECOVERY_KEY — change the passphrase as soon as possible
+```
+
+After unsealing with the recovery key, set a new passphrase immediately.
+
+### Regenerating the Recovery Key
+
+Admins can regenerate the recovery key via the API (requires the store to be
+unsealed and an admin session):
+
+```
+POST /api/v1/system/regenerate-recovery-key
+```
+
+This invalidates the old recovery key and returns a new one. Regenerate after
+any suspected compromise.
+
+## What Happens If Both the Passphrase and Recovery Key Are Lost
+
+If both the unseal passphrase and recovery key are lost, **all stored credentials
+become unrecoverable**. The portal will start but remain sealed — it cannot
+decrypt any DEKs, and therefore cannot decrypt any secrets.
 
 Recovery requires:
 1. Re-entering all credentials manually through the portal UI
 2. The portal will re-encrypt them with a new passphrase
 
-There is no backdoor or recovery key (a recovery key mechanism may be added in a
-future release).
-
-**Always back up the passphrase** to a secure location: password manager, hardware
-security module, or printed and stored in a safe.
+**Always back up both the passphrase and recovery key** to separate secure
+locations: password manager, hardware security module, or printed and stored
+in a safe. Do not store them together.
 
 ## File Permissions
 
