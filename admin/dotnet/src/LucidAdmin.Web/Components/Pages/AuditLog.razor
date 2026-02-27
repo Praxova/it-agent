@@ -2,7 +2,9 @@
 @attribute [Authorize]
 @using LucidAdmin.Core.Entities
 @using LucidAdmin.Core.Interfaces.Repositories
+@using LucidAdmin.Infrastructure.Services
 @inject IAuditEventRepository AuditRepository
+@inject AuditChainService ChainService
 
 <PageTitle>Audit Log - Praxova Admin</PageTitle>
 
@@ -22,6 +24,28 @@
     }
     else
     {
+        @if (_verifying)
+        {
+            <MudProgressLinear Color="Color.Info" Indeterminate="true" Class="mb-4" />
+        }
+        else if (_verificationReport != null)
+        {
+            <MudAlert Severity="@(_verificationReport.Verified ? Severity.Success : Severity.Error)"
+                      Class="mb-4">
+                @if (_verificationReport.Verified)
+                {
+                    <text>Audit chain verified — @_verificationReport.RecordsChecked records checked, no tampering detected</text>
+                }
+                else
+                {
+                    <text>Audit chain verification detected anomalies — @_verificationReport.GapsDetected.Count gap(s), @_verificationReport.HashMismatches.Count hash mismatch(es)</text>
+                }
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="VerifyChain" Class="ml-2">
+                    Verify Again
+                </MudButton>
+            </MudAlert>
+        }
+
         <!-- Filters -->
         <MudGrid Class="mb-4">
             <MudItem xs="12" sm="6" md="3">
@@ -160,6 +184,8 @@
     private string? _statusFilter;
     private DateTime? _dateFrom;
     private DateTime? _dateTo;
+    private AuditVerificationReport? _verificationReport;
+    private bool _verifying;
 
     private IEnumerable<AuditEvent> FilteredEvents => _events.Where(e =>
     {
@@ -189,6 +215,25 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadEvents();
+        await VerifyChain();
+    }
+
+    private async Task VerifyChain()
+    {
+        _verifying = true;
+        StateHasChanged();
+        try
+        {
+            _verificationReport = await ChainService.VerifyAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Verification failed: {ex.Message}";
+        }
+        finally
+        {
+            _verifying = false;
+        }
     }
 
     private async Task LoadEvents()
