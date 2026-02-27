@@ -443,6 +443,240 @@ public class InternalPkiService : IInternalPkiService
         return (certPem, keyPem);
     }
 
+    public async Task<(string CertPem, string KeyPem, DateTime ExpiresAt)> GetOrIssueAgentClientCertAsync(
+        string agentName)
+    {
+        if (!IsInitialized)
+            throw new InvalidOperationException("Internal CA is not initialized.");
+
+        var certName = $"agent-client-{agentName}";
+        var keySecretName = $"agent-client-key-{agentName}";
+        var certSecretName = $"agent-client-cert-{agentName}";
+        const int renewalThresholdDays = 30;
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LucidDbContext>();
+
+        // Check for existing active cert
+        var existing = await db.IssuedCertificates
+            .FirstOrDefaultAsync(c => c.Name == certName && c.IsActive);
+
+        if (existing != null && existing.NotAfter > DateTime.UtcNow.AddDays(renewalThresholdDays))
+        {
+            // Valid cert exists — load stored private key and cert PEM from SystemSecrets
+            var keySecret = await db.SystemSecrets
+                .FirstOrDefaultAsync(s => s.Name == keySecretName);
+
+            if (keySecret != null)
+            {
+                var keyBytes = _encryptionService.Decrypt(keySecret.EncryptedValue, keySecret.Nonce);
+                var keyPem = Encoding.UTF8.GetString(keyBytes);
+                Array.Clear(keyBytes);
+
+                var certPem = await LoadCertPemFromSecrets(db, certSecretName);
+                if (certPem != null)
+                {
+                    _logger.LogDebug(
+                        "Returning existing agent client cert '{Name}', expires {Expiry}",
+                        certName, existing.NotAfter);
+                    return (certPem, keyPem, existing.NotAfter);
+                }
+            }
+
+            // Key or cert PEM is missing — recover by reissuing
+            _logger.LogWarning(
+                "Agent client cert exists in IssuedCertificates but key/cert PEM missing in SystemSecrets. Reissuing.");
+        }
+
+        // Issue new cert (first call or renewal)
+        await _issueLock.WaitAsync();
+        try
+        {
+            // Re-check under lock to avoid races
+            existing = await db.IssuedCertificates
+                .FirstOrDefaultAsync(c => c.Name == certName && c.IsActive);
+
+            if (existing != null && existing.NotAfter > DateTime.UtcNow.AddDays(renewalThresholdDays))
+            {
+                // Another thread issued while we waited — try loading again
+                var keySecret = await db.SystemSecrets
+                    .FirstOrDefaultAsync(s => s.Name == keySecretName);
+                if (keySecret != null)
+                {
+                    var keyBytes = _encryptionService.Decrypt(keySecret.EncryptedValue, keySecret.Nonce);
+                    var keyPem = Encoding.UTF8.GetString(keyBytes);
+                    Array.Clear(keyBytes);
+                    var certPem = await LoadCertPemFromSecrets(db, certSecretName);
+                    if (certPem != null)
+                        return (certPem, keyPem, existing.NotAfter);
+                }
+            }
+
+            var (newCertPem, newKeyPem) = await IssueClientCertificateInternalAsync(agentName, certName, db);
+
+            // Mark old cert inactive if renewing
+            if (existing != null)
+            {
+                existing.IsActive = false;
+                existing.RenewedAt = DateTime.UtcNow;
+            }
+
+            // Store private key encrypted in SystemSecrets (upsert)
+            var existingKeySecret = await db.SystemSecrets
+                .FirstOrDefaultAsync(s => s.Name == keySecretName);
+
+            var newKeyBytes = Encoding.UTF8.GetBytes(newKeyPem);
+            var (encryptedKey, nonce) = _encryptionService.Encrypt(newKeyBytes);
+            Array.Clear(newKeyBytes);
+
+            if (existingKeySecret != null)
+            {
+                existingKeySecret.EncryptedValue = encryptedKey;
+                existingKeySecret.Nonce = nonce;
+            }
+            else
+            {
+                db.SystemSecrets.Add(new SystemSecret
+                {
+                    Name = keySecretName,
+                    EncryptedValue = encryptedKey,
+                    Nonce = nonce,
+                    Purpose = $"mTLS client private key for agent '{agentName}'"
+                });
+            }
+
+            // Store cert PEM in SystemSecrets (plaintext — not sensitive)
+            var existingCertSecret = await db.SystemSecrets
+                .FirstOrDefaultAsync(s => s.Name == certSecretName);
+
+            var certBytes = Encoding.UTF8.GetBytes(newCertPem);
+            if (existingCertSecret != null)
+            {
+                existingCertSecret.EncryptedValue = certBytes;
+                existingCertSecret.Nonce = Array.Empty<byte>();
+                existingCertSecret.Metadata = "plaintext";
+            }
+            else
+            {
+                db.SystemSecrets.Add(new SystemSecret
+                {
+                    Name = certSecretName,
+                    EncryptedValue = certBytes,
+                    Nonce = Array.Empty<byte>(),
+                    Purpose = $"mTLS client certificate PEM for agent '{agentName}' (public, not encrypted)",
+                    Metadata = "plaintext"
+                });
+            }
+
+            await db.SaveChangesAsync();
+
+            // Get the NotAfter from the newly issued cert record
+            var newRecord = await db.IssuedCertificates
+                .FirstOrDefaultAsync(c => c.Name == certName && c.IsActive);
+
+            return (newCertPem, newKeyPem, newRecord?.NotAfter ?? DateTime.UtcNow.AddDays(90));
+        }
+        finally
+        {
+            _issueLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Issue a client authentication certificate for an agent (EKU: clientAuth only).
+    /// Does NOT call SaveChangesAsync — the caller is responsible for that.
+    /// </summary>
+    private async Task<(string CertPem, string KeyPem)> IssueClientCertificateInternalAsync(
+        string agentName, string certName, LucidDbContext db)
+    {
+        const int lifetimeDays = 90;
+
+        _logger.LogInformation("Issuing agent client certificate '{Name}' (CN={CN}, lifetime={Days}d)",
+            certName, agentName, lifetimeDays);
+
+        using var leafKey = RSA.Create(2048);
+
+        var subject = new X500DistinguishedName($"CN={agentName}");
+        var request = new CertificateRequest(subject, leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        // Not a CA
+        request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension(false, false, 0, false));
+
+        // Key usage: digital signature + key encipherment
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(
+                X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment,
+                critical: true));
+
+        // Extended key usage: client authentication ONLY (not serverAuth)
+        request.CertificateExtensions.Add(
+            new X509EnhancedKeyUsageExtension(
+                new OidCollection { new("1.3.6.1.5.5.7.3.2") }, // id-kp-clientAuth
+                false));
+
+        // Authority Key Identifier (links to CA)
+        request.CertificateExtensions.Add(
+            X509AuthorityKeyIdentifierExtension.CreateFromCertificate(
+                _caCert!, includeKeyIdentifier: true, includeIssuerAndSerial: false));
+
+        // Random serial number
+        var serialBytes = RandomNumberGenerator.GetBytes(16);
+        serialBytes[0] &= 0x7F; // Ensure positive
+
+        var notBefore = DateTimeOffset.UtcNow;
+        var notAfter = DateTimeOffset.UtcNow.AddDays(lifetimeDays);
+
+        // Sign with CA
+        using var leafCert = request.Create(
+            _caCert!,
+            notBefore,
+            notAfter,
+            serialBytes);
+
+        // Export PEMs
+        var certPem = leafCert.ExportCertificatePem();
+        var keyPem = leafKey.ExportRSAPrivateKeyPem();
+
+        // Track in database
+        var thumbprint = Convert.ToHexString(leafCert.GetCertHash(HashAlgorithmName.SHA256)).ToLowerInvariant();
+        var serialHex = Convert.ToHexString(serialBytes).ToLowerInvariant();
+
+        db.IssuedCertificates.Add(new IssuedCertificate
+        {
+            Name = certName,
+            SubjectCN = agentName,
+            Thumbprint = thumbprint,
+            SerialNumber = serialHex,
+            NotBefore = notBefore.UtcDateTime,
+            NotAfter = notAfter.UtcDateTime,
+            Usage = "client-tls",
+            IssuedTo = agentName,
+            IsActive = true
+        });
+
+        _logger.LogInformation(
+            "Agent client certificate issued — Name: {Name}, CN: {CN}, Expires: {Expires}, Thumbprint: {Thumbprint}",
+            certName, agentName, notAfter, thumbprint);
+
+        return (certPem, keyPem);
+    }
+
+    /// <summary>
+    /// Load a certificate PEM from SystemSecrets (stored as plaintext).
+    /// </summary>
+    private static async Task<string?> LoadCertPemFromSecrets(LucidDbContext db, string secretName)
+    {
+        var certSecret = await db.SystemSecrets
+            .FirstOrDefaultAsync(s => s.Name == secretName);
+
+        if (certSecret == null)
+            return null;
+
+        // Cert PEM is stored as plaintext (Metadata = "plaintext")
+        return Encoding.UTF8.GetString(certSecret.EncryptedValue);
+    }
+
     /// <summary>
     /// Extracts the Base64 content from a PEM string (strips header/footer and whitespace).
     /// </summary>

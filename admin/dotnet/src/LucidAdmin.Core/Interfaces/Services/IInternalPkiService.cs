@@ -48,4 +48,16 @@ public interface IInternalPkiService
     /// marks the old one as inactive.
     /// </summary>
     Task<(string CertPem, string KeyPem)> RenewCertificateAsync(string name, int lifetimeDays = 90);
+
+    /// <summary>
+    /// Retrieve or issue a client authentication certificate for an agent.
+    /// On first call: issues a new cert (EKU: clientAuth), stores encrypted
+    /// private key in SystemSecrets, and records in IssuedCertificates.
+    /// On subsequent calls: returns the existing cert+key if valid (NotAfter > now + 30d).
+    /// If within 30 days of expiry: auto-renews and stores the new key.
+    /// </summary>
+    /// <param name="agentName">Agent's registered name (e.g., "agent-helpdesk-01")</param>
+    /// <returns>Tuple of (certPem, keyPem, expiresAt)</returns>
+    Task<(string CertPem, string KeyPem, DateTime ExpiresAt)> GetOrIssueAgentClientCertAsync(
+        string agentName);
 }

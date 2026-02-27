@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Infrastructure.Data;
 using LucidAdmin.Web.Authorization;
@@ -168,6 +169,65 @@ public static class PkiEndpoints
         .Produces<IssueCertificateResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status503ServiceUnavailable);
+
+        // GET /api/pki/certificates/agent/{agentName} — get or issue agent mTLS client cert
+        // Requires agent API key auth — agents call this at startup.
+        // Security: fail closed — agent can only fetch its own cert.
+        group.MapGet("/certificates/agent/{agentName}", async (
+            string agentName,
+            IInternalPkiService pkiService,
+            LucidDbContext db,
+            HttpContext httpContext) =>
+        {
+            if (!pkiService.IsInitialized)
+                return Results.StatusCode(503);
+
+            // Fail closed: extract agent identity from API key claims.
+            // If we can't determine the requesting agent's name, deny the request.
+            var agentIdClaim = httpContext.User.FindFirst("agent_id")?.Value;
+            if (string.IsNullOrEmpty(agentIdClaim) || !Guid.TryParse(agentIdClaim, out var agentId))
+            {
+                return Results.Json(
+                    new { error = "agent_identity_required", detail = "API key is not associated with an agent" },
+                    statusCode: 403);
+            }
+
+            // Look up the agent to get its name
+            var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == agentId);
+            if (agent == null)
+            {
+                return Results.Json(
+                    new { error = "agent_not_found", detail = "Agent associated with this API key no longer exists" },
+                    statusCode: 403);
+            }
+
+            // Verify the requesting agent matches the requested cert name
+            if (!string.Equals(agent.Name, agentName, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(
+                    new { error = "agent_mismatch", detail = "You can only request your own client certificate" },
+                    statusCode: 403);
+            }
+
+            try
+            {
+                var (certPem, keyPem, expiresAt) = await pkiService.GetOrIssueAgentClientCertAsync(agentName);
+
+                return Results.Ok(new AgentClientCertResponse(
+                    AgentName: agentName,
+                    CertificatePem: certPem,
+                    PrivateKeyPem: keyPem,
+                    CaCertificatePem: pkiService.GetCaCertificatePem(),
+                    ExpiresAt: expiresAt));
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .WithName("GetAgentClientCert")
+        .WithDescription("Get or issue an mTLS client certificate for an agent")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent);
     }
 }
 
@@ -183,6 +243,13 @@ public record IssueCertificateResponse(
     string CertificatePem,
     string PrivateKeyPem,
     string CaCertificatePem);
+
+public record AgentClientCertResponse(
+    string AgentName,
+    string CertificatePem,
+    string PrivateKeyPem,
+    string CaCertificatePem,
+    DateTime ExpiresAt);
 
 public record CertificateSummary(
     Guid Id,
