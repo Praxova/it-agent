@@ -73,7 +73,76 @@ else
         fullCertPath, fullKeyPath);
 }
 
+// Load operation token signing key
+byte[]? operationTokenSigningKey = null;
+var opTokenSettings = builder.Configuration.GetSection("ToolServer:OperationToken");
+var signingKeyBase64 = opTokenSettings["SigningKeyBase64"];
+var signingKeyPath = opTokenSettings["TokenSigningKeyPath"];
+
+if (!string.IsNullOrEmpty(signingKeyBase64))
+{
+    operationTokenSigningKey = Convert.FromBase64String(signingKeyBase64);
+    Log.Information("Operation token signing key loaded from configuration");
+}
+else if (!string.IsNullOrEmpty(signingKeyPath))
+{
+    var fullKeyPath2 = Path.IsPathRooted(signingKeyPath)
+        ? signingKeyPath
+        : Path.Combine(builder.Environment.ContentRootPath, signingKeyPath);
+
+    if (File.Exists(fullKeyPath2))
+    {
+        var keyJson = File.ReadAllText(fullKeyPath2);
+        var keyData = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(keyJson);
+        if (keyData?.TryGetValue("keyBase64", out var keyB64) == true)
+        {
+            operationTokenSigningKey = Convert.FromBase64String(keyB64);
+            Log.Information("Operation token signing key loaded from file: {Path}", fullKeyPath2);
+        }
+    }
+    else
+    {
+        Log.Warning("Operation token signing key file not found: {Path}. Token validation will be disabled.", fullKeyPath2);
+    }
+}
+else
+{
+    Log.Warning("No operation token signing key configured. Token validation will be disabled. " +
+        "Set ToolServer:OperationToken:SigningKeyBase64 or TokenSigningKeyPath.");
+}
+
+// Register OperationTokenValidator (only when signing key is available)
+if (operationTokenSigningKey != null)
+{
+    var capMapJson = opTokenSettings.GetSection("CapabilityEndpointMap").Get<Dictionary<string, string[]>>()
+        ?? new Dictionary<string, string[]>();
+    var selfUrl = opTokenSettings["SelfUrl"] ?? "https://localhost:8443";
+    var issuer = opTokenSettings["Issuer"] ?? "praxova-portal";
+
+    builder.Services.AddSingleton(sp =>
+        new OperationTokenValidator(
+            operationTokenSigningKey,
+            issuer,
+            selfUrl,
+            capMapJson,
+            sp.GetRequiredService<ILogger<OperationTokenValidator>>()));
+}
+
 var app = builder.Build();
+
+// Background nonce cleanup (only when validator is registered)
+if (operationTokenSigningKey != null)
+{
+    var nonceCleanupTimer = new System.Threading.Timer(_ =>
+    {
+        try
+        {
+            var v = app.Services.GetService<OperationTokenValidator>();
+            v?.CleanupExpiredNonces();
+        }
+        catch { }
+    }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+}
 
 // Lifecycle logging for service start/stop events
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -138,6 +207,94 @@ app.Use(async (context, next) =>
 
         await context.Response.WriteAsJsonAsync(errorResponse);
     }
+});
+
+// Operation token validation middleware
+// Applies to all POST /api/v1/* endpoints except health.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path.Value ?? "";
+    var method = context.Request.Method;
+
+    // Require token: all POST requests to /api/v1/ except health
+    var requiresToken =
+        method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+        path.StartsWith("/api/v1/", StringComparison.OrdinalIgnoreCase) &&
+        !path.Equals("/api/v1/health", StringComparison.OrdinalIgnoreCase);
+
+    if (!requiresToken)
+    {
+        await next(context);
+        return;
+    }
+
+    // Get the validator (may be null if no signing key configured)
+    var validator = context.RequestServices.GetService<OperationTokenValidator>();
+    if (validator == null)
+    {
+        // Token validation not configured — log warning and allow (degraded mode)
+        var degradedLogger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        degradedLogger.LogWarning(
+            "Operation token validation not configured. Allowing request to {Path} without token validation.",
+            path);
+        await next(context);
+        return;
+    }
+
+    // Extract Bearer token
+    var authHeader = context.Request.Headers["Authorization"].FirstOrDefault();
+    if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = 403;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "token_missing",
+            detail = "Authorization Bearer token required"
+        });
+        return;
+    }
+
+    var tokenString = authHeader["Bearer ".Length..].Trim();
+
+    // Read request body for target validation (enable buffering so handler can read it too)
+    context.Request.EnableBuffering();
+    string? requestTarget = null;
+    try
+    {
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        context.Request.Body.Position = 0; // Reset for actual handler
+
+        if (!string.IsNullOrEmpty(body))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            // Try common target fields in order of specificity
+            if (doc.RootElement.TryGetProperty("username", out var u))
+                requestTarget = u.GetString();
+            else if (doc.RootElement.TryGetProperty("path", out var p))
+                requestTarget = p.GetString();
+        }
+    }
+    catch
+    {
+        // If body parsing fails, proceed without target validation
+    }
+
+    var result = validator.Validate(tokenString, path, requestTarget);
+    if (!result.IsValid)
+    {
+        context.Response.StatusCode = 403;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = result.ErrorCode,
+            detail = result.ErrorDetail
+        });
+        return;
+    }
+
+    await next(context);
 });
 
 // Map routes under /api/v1
