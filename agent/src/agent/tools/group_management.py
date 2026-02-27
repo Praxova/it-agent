@@ -78,6 +78,9 @@ class GroupManagementTool(BaseToolServerTool):
                     "group_name": group_name,
                     "ticket_number": ticket_number,
                 },
+                target=username,
+                target_type="user",
+                ticket_number=ticket_number,
             )
 
             # Extract result
@@ -152,6 +155,9 @@ class GroupManagementTool(BaseToolServerTool):
                     "group_name": group_name,
                     "ticket_number": ticket_number,
                 },
+                target=username,
+                target_type="user",
+                ticket_number=ticket_number,
             )
 
             # Extract result

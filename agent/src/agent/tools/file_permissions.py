@@ -90,6 +90,9 @@ class FilePermissionsTool(BaseToolServerTool):
                     "permission": permission,
                     "ticket_number": ticket_number,
                 },
+                target=path,
+                target_type="path",
+                ticket_number=ticket_number,
             )
 
             # Extract result
@@ -166,6 +169,9 @@ class FilePermissionsTool(BaseToolServerTool):
                     "path": path,
                     "ticket_number": ticket_number,
                 },
+                target=path,
+                target_type="path",
+                ticket_number=ticket_number,
             )
 
             # Extract result

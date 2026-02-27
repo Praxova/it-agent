@@ -65,6 +65,8 @@ class PasswordResetTool(BaseToolServerTool):
                 method="POST",
                 endpoint="/password/reset",
                 data={"username": username, "new_password": new_password},
+                target=username,
+                target_type="user",
             )
 
             # Extract result

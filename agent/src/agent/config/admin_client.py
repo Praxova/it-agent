@@ -9,6 +9,15 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+class OperationTokenError(Exception):
+    """Raised when the portal denies an operation token request."""
+
+    def __init__(self, error_code: str, message: str):
+        self.error_code = error_code
+        self.message = message
+        super().__init__(f"[{error_code}] {message}")
+
+
 @dataclass
 class LlmProviderConfig:
     """LLM provider configuration from Admin Portal."""
@@ -311,6 +320,94 @@ class AdminPortalClient:
         except httpx.RequestError as e:
             logger.warning(f"Heartbeat connection failed: {e}")
             # Don't raise - heartbeat failures shouldn't stop agent operation
+
+    async def request_operation_token(
+        self,
+        capability: str,
+        target: str,
+        target_type: str,
+        tool_server_url: str,
+        ticket_number: str | None = None,
+        workflow_execution_id: str | None = None,
+        approval_id: str | None = None,
+    ) -> str:
+        """Request an operation authorization token from the portal.
+
+        Args:
+            capability: The capability name (e.g., "ad-password-reset").
+            target: The target entity (username, group name, or path).
+            target_type: Type of target: "user", "group", or "path".
+            tool_server_url: The tool server URL this token will be used against.
+            ticket_number: ServiceNow ticket number for audit trail.
+            workflow_execution_id: Workflow execution ID if tracked.
+            approval_id: Approval ID if an approval step was involved.
+
+        Returns:
+            JWT token string.
+
+        Raises:
+            OperationTokenError: If the portal denies the token or returns an error.
+            httpx.RequestError: If the portal is unreachable.
+        """
+        url = "/api/authz/operation-token"
+
+        payload = {
+            "agent_name": self.agent_name,
+            "capability": capability,
+            "target": target,
+            "target_type": target_type,
+            "tool_server_url": tool_server_url,
+            "workflow_context": {
+                "ticket_number": ticket_number,
+                "workflow_execution_id": workflow_execution_id,
+                "approval_id": approval_id,
+            }
+        }
+
+        logger.debug(f"Requesting operation token: capability={capability}, target={target}")
+
+        try:
+            response = await self._client.post(url, json=payload, timeout=10.0)
+
+            if response.status_code == 200:
+                data = response.json()
+                token = data.get("token")
+                if not token:
+                    raise OperationTokenError("internal_error", "Portal returned success but no token")
+                logger.debug(f"Operation token received for {capability}/{target}")
+                return token
+
+            elif response.status_code == 429:
+                raise OperationTokenError("rate_limited", "Token request rate limit exceeded")
+
+            else:
+                try:
+                    error_data = response.json()
+                    error_code = error_data.get("error", "unknown")
+                    error_msg = error_data.get("message", f"HTTP {response.status_code}")
+                except Exception:
+                    error_code = "http_error"
+                    error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+
+                raise OperationTokenError(error_code, error_msg)
+
+        except httpx.TimeoutException:
+            # Retry once
+            logger.warning("Operation token request timed out, retrying...")
+            try:
+                response = await self._client.post(url, json=payload, timeout=5.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    token = data.get("token")
+                    if not token:
+                        raise OperationTokenError("internal_error", "Portal returned success but no token")
+                    return token
+                else:
+                    raise OperationTokenError("portal_unavailable",
+                        "Authorization service unavailable after retry")
+            except httpx.RequestError as e:
+                raise OperationTokenError("portal_unavailable",
+                    f"Authorization service unreachable: {e}")
 
     async def close(self) -> None:
         """Close the HTTP client."""

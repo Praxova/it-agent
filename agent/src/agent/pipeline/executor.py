@@ -140,6 +140,12 @@ class TicketExecutor:
             FilePermissionHandler(tool_server_url=tool_server_url),
         ]
 
+        # Wire admin_client into each handler's tool for operation token requests
+        if self._admin_client:
+            for handler in handlers:
+                if hasattr(handler, '_tool'):
+                    handler._tool.admin_client = self._admin_client
+
         for handler in handlers:
             for ticket_type in handler.handles_ticket_types:
                 self._handlers[ticket_type] = handler
