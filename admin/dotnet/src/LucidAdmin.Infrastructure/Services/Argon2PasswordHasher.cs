@@ -9,6 +9,11 @@ public class Argon2PasswordHasher : IPasswordHasher
 {
     private const int SaltSize = 16;
     private const int HashSize = 32;
+
+    // Argon2id parameters — stronger than OWASP minimum (64MB/3 iter/4 par)
+    // Chosen for consistency with SealManager's KEK derivation.
+    // Higher memory (128MB) provides better GPU resistance; lower parallelism
+    // trades multi-core scaling for predictable memory footprint on server hardware.
     private const int Iterations = 4;
     private const int MemorySize = 128 * 1024; // 128 MB
     private const int DegreeOfParallelism = 2;
