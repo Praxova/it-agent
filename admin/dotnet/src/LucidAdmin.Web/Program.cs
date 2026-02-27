@@ -200,6 +200,7 @@ builder.Services.AddScoped<IAgentService, LucidAdmin.Web.Services.AgentService>(
 builder.Services.AddScoped<ICapabilityMappingService, LucidAdmin.Web.Services.CapabilityMappingService>();
 builder.Services.AddScoped<IAgentExportService, AgentExportService>();
 builder.Services.AddSingleton<WorkflowRequirementsService>();
+builder.Services.AddSingleton<RecoveryKeyPresenter>();
 builder.Services.AddScoped<IAdSettingsService, AdSettingsService>();
 builder.Services.AddScoped<ITlsCertificateProbeService, TlsCertificateProbeService>();
 builder.Services.AddSingleton<ITrustedCertificateStore, TrustedCertificateStore>();
@@ -374,14 +375,21 @@ using (var scope = app.Services.CreateScope())
 
     // Seal/Unseal: Initialize or unseal the secrets store
     var sealManager = app.Services.GetRequiredService<ISealManager>();
+    var recoveryKeyPresenter = app.Services.GetRequiredService<RecoveryKeyPresenter>();
     var autoUnsealPassphrase = Environment.GetEnvironmentVariable("PRAXOVA_UNSEAL_PASSPHRASE");
+    var autoRecoveryKey = Environment.GetEnvironmentVariable("PRAXOVA_RECOVERY_KEY");
 
     if (sealManager.RequiresInitialization)
     {
         if (!string.IsNullOrEmpty(autoUnsealPassphrase))
         {
-            await sealManager.InitializeAsync(autoUnsealPassphrase);
+            var recoveryKey = await sealManager.InitializeAsync(autoUnsealPassphrase);
+            recoveryKeyPresenter.SetKey(recoveryKey);
             Log.Information("Secrets store initialized and unsealed via PRAXOVA_UNSEAL_PASSPHRASE");
+            Log.Warning("╔══════════════════════════════════════════════════════════════╗");
+            Log.Warning("║  RECOVERY KEY (save this — it will not be shown again):     ║");
+            Log.Warning("║  {RecoveryKey}  ║", recoveryKey);
+            Log.Warning("╚══════════════════════════════════════════════════════════════╝");
         }
         else
         {
@@ -397,6 +405,14 @@ using (var scope = app.Services.CreateScope())
             Log.Information("Secrets store unsealed via PRAXOVA_UNSEAL_PASSPHRASE");
         else
             Log.Error("Failed to unseal secrets store — PRAXOVA_UNSEAL_PASSPHRASE is incorrect");
+    }
+    else if (!string.IsNullOrEmpty(autoRecoveryKey))
+    {
+        var unsealSuccess = await sealManager.UnsealWithRecoveryKeyAsync(autoRecoveryKey);
+        if (unsealSuccess)
+            Log.Warning("Secrets store unsealed via PRAXOVA_RECOVERY_KEY — change the passphrase as soon as possible");
+        else
+            Log.Error("Failed to unseal secrets store — PRAXOVA_RECOVERY_KEY is incorrect");
     }
     else
     {
@@ -575,6 +591,7 @@ app.Use(async (context, next) =>
     // Skip enforcement for non-authenticated users, the change-password paths, APIs, and static assets
     if (!context.User.Identity?.IsAuthenticated == true ||
         path.StartsWithSegments("/change-password") ||
+        path.StartsWithSegments("/setup") ||
         path.StartsWithSegments("/account") ||
         path.StartsWithSegments("/api") ||
         path.StartsWithSegments("/_blazor") ||
