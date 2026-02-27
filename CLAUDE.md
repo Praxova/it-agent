@@ -126,11 +126,10 @@ Agent                    Admin Portal              Tool Server              Acti
   │                           │                         │────────────────────────►│
 ```
 
-**Current issue (as of 2026-02-25):** The DC is rejecting the password reset
-operation at step 5. The agent-trust-bootstrap work (mTLS) is functioning correctly.
-The failure is in the tool server's AD permissions — specifically the `svc-praxova`
-service account's delegation rights in Active Directory. Do not attempt to work
-around this by bypassing mTLS or reverting to plaintext LDAP.
+**Resolved (2026-02-27):** Password resets now use `DirectoryEntry.Invoke("SetPassword")`
+with explicit service account credentials instead of `UserPrincipal.SetPassword()`,
+which failed via COM interop even with working LDAPS. The gMSA/process-identity
+path is retained as a fallback. mTLS between agent and tool server is fully operational.
 
 ---
 
@@ -277,7 +276,7 @@ praxova-it-agent/
 
 - **Always commit after completing work** with a descriptive conventional commit message
 - Format: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `security:`
-- Current active branch: `feature/agent-trust-bootstrap` (security work in progress)
+- Default branch: `master`
 - Do **NOT** push without explicit permission
 
 ---
