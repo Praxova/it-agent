@@ -54,6 +54,9 @@ public static class DependencyInjection
         services.AddScoped<IExampleSetRepository, ExampleSetRepository>();
         services.AddScoped<IWorkflowDefinitionRepository, WorkflowDefinitionRepository>();
 
+        // Audit chain (must precede IAuditEventRepository — the repository depends on it)
+        services.AddScoped<AuditChainService>();
+
         // Services
         services.AddScoped<IPasswordHasher, Argon2PasswordHasher>();
         services.AddScoped<ITokenService, JwtTokenService>();

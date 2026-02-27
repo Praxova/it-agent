@@ -1,5 +1,6 @@
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Interfaces.Repositories;
+using LucidAdmin.Infrastructure.Services;
 using LucidAdmin.Web.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -67,6 +68,17 @@ public static class AuditEventEndpoints
 
             return Results.Ok(events.Select(MapToResponse));
         });
+
+        group.MapGet("/verify", async (
+            [FromQuery] long? from,
+            [FromQuery] long? to,
+            AuditChainService chainService,
+            CancellationToken ct) =>
+        {
+            var report = await chainService.VerifyAsync(from, to, ct);
+            return Results.Ok(report);
+        })
+        .WithSummary("Verify audit chain integrity for a range of sequence numbers");
     }
 
     private static AuditEventResponse MapToResponse(Core.Entities.AuditEvent evt) => new(
