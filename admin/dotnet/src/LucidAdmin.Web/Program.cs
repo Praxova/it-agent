@@ -566,6 +566,38 @@ app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Force password change — redirect authenticated users with MustChangePassword=true
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+
+    // Skip enforcement for non-authenticated users, the change-password paths, APIs, and static assets
+    if (!context.User.Identity?.IsAuthenticated == true ||
+        path.StartsWithSegments("/change-password") ||
+        path.StartsWithSegments("/account") ||
+        path.StartsWithSegments("/api") ||
+        path.StartsWithSegments("/_blazor") ||
+        path.StartsWithSegments("/_framework") ||
+        path.StartsWithSegments("/css") ||
+        path.StartsWithSegments("/js") ||
+        path.StartsWithSegments("/images") ||
+        path.StartsWithSegments("/favicon"))
+    {
+        await next();
+        return;
+    }
+
+    var mustChange = context.User.FindFirst("MustChangePassword")?.Value;
+    if (string.Equals(mustChange, "True", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.Redirect("/change-password");
+        return;
+    }
+
+    await next();
+});
+
 app.UseAntiforgery();
 
 // Map MVC controllers
