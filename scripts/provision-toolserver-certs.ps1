@@ -188,7 +188,32 @@ $permScript = {
 
 Invoke-Command -ComputerName $ToolServerHost -ScriptBlock $permScript -ArgumentList "$ToolServerInstallPath\certs\toolserver-key.pem"
 
-# --- Step 6: Restart tool server service ---
+# --- Step 6: Deploy operation token signing key ---
+Write-Host "`n--- Deploying operation token signing key ---" -ForegroundColor Yellow
+
+try {
+    $keyExportResponse = Invoke-RestMethod `
+        -Uri "$PortalUrl/api/authz/signing-key/export" `
+        -Method GET `
+        -Headers $authHeaders `
+        @skipCertParam
+
+    $keyJson = @{
+        keyBase64 = $keyExportResponse.keyBase64
+        algorithm = $keyExportResponse.algorithm
+        keyId     = $keyExportResponse.keyId
+    } | ConvertTo-Json
+
+    $keyFilePath = "$remoteCertDir\token-signing-key.json"
+    [System.IO.File]::WriteAllText($keyFilePath, $keyJson, $utf8NoBom)
+
+    Write-Host "Operation token signing key deployed to $keyFilePath" -ForegroundColor Green
+} catch {
+    Write-Warning "Failed to deploy operation token signing key: $_"
+    Write-Host "You can deploy it manually later via: GET $PortalUrl/api/authz/signing-key/export"
+}
+
+# --- Step 7: Restart tool server service ---
 Write-Host "`n--- Restarting PraxovaToolServer service ---" -ForegroundColor Yellow
 
 Invoke-Command -ComputerName $ToolServerHost -ScriptBlock {
@@ -198,7 +223,7 @@ Invoke-Command -ComputerName $ToolServerHost -ScriptBlock {
     Write-Host "Service status: $($svc.Status)"
 }
 
-# --- Step 7: Verify HTTPS ---
+# --- Step 8: Verify HTTPS ---
 Write-Host "`n--- Verifying HTTPS connectivity ---" -ForegroundColor Yellow
 Start-Sleep -Seconds 5
 
@@ -217,8 +242,11 @@ try {
     }
 }
 
-Write-Host "`n=== Certificate provisioning complete ===" -ForegroundColor Green
+Write-Host "`n=== Certificate and key provisioning complete ===" -ForegroundColor Green
 Write-Host "Next steps:"
 Write-Host "  1. Update tool server URL in Admin Portal to: https://${ToolServerHost}:8443"
-Write-Host "  2. Verify agent can reach tool server over HTTPS"
-Write-Host "  3. Run end-to-end ticket test"
+Write-Host "  2. Verify appsettings.json on ${ToolServerHost} has:"
+Write-Host "     ToolServer:OperationToken:SelfUrl = https://${ToolServerHost}:8443"
+Write-Host "     ToolServer:OperationToken:TokenSigningKeyPath = certs/token-signing-key.json"
+Write-Host "  3. Verify agent can reach tool server over HTTPS"
+Write-Host "  4. Run end-to-end ticket test"
