@@ -22,10 +22,12 @@ namespace LucidAdmin.Infrastructure.Services;
 public class SealManager : ISealManager
 {
     private const string KekSecretName = "envelope-kek";
+    private const string RecoveryKekSecretName = "envelope-kek-recovery";
     private const int KeySize = 32; // AES-256
     private const int NonceSize = 12; // GCM nonce
     private const int TagSize = 16; // GCM tag
     private const int SaltSize = 32;
+    private const int RecoveryKeySize = 16; // 128-bit recovery key
 
     // Argon2id parameters (matching Argon2PasswordHasher)
     private const int Argon2MemorySize = 128 * 1024; // 128 MB
@@ -39,6 +41,7 @@ public class SealManager : ISealManager
     private byte[]? _kek;
     private bool _requiresInitialization;
     private bool _initChecked;
+    private bool _wasUnsealedViaRecoveryKey;
 
     public SealManager(IServiceProvider serviceProvider, ILogger<SealManager> logger)
     {
@@ -51,6 +54,11 @@ public class SealManager : ISealManager
         get { lock (_lock) { return _kek != null; } }
     }
 
+    public bool WasUnsealedViaRecoveryKey
+    {
+        get { lock (_lock) { return _wasUnsealedViaRecoveryKey; } }
+    }
+
     public bool RequiresInitialization
     {
         get
@@ -61,7 +69,7 @@ public class SealManager : ISealManager
         }
     }
 
-    public async Task InitializeAsync(string passphrase)
+    public async Task<string> InitializeAsync(string passphrase)
     {
         if (string.IsNullOrWhiteSpace(passphrase))
             throw new ArgumentException("Passphrase cannot be empty.", nameof(passphrase));
@@ -83,10 +91,10 @@ public class SealManager : ISealManager
         // 3. Generate random KEK
         var kek = RandomNumberGenerator.GetBytes(KeySize);
 
-        // 4. Encrypt KEK with MK using AES-256-GCM
+        // 4. Encrypt KEK with MK using AES-256-GCM (passphrase path)
         var (encryptedKek, nonce) = EncryptWithKey(mk, kek);
 
-        // 5. Store in SystemSecrets with salt in Metadata
+        // 5. Store passphrase-encrypted KEK in SystemSecrets
         db.SystemSecrets.Add(new SystemSecret
         {
             Name = KekSecretName,
@@ -96,10 +104,28 @@ public class SealManager : ISealManager
             Metadata = Convert.ToHexString(salt).ToLowerInvariant()
         });
 
+        // 6. Generate recovery key and encrypt KEK with it (recovery path)
+        var recoveryKeyBytes = RandomNumberGenerator.GetBytes(RecoveryKeySize);
+        var formattedRecoveryKey = FormatRecoveryKey(recoveryKeyBytes);
+
+        var recoverySalt = RandomNumberGenerator.GetBytes(SaltSize);
+        var recoveryDerivedKey = await DeriveKeyAsync(formattedRecoveryKey, recoverySalt);
+        var (recoveryEncryptedKek, recoveryNonce) = EncryptWithKey(recoveryDerivedKey, kek);
+
+        db.SystemSecrets.Add(new SystemSecret
+        {
+            Name = RecoveryKekSecretName,
+            EncryptedValue = recoveryEncryptedKek,
+            Nonce = recoveryNonce,
+            Purpose = "Recovery-encrypted KEK — emergency unseal path",
+            Metadata = Convert.ToHexString(recoverySalt).ToLowerInvariant()
+        });
+
         await db.SaveChangesAsync();
 
-        // Zero the MK — it's no longer needed
+        // Zero derived keys — no longer needed
         Array.Clear(mk);
+        Array.Clear(recoveryDerivedKey);
 
         // Hold KEK in memory
         lock (_lock)
@@ -109,7 +135,8 @@ public class SealManager : ISealManager
             _initChecked = true;
         }
 
-        _logger.LogInformation("Secrets store initialized — KEK generated and encrypted with master passphrase");
+        _logger.LogInformation("Secrets store initialized — KEK generated with passphrase and recovery key paths");
+        return formattedRecoveryKey;
     }
 
     public async Task<bool> UnsealAsync(string passphrase)
@@ -174,6 +201,118 @@ public class SealManager : ISealManager
         }
     }
 
+    public async Task<bool> UnsealWithRecoveryKeyAsync(string recoveryKey)
+    {
+        if (string.IsNullOrWhiteSpace(recoveryKey))
+            return false;
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LucidDbContext>();
+
+        var recoveryRecord = await db.SystemSecrets.FirstOrDefaultAsync(s => s.Name == RecoveryKekSecretName);
+        if (recoveryRecord == null)
+        {
+            _logger.LogWarning("Cannot unseal via recovery key — no recovery KEK found in database");
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(recoveryRecord.Metadata))
+        {
+            _logger.LogError("Recovery KEK record has no metadata (salt). Database may be corrupted.");
+            return false;
+        }
+
+        byte[] salt;
+        try
+        {
+            salt = Convert.FromHexString(recoveryRecord.Metadata);
+        }
+        catch (FormatException)
+        {
+            _logger.LogError("Recovery KEK salt metadata is not valid hex.");
+            return false;
+        }
+
+        var derivedKey = await DeriveKeyAsync(recoveryKey, salt);
+
+        try
+        {
+            var kek = DecryptWithKey(derivedKey, recoveryRecord.EncryptedValue, recoveryRecord.Nonce);
+
+            lock (_lock)
+            {
+                _kek = kek;
+                _requiresInitialization = false;
+                _initChecked = true;
+                _wasUnsealedViaRecoveryKey = true;
+            }
+
+            _logger.LogWarning("Secrets store unsealed via RECOVERY KEY — passphrase should be changed");
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            _logger.LogWarning("Failed to unseal via recovery key — incorrect key (GCM authentication failed)");
+            return false;
+        }
+        finally
+        {
+            Array.Clear(derivedKey);
+        }
+    }
+
+    public async Task<string> RegenerateRecoveryKeyAsync()
+    {
+        byte[] currentKek;
+        lock (_lock)
+        {
+            if (_kek == null)
+                throw new InvalidOperationException("Cannot regenerate recovery key — secrets store is sealed.");
+            currentKek = new byte[_kek.Length];
+            Buffer.BlockCopy(_kek, 0, currentKek, 0, _kek.Length);
+        }
+
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<LucidDbContext>();
+
+        // Generate new recovery key
+        var recoveryKeyBytes = RandomNumberGenerator.GetBytes(RecoveryKeySize);
+        var formattedRecoveryKey = FormatRecoveryKey(recoveryKeyBytes);
+
+        var recoverySalt = RandomNumberGenerator.GetBytes(SaltSize);
+        var recoveryDerivedKey = await DeriveKeyAsync(formattedRecoveryKey, recoverySalt);
+        var (recoveryEncryptedKek, recoveryNonce) = EncryptWithKey(recoveryDerivedKey, currentKek);
+
+        // Replace existing recovery record
+        var existing = await db.SystemSecrets.FirstOrDefaultAsync(s => s.Name == RecoveryKekSecretName);
+        if (existing != null)
+        {
+            existing.EncryptedValue = recoveryEncryptedKek;
+            existing.Nonce = recoveryNonce;
+            existing.Metadata = Convert.ToHexString(recoverySalt).ToLowerInvariant();
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            db.SystemSecrets.Add(new SystemSecret
+            {
+                Name = RecoveryKekSecretName,
+                EncryptedValue = recoveryEncryptedKek,
+                Nonce = recoveryNonce,
+                Purpose = "Recovery-encrypted KEK — emergency unseal path",
+                Metadata = Convert.ToHexString(recoverySalt).ToLowerInvariant()
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        Array.Clear(recoveryDerivedKey);
+        Array.Clear(currentKek);
+
+        _logger.LogInformation("Recovery key regenerated");
+        return formattedRecoveryKey;
+    }
+
     public void Seal()
     {
         lock (_lock)
@@ -183,6 +322,7 @@ public class SealManager : ISealManager
                 Array.Clear(_kek);
                 _kek = null;
             }
+            _wasUnsealedViaRecoveryKey = false;
         }
 
         _logger.LogInformation("Secrets store sealed — KEK cleared from memory");
@@ -283,5 +423,14 @@ public class SealManager : ISealManager
         aes.Decrypt(nonce, ciphertext, tag, plaintext);
 
         return plaintext;
+    }
+
+    /// <summary>
+    /// Formats raw bytes as a XXXX-XXXX-XXXX-XXXX recovery key string.
+    /// </summary>
+    private static string FormatRecoveryKey(byte[] keyBytes)
+    {
+        var hex = Convert.ToHexString(keyBytes).ToUpperInvariant();
+        return $"{hex[..4]}-{hex[4..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..24]}-{hex[24..28]}-{hex[28..32]}";
     }
 }

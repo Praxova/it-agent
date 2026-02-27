@@ -15,10 +15,11 @@ public interface ISealManager
 
     /// <summary>
     /// Initialize the secrets store for the first time.
-    /// Generates a new KEK, encrypts it with a master key derived from the passphrase,
-    /// and stores it in the database.
+    /// Generates a new KEK, encrypts it with a master key derived from the passphrase
+    /// and with a random recovery key, then stores both in the database.
     /// </summary>
-    Task InitializeAsync(string passphrase);
+    /// <returns>The formatted recovery key (XXXX-XXXX-XXXX-XXXX).</returns>
+    Task<string> InitializeAsync(string passphrase);
 
     /// <summary>
     /// Unseal the secrets store by providing the master passphrase.
@@ -26,6 +27,22 @@ public interface ISealManager
     /// </summary>
     /// <returns>True if unseal succeeded; false if the passphrase is wrong.</returns>
     Task<bool> UnsealAsync(string passphrase);
+
+    /// <summary>
+    /// Unseal the secrets store using the recovery key instead of the passphrase.
+    /// </summary>
+    /// <returns>True if unseal succeeded; false if the recovery key is wrong.</returns>
+    Task<bool> UnsealWithRecoveryKeyAsync(string recoveryKey);
+
+    /// <summary>
+    /// Regenerate the recovery key, re-encrypting the KEK with a new random key.
+    /// Requires the store to be currently unsealed.
+    /// </summary>
+    /// <returns>The new formatted recovery key (XXXX-XXXX-XXXX-XXXX).</returns>
+    Task<string> RegenerateRecoveryKeyAsync();
+
+    /// <summary>Whether the current unseal was performed via recovery key rather than passphrase.</summary>
+    bool WasUnsealedViaRecoveryKey { get; }
 
     /// <summary>
     /// Seal the secrets store, zeroing the KEK from memory.
