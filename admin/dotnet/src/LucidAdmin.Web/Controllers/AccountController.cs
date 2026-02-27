@@ -20,6 +20,7 @@ public class AccountController : Controller
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IAuditEventRepository _auditRepository;
+    private readonly RecoveryKeyPresenter _recoveryKeyPresenter;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
@@ -27,12 +28,14 @@ public class AccountController : Controller
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         IAuditEventRepository auditRepository,
+        RecoveryKeyPresenter recoveryKeyPresenter,
         ILogger<AccountController> logger)
     {
         _authService = authService;
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _auditRepository = auditRepository;
+        _recoveryKeyPresenter = recoveryKeyPresenter;
         _logger = logger;
     }
 
@@ -212,6 +215,10 @@ public class AccountController : Controller
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(claimsIdentity),
             authProperties);
+
+        // Show recovery key if one was generated during initialization
+        if (_recoveryKeyPresenter.HasPendingKey)
+            return Redirect("/setup/recovery-key");
 
         return Redirect("/");
     }

@@ -1,0 +1,68 @@
+@page "/setup/recovery-key"
+@attribute [Authorize]
+@using LucidAdmin.Web.Services
+@inject RecoveryKeyPresenter KeyPresenter
+@inject NavigationManager Navigation
+
+<PageTitle>Recovery Key - Praxova Admin</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudCard>
+        <MudCardHeader>
+            <MudText Typo="Typo.h5">Recovery Key</MudText>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (_recoveryKey != null)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4">
+                    Save this recovery key now. It will not be shown again. If you lose the master
+                    passphrase, this key is the only way to unseal the secrets store.
+                </MudAlert>
+
+                <MudPaper Class="pa-4 mb-4" Style="background-color: var(--mud-palette-background-grey); text-align: center;">
+                    <MudText Typo="Typo.h5" Style="font-family: monospace; letter-spacing: 2px;">
+                        @_recoveryKey
+                    </MudText>
+                </MudPaper>
+
+                <MudText Typo="Typo.body2" Class="mb-4">
+                    Store this key in a secure location: a password manager, hardware security module,
+                    or printed and stored in a safe. Do not store it alongside the master passphrase.
+                </MudText>
+
+                <MudCheckBox @bind-Value="_confirmed" T="bool" Label="I have saved the recovery key" />
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           Disabled="@(!_confirmed)"
+                           OnClick="Continue"
+                           Class="mt-4">
+                    Continue
+                </MudButton>
+            }
+            else
+            {
+                <MudText>No recovery key to display.</MudText>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/" Class="mt-4">
+                    Go to Dashboard
+                </MudButton>
+            }
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+@code {
+    private string? _recoveryKey;
+    private bool _confirmed;
+
+    protected override void OnInitialized()
+    {
+        _recoveryKey = KeyPresenter.ConsumeKey();
+    }
+
+    private void Continue()
+    {
+        Navigation.NavigateTo("/");
+    }
+}
