@@ -56,5 +56,9 @@ public enum AuditAction
 
     // Operation token operations
     OperationTokenIssued,
-    OperationTokenDenied
+    OperationTokenDenied,
+
+    // PKI operations
+    CertificateRenewed,
+    CertificateExpiryWarning
 }
