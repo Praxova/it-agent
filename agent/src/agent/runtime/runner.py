@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from .cert_renewal import CertRenewalManager
 from .config_loader import ConfigLoader
 from .workflow_engine import WorkflowEngine
 from .execution_context import ExecutionContext, ExecutionStatus
@@ -108,6 +109,11 @@ class AgentRunner:
         # Heartbeat timing
         self._last_heartbeat_time: float = 0
 
+        # Certificate renewal
+        self._cert_renewal: CertRenewalManager | None = None
+        self._last_cert_check_time: float = 0
+        self._cert_check_interval: float = 86400.0  # 24 hours
+
     def _get_auth_headers(self) -> dict[str, str]:
         """Return auth headers if API key is configured."""
         if self._api_key:
@@ -137,6 +143,13 @@ class AgentRunner:
 
         # Ensure shared HTTP client exists
         self._ensure_portal_client()
+
+        # Initialize cert renewal manager
+        self._cert_renewal = CertRenewalManager(
+            portal_url=self.admin_portal_url,
+            agent_name=self.agent_name,
+            api_key=self._api_key,
+        )
 
         # Load configuration
         self._config_loader = ConfigLoader(
@@ -279,6 +292,9 @@ class AgentRunner:
 
             # Refresh config (example sets, rulesets) every 5 minutes
             await self._maybe_refresh_config()
+
+            # Check and renew agent client cert if near expiry
+            await self._maybe_renew_cert()
 
             # Send heartbeat if interval has elapsed
             if (time.time() - self._last_heartbeat_time) >= self.heartbeat_interval:
@@ -460,6 +476,26 @@ class AgentRunner:
             logger.warning(f"Config refresh failed, continuing with existing config: {e}")
             # Push refresh time forward so we don't spam retries
             self._last_config_refresh = datetime.utcnow()
+
+    async def _maybe_renew_cert(self):
+        """Check and renew agent client cert if within renewal window. Best-effort."""
+        now = time.time()
+        if (now - self._last_cert_check_time) < self._cert_check_interval:
+            return
+        self._last_cert_check_time = now
+
+        if self._cert_renewal is None:
+            return
+
+        try:
+            if not self._cert_renewal.needs_renewal():
+                return
+            client = self._ensure_portal_client()
+            renewed = await self._cert_renewal.renew(client)
+            if not renewed:
+                logger.debug("Cert renewal skipped or failed — will retry tomorrow")
+        except Exception as e:
+            logger.warning(f"Cert renewal check failed unexpectedly: {e}")
 
     async def _try_reload_configuration(self):
         """Re-fetch configuration to check if LLM provider has been assigned."""
