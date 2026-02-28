@@ -4,7 +4,10 @@
 @using LucidAdmin.Web.Components.Shared
 @using LucidAdmin.Core.Entities
 @using LucidAdmin.Core.Interfaces.Services
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
 @inject IToolServerService ToolServerService
+@inject LucidDbContext Db
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 
@@ -81,6 +84,7 @@ else if (_servers != null)
             <MudTh>Domain</MudTh>
             <MudTh>Version</MudTh>
             <MudTh>Status</MudTh>
+            <MudTh>TLS Cert</MudTh>
             <MudTh>Last Heartbeat</MudTh>
             <MudTh>Enabled</MudTh>
             <MudTh>Actions</MudTh>
@@ -121,6 +125,30 @@ else if (_servers != null)
                 <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">
                     @context.Status
                 </MudChip>
+            </MudTd>
+            <MudTd DataLabel="TLS Cert">
+                @{
+                    var cert = GetCertForServer(context);
+                }
+                @if (cert != null)
+                {
+                    var daysRemaining = (int)(cert.NotAfter - DateTime.UtcNow).TotalDays;
+                    var certColor = daysRemaining < 0 ? Color.Dark
+                        : daysRemaining < 7 ? Color.Error
+                        : daysRemaining < 30 ? Color.Warning
+                        : Color.Success;
+                    var label = daysRemaining < 0 ? $"Expired {-daysRemaining}d ago"
+                        : $"{daysRemaining}d";
+                    <MudTooltip Text="@($"Expires: {cert.NotAfter:yyyy-MM-dd} ({cert.Thumbprint[..8]}...)")">
+                        <MudChip T="string" Size="Size.Small" Color="@certColor">
+                            @label
+                        </MudChip>
+                    </MudTooltip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
             </MudTd>
             <MudTd DataLabel="Last Heartbeat">
                 @if (context.LastHeartbeat.HasValue)
@@ -182,6 +210,7 @@ else
 
 @code {
     private List<ToolServerResponse>? _servers;
+    private List<IssuedCertificate> _serverCerts = new();
     private bool _loading = true;
     private string _searchString = string.Empty;
     private string? _filterStatus;
@@ -214,6 +243,9 @@ else
         {
             var servers = await ToolServerService.GetAllAsync();
             _servers = servers.Select(MapToResponse).ToList();
+            _serverCerts = await Db.IssuedCertificates
+                .Where(c => c.Usage == "server-tls" && c.IsActive)
+                .ToListAsync();
         }
         catch (Exception ex)
         {
@@ -398,4 +430,22 @@ else
         CreatedAt: server.CreatedAt,
         UpdatedAt: server.UpdatedAt
     );
+
+    private IssuedCertificate? GetCertForServer(ToolServerResponse server)
+    {
+        // Match by IssuedTo == server name
+        var cert = _serverCerts.FirstOrDefault(c =>
+            string.Equals(c.IssuedTo, server.Name, StringComparison.OrdinalIgnoreCase));
+        if (cert != null)
+            return cert;
+
+        // Match by SubjectCN == hostname extracted from endpoint URL
+        if (Uri.TryCreate(server.Endpoint, UriKind.Absolute, out var uri))
+        {
+            cert = _serverCerts.FirstOrDefault(c =>
+                string.Equals(c.SubjectCN, uri.Host, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return cert;
+    }
 }
