@@ -207,6 +207,9 @@ builder.Services.AddScoped<IAdSettingsService, AdSettingsService>();
 builder.Services.AddScoped<ITlsCertificateProbeService, TlsCertificateProbeService>();
 builder.Services.AddSingleton<ITrustedCertificateStore, TrustedCertificateStore>();
 
+// Background services
+builder.Services.AddHostedService<CertificateRenewalService>();
+
 // AD settings override file (portal-managed, persists in data volume)
 var adSettingsPath = Path.Combine(
     builder.Configuration.GetValue<string>("DataDirectory") ?? "/app/data",
