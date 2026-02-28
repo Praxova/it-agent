@@ -1,0 +1,292 @@
+@page "/certificate-health"
+@attribute [Authorize(Roles = "Admin")]
+@using LucidAdmin.Core.Entities
+@using LucidAdmin.Core.Interfaces.Services
+@using LucidAdmin.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject LucidDbContext Db
+@inject IInternalPkiService PkiService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Certificate Health - Praxova Admin Portal</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Certificate Health</MudText>
+<MudText Typo="Typo.body1" Class="mb-4">
+    Monitor TLS certificate expiry across the Praxova deployment.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    @if (_hasCriticalOrExpired)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4" Icon="@Icons.Material.Filled.Warning">
+            One or more certificates are expired or expiring within 7 days. Immediate action required.
+        </MudAlert>
+    }
+
+    <MudPaper Elevation="0" Class="pa-4 mb-4">
+        <MudGrid>
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="_searchString"
+                              Placeholder="Search by name, subject, or issued to..."
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true"
+                              DebounceInterval="300"
+                              OnDebounceIntervalElapsed="@(() => StateHasChanged())" />
+            </MudItem>
+            <MudItem xs="12" md="4" Class="d-flex align-end justify-end">
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="LoadCertificates">
+                    Refresh
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudTable Items="@FilteredEntries"
+              Hover="true"
+              Dense="true"
+              Striped="true"
+              Elevation="2"
+              RowsPerPage="25">
+        <HeaderContent>
+            <MudTh><MudTableSortLabel SortBy="new Func<CertHealthEntry, object>(x => x.Name)">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<CertHealthEntry, object>(x => x.SubjectCN)">Subject CN</MudTableSortLabel></MudTh>
+            <MudTh>Usage</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<CertHealthEntry, object>(x => x.IssuedTo ?? string.Empty)">Issued To</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<CertHealthEntry, object>(x => x.ExpiresAt)" InitialDirection="SortDirection.Ascending">Expires</MudTableSortLabel></MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Renewal</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2"><strong>@context.Name</strong></MudText>
+            </MudTd>
+            <MudTd DataLabel="Subject CN">
+                <MudText Typo="Typo.body2">@context.SubjectCN</MudText>
+            </MudTd>
+            <MudTd DataLabel="Usage">
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@GetUsageColor(context.Usage)">
+                    @context.Usage
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Issued To">
+                <MudText Typo="Typo.body2">@(context.IssuedTo ?? "—")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Expires">
+                <MudTooltip Text="@context.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                    <MudText Typo="Typo.body2" Color="@GetStatusTextColor(context.Status)">
+                        @FormatExpiry(context)
+                    </MudText>
+                </MudTooltip>
+            </MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">
+                    @context.Status.ToUpperInvariant()
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Renewal">
+                @if (context.RenewalMode == "auto")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Auto</MudChip>
+                }
+                else if (context.RenewalMode == "manual")
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Manual</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions">
+                @if (context.RenewalMode == "manual" && context.Status is "critical" or "warning" or "expired")
+                {
+                    <MudButton Size="Size.Small"
+                               Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Autorenew"
+                               OnClick="@(() => OpenReProvisionDialog(context))">
+                        Re-provision
+                    </MudButton>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No active certificates found.</MudText>
+        </NoRecordsContent>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+}
+
+@code {
+    private List<CertHealthEntry> _entries = new();
+    private bool _loading = true;
+    private string _searchString = string.Empty;
+    private bool _hasCriticalOrExpired;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCertificates();
+    }
+
+    private async Task LoadCertificates()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var certs = await Db.IssuedCertificates
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.NotAfter)
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            _entries = certs.Select(c =>
+            {
+                var daysRemaining = (int)(c.NotAfter - now).TotalDays;
+                var status = daysRemaining < 0 ? "expired"
+                    : daysRemaining < 7 ? "critical"
+                    : daysRemaining < 30 ? "warning"
+                    : "ok";
+
+                var renewalMode = c.Usage switch
+                {
+                    "ca-root" => (string?)null,
+                    "server-tls" when string.Equals(c.IssuedTo, "admin-portal", StringComparison.OrdinalIgnoreCase) => "auto",
+                    "client-tls" => "auto",
+                    _ => "manual"
+                };
+
+                return new CertHealthEntry(c.Name, c.SubjectCN, c.Usage, c.IssuedTo,
+                    c.NotAfter, daysRemaining, status, renewalMode, c.Thumbprint, c.SerialNumber);
+            }).ToList();
+
+            _hasCriticalOrExpired = _entries.Any(e => e.Status is "critical" or "expired");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load certificates: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<CertHealthEntry> FilteredEntries
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_searchString))
+                return _entries;
+
+            var search = _searchString.Trim();
+            return _entries.Where(e =>
+                e.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                e.SubjectCN.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                (e.IssuedTo?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    private async Task OpenReProvisionDialog(CertHealthEntry entry)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.ContentText, $"This will force-renew certificate '{entry.Name}'. The tool server may need to be restarted to pick up the new certificate. Continue?" },
+            { x => x.ConfirmText, "Re-provision" },
+            { x => x.ConfirmColor, Color.Primary }
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Re-provision Certificate", parameters);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await ForceRenewCert(entry);
+        }
+    }
+
+    private async Task ForceRenewCert(CertHealthEntry entry)
+    {
+        try
+        {
+            if (!PkiService.IsInitialized)
+            {
+                Snackbar.Add("PKI service is not initialized", Severity.Error);
+                return;
+            }
+
+            await PkiService.RenewCertificateAsync(entry.Name);
+            Snackbar.Add($"Certificate '{entry.Name}' renewed successfully. Tool server restart may be required.", Severity.Success);
+            await LoadCertificates();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to renew certificate: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string FormatExpiry(CertHealthEntry entry)
+    {
+        if (entry.DaysRemaining < 0)
+            return $"Expired {-entry.DaysRemaining}d ago";
+        if (entry.DaysRemaining == 0)
+            return "Expires today";
+        if (entry.DaysRemaining == 1)
+            return "Expires tomorrow";
+        return $"{entry.DaysRemaining}d remaining";
+    }
+
+    private static Color GetStatusColor(string status) => status switch
+    {
+        "expired" => Color.Dark,
+        "critical" => Color.Error,
+        "warning" => Color.Warning,
+        "ok" => Color.Success,
+        _ => Color.Default
+    };
+
+    private static Color GetStatusTextColor(string status) => status switch
+    {
+        "expired" or "critical" => Color.Error,
+        "warning" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static Color GetUsageColor(string usage) => usage switch
+    {
+        "ca-root" => Color.Info,
+        "server-tls" => Color.Primary,
+        "client-tls" => Color.Secondary,
+        _ => Color.Default
+    };
+
+    private record CertHealthEntry(
+        string Name,
+        string SubjectCN,
+        string Usage,
+        string? IssuedTo,
+        DateTime ExpiresAt,
+        int DaysRemaining,
+        string Status,
+        string? RenewalMode,
+        string Thumbprint,
+        string SerialNumber);
+}
