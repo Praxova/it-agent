@@ -228,3 +228,58 @@ class TestParseClassificationResponse:
         result = executor._parse_classification_response("I don't know how to classify this.")
         assert result["ticket_type"] == "unknown"
         assert result["confidence"] == 0.3
+
+
+class TestValidateClassification:
+    """Tests for post-classification category validation (Gap 2)."""
+
+    def test_invalid_category_becomes_unknown(self, executor, dispatch_example_set):
+        """LLM returns a category not in the example set → unknown with confidence 0."""
+        classification = {
+            "ticket_type": "printer-repair",
+            "confidence": 0.85,
+            "reasoning": "Looks like a printer issue",
+        }
+        result = executor._validate_classification(classification, dispatch_example_set)
+        assert result["ticket_type"] == "unknown"
+        assert result["confidence"] == 0.0
+        assert "printer-repair" in result["reasoning"]
+
+    def test_valid_category_passes_through(self, executor, dispatch_example_set):
+        """Known category should pass through unmodified."""
+        classification = {
+            "ticket_type": "password-reset",
+            "confidence": 0.92,
+            "reasoning": "User requests password reset",
+        }
+        result = executor._validate_classification(classification, dispatch_example_set)
+        assert result["ticket_type"] == "password-reset"
+        assert result["confidence"] == 0.92
+
+    def test_unknown_category_passes_through(self, executor, dispatch_example_set):
+        """'unknown' is always a valid category."""
+        classification = {
+            "ticket_type": "unknown",
+            "confidence": 0.3,
+            "reasoning": "Not sure",
+        }
+        result = executor._validate_classification(classification, dispatch_example_set)
+        assert result["ticket_type"] == "unknown"
+        assert result["confidence"] == 0.3
+
+    def test_no_example_set_skips_validation(self, executor):
+        """When example_set is None, classification passes through as-is."""
+        classification = {
+            "ticket_type": "anything-goes",
+            "confidence": 0.9,
+        }
+        result = executor._validate_classification(classification, None)
+        assert result["ticket_type"] == "anything-goes"
+        assert result["confidence"] == 0.9
+
+    def test_missing_ticket_type_treated_as_unknown(self, executor, dispatch_example_set):
+        """Missing ticket_type key defaults to 'unknown' which is always valid."""
+        classification = {"confidence": 0.5}
+        result = executor._validate_classification(classification, dispatch_example_set)
+        # "unknown" is in valid categories, so it passes through
+        assert result.get("ticket_type", "unknown") == "unknown"
