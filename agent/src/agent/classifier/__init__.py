@@ -1,6 +1,1 @@
-"""Ticket classifier module for Praxova IT Agent."""
-
-from .classifier import TicketClassifier
-from .models import ClassificationResult, TicketType
-
-__all__ = ["TicketType", "ClassificationResult", "TicketClassifier"]
+# Legacy classifier module — replaced by agent.runtime.executors.classify.ClassifyExecutor

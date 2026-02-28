@@ -5,7 +5,7 @@ import os
 
 from connectors import Ticket
 
-from agent.classifier import ClassificationResult, TicketType
+
 from agent.tools.base import ToolServerConfig
 from agent.tools.group_management import GroupManagementTool
 

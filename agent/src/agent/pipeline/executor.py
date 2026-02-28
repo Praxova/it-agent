@@ -7,7 +7,7 @@ from datetime import datetime
 
 from connectors import ServiceNowConnector, Ticket, TicketState, TicketUpdate
 
-from agent.classifier import ClassificationResult, TicketClassifier, TicketType
+
 from agent.config.admin_client import AdminPortalClient, AgentConfiguration
 from agent.drivers import create_prompt_driver
 from agent.routing import CapabilityRouter

@@ -7,7 +7,7 @@ import pytest
 
 from connectors import Ticket, TicketState, TicketUpdate
 
-from agent.classifier import TicketType
+
 from agent.pipeline.executor import TicketExecutor
 from agent.pipeline.handlers.base import HandlerResult
 

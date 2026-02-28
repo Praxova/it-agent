@@ -7,7 +7,7 @@ import string
 
 from connectors import Ticket
 
-from agent.classifier import ClassificationResult, TicketType
+
 from agent.tools.base import ToolServerConfig
 from agent.tools.password_reset import PasswordResetTool
 

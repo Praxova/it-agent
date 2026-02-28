@@ -6,7 +6,7 @@ import pytest
 
 from griptape.artifacts import ErrorArtifact, TextArtifact
 
-from agent.classifier import TicketType
+
 from agent.pipeline.handlers.base import HandlerResult
 from agent.pipeline.handlers.group_access import GroupAccessHandler
 from agent.pipeline.handlers.password_reset import PasswordResetHandler

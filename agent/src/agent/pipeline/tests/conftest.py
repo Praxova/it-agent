@@ -7,7 +7,7 @@ import pytest
 
 from connectors import Ticket, TicketState
 
-from agent.classifier import ClassificationResult, TicketType
+
 from agent.pipeline.config import PipelineConfig
 
 
