@@ -34,6 +34,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       Kestrel__Certificates__Default__Path: /app/data/certs/portal-cert.pem
       Kestrel__Certificates__Default__KeyPath: /app/data/certs/portal-key.pem
+      Kestrel__Certificates__Default__ReloadOnChange: "true"
       ConnectionStrings__DefaultConnection: "Data Source=/app/data/lucid-admin.db"
       Database__Provider: Sqlite
       PRAXOVA_AD_BIND_PASSWORD: "${PRAXOVA_AD_BIND_PASSWORD:-}"
