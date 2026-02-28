@@ -51,6 +51,49 @@ public static class PkiEndpoints
         .WithName("ListCertificates")
         .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
 
+        // Certificate health summary — admin only
+        group.MapGet("/certificates/health-summary", async (LucidDbContext db) =>
+        {
+            var certs = await db.IssuedCertificates
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.NotAfter)
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            var entries = certs.Select(c =>
+            {
+                var daysRemaining = (int)(c.NotAfter - now).TotalDays;
+                var status = daysRemaining < 0 ? "expired"
+                    : daysRemaining < 7 ? "critical"
+                    : daysRemaining < 30 ? "warning"
+                    : "ok";
+
+                var renewalMode = c.Usage switch
+                {
+                    "ca-root" => (string?)null,
+                    "server-tls" when string.Equals(c.IssuedTo, "admin-portal", StringComparison.OrdinalIgnoreCase) => "auto",
+                    "client-tls" => "auto",
+                    _ => "manual"
+                };
+
+                return new CertificateHealthEntry(
+                    c.Name,
+                    c.SubjectCN,
+                    c.Usage,
+                    c.IssuedTo,
+                    c.NotAfter,
+                    daysRemaining,
+                    status,
+                    renewalMode,
+                    c.Thumbprint,
+                    c.SerialNumber);
+            }).ToList();
+
+            return Results.Ok(entries);
+        })
+        .WithName("GetCertificateHealthSummary")
+        .RequireAuthorization(AuthorizationPolicies.RequireAdmin);
+
         // Get specific certificate by name — admin only
         group.MapGet("/certificates/{name}", async (string name, LucidDbContext db) =>
         {
@@ -372,4 +415,16 @@ public record RenewCertificateResponse(
     string PrivateKeyPem,
     string CaCertificatePem,
     DateTime ExpiresAt,
+    string SerialNumber);
+
+public record CertificateHealthEntry(
+    string Name,
+    string SubjectCN,
+    string Usage,
+    string? IssuedTo,
+    DateTime ExpiresAt,
+    int DaysRemaining,
+    string Status,
+    string? RenewalMode,
+    string Thumbprint,
     string SerialNumber);
