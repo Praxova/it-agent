@@ -99,6 +99,8 @@ class AgentRunner:
         # Config version tracking
         self._config_version: str | None = None
         self._poll_count: int = 0
+        self._last_config_refresh: datetime | None = None
+        self._config_refresh_interval: float = 300.0  # 5 minutes
 
         # Awaiting configuration (e.g., no LLM provider assigned yet)
         self._awaiting_configuration: bool = False
@@ -218,6 +220,7 @@ class AgentRunner:
         self._engine.capability_router = self._capability_router
         self._engine.portal_client = self._ensure_portal_client()
 
+        self._last_config_refresh = datetime.utcnow()
         logger.info("Agent initialized successfully")
 
     async def run(self):
@@ -274,13 +277,8 @@ class AgentRunner:
                 self._last_error = str(e)
                 logger.error(f"Error in main loop: {e}", exc_info=True)
 
-            # Check config version every 5 poll cycles
-            self._poll_count += 1
-            if self._poll_count % 5 == 0:
-                if await self._check_config_changed():
-                    logger.info("Configuration changed, reinitializing agent...")
-                    await self.initialize()
-                    logger.info("Agent reinitialized with new configuration")
+            # Refresh config (example sets, rulesets) every 5 minutes
+            await self._maybe_refresh_config()
 
             # Send heartbeat if interval has elapsed
             if (time.time() - self._last_heartbeat_time) >= self.heartbeat_interval:
@@ -424,6 +422,44 @@ class AgentRunner:
         except Exception as e:
             logger.debug(f"Config version check failed: {e}")
             return False
+
+    async def _maybe_refresh_config(self):
+        """Refresh agent export data if the refresh interval has elapsed.
+
+        This is a lightweight refresh — it re-fetches the export (example sets,
+        rulesets, workflow definitions) and updates the engine, without
+        recreating the LLM driver or ServiceNow client.
+        """
+        if not self._config_loader or not self._engine:
+            return
+        if not self._last_config_refresh:
+            return
+
+        elapsed = (datetime.utcnow() - self._last_config_refresh).total_seconds()
+        if elapsed < self._config_refresh_interval:
+            return
+
+        try:
+            old_version = self._config_version
+            export = await self._config_loader.load()
+            new_version = export.exported_at.isoformat() if export.exported_at else None
+
+            # Update engine export in place
+            self._engine.export = export
+            self._config_version = new_version
+            self._last_config_refresh = datetime.utcnow()
+
+            if new_version != old_version:
+                logger.info(
+                    f"Config refreshed — version changed: {old_version} -> {new_version}"
+                )
+            else:
+                logger.info("Config refreshed — no changes detected")
+
+        except Exception as e:
+            logger.warning(f"Config refresh failed, continuing with existing config: {e}")
+            # Push refresh time forward so we don't spam retries
+            self._last_config_refresh = datetime.utcnow()
 
     async def _try_reload_configuration(self):
         """Re-fetch configuration to check if LLM provider has been assigned."""
