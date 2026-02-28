@@ -406,6 +406,7 @@ public class AgentExportService : IAgentExportService
             DisplayName = exampleSet.DisplayName,
             Examples = exampleSet.Examples
                 .OrderBy(e => e.SortOrder)
+                .Where(e => e.TicketCategory?.IsActive != false)
                 .Select(e => new ExampleExportInfo
                 {
                     Id = e.Id,
@@ -590,11 +591,17 @@ public class AgentExportService : IAgentExportService
 
     private string BuildExpectedOutputJson(Example example)
     {
+        // Guard: inactive categories should have been filtered upstream,
+        // but fall back to "unknown" if one slips through.
+        var ticketType = example.TicketCategory is { IsActive: true }
+            ? example.TicketCategory.Name
+            : "unknown";
+
         // Build expected output as JSON with ticket category name
         // matching dispatcher transition conditions
         var output = new Dictionary<string, object?>
         {
-            ["ticket_type"] = example.TicketCategory?.Name ?? "unknown",
+            ["ticket_type"] = ticketType,
             ["confidence"] = example.ExpectedConfidence,
             ["affected_user"] = example.ExpectedAffectedUser,
             ["target_group"] = example.ExpectedTargetGroup,
