@@ -104,6 +104,12 @@ class ClassifyExecutor(BaseStepExecutor):
             # Parse the response
             classification = self._parse_classification_response(response_text)
 
+            # Validate against known categories
+            example_set = self._resolve_example_set(
+                config.get("use_example_set"), context
+            )
+            classification = self._validate_classification(classification, example_set)
+
             # Store results in context for condition evaluation
             for key, value in classification.items():
                 context.set_variable(key, value)
@@ -300,6 +306,32 @@ class ClassifyExecutor(BaseStepExecutor):
     # ------------------------------------------------------------------ #
     # Shared helpers
     # ------------------------------------------------------------------ #
+
+    def _validate_classification(
+        self,
+        classification: dict[str, Any],
+        example_set: ExampleSetExportInfo | None,
+    ) -> dict[str, Any]:
+        """Validate LLM output against known categories. Escalate if invalid."""
+        if example_set is None:
+            return classification
+
+        valid_categories = self._extract_categories(example_set)
+        ticket_type = classification.get("ticket_type", "unknown")
+
+        if ticket_type not in valid_categories:
+            logger.warning(
+                f"Classifier returned unknown category '{ticket_type}'. "
+                f"Valid: {valid_categories}. Escalating."
+            )
+            classification["ticket_type"] = "unknown"
+            classification["confidence"] = 0.0
+            classification["reasoning"] = (
+                f"Original classification '{ticket_type}' is not a valid category. "
+                f"Escalating for human review."
+            )
+
+        return classification
 
     def _build_classification_prompt(
         self,
