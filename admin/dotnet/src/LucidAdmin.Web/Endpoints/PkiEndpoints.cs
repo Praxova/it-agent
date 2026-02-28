@@ -228,6 +228,102 @@ public static class PkiEndpoints
         .WithName("GetAgentClientCert")
         .WithDescription("Get or issue an mTLS client certificate for an agent")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+
+        // POST /api/pki/certificates/renew — agent-initiated cert renewal
+        // Agents call this when their client cert is approaching expiry.
+        // Distinct from the admin force-renew endpoint (POST /certificates/{name}/renew).
+        group.MapPost("/certificates/renew", async (
+            RenewCertificateRequest request,
+            IInternalPkiService pkiService,
+            LucidDbContext db,
+            HttpContext httpContext) =>
+        {
+            if (!pkiService.IsInitialized)
+                return Results.StatusCode(503);
+
+            // Extract agent identity from API key claims
+            var agentIdClaim = httpContext.User.FindFirst("agent_id")?.Value;
+            if (string.IsNullOrEmpty(agentIdClaim) || !Guid.TryParse(agentIdClaim, out var agentId))
+            {
+                return Results.Json(
+                    new { error = "agent_identity_required", detail = "API key is not associated with an agent" },
+                    statusCode: 403);
+            }
+
+            // Look up agent
+            var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == agentId);
+            if (agent == null || !agent.IsEnabled)
+            {
+                return Results.Json(
+                    new { error = "agent_not_found", detail = "Agent not found or not active" },
+                    statusCode: 403);
+            }
+
+            // Validate agent name matches
+            if (!string.Equals(agent.Name, request.AgentName, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(
+                    new { error = "agent_mismatch", detail = "You can only renew your own client certificate" },
+                    statusCode: 403);
+            }
+
+            // Look up the cert being renewed
+            var serialNormalized = request.CurrentCertSerial.ToLowerInvariant();
+            var cert = await db.IssuedCertificates
+                .FirstOrDefaultAsync(c => c.SerialNumber == serialNormalized && c.IsActive);
+
+            if (cert == null)
+            {
+                return Results.NotFound(new { error = "cert_not_found", detail = $"No active certificate with serial '{request.CurrentCertSerial}'" });
+            }
+
+            // Validate cert belongs to this agent
+            var expectedIssuedTo = agent.Name;
+            if (!string.Equals(cert.IssuedTo, expectedIssuedTo, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(
+                    new { error = "cert_ownership_mismatch", detail = "Certificate does not belong to this agent" },
+                    statusCode: 403);
+            }
+
+            // Renewal window check
+            var daysRemaining = (cert.NotAfter - DateTime.UtcNow).TotalDays;
+            if (daysRemaining > 30)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "not_in_renewal_window",
+                    detail = "Certificate does not expire within 30 days",
+                    expires_at = cert.NotAfter.ToString("O"),
+                    days_remaining = (int)daysRemaining
+                });
+            }
+
+            // Issue renewed cert
+            try
+            {
+                var (certPem, keyPem, expiresAt) = await pkiService.GetOrIssueAgentClientCertAsync(agent.Name);
+
+                // Look up the new cert record for serial number
+                var certName = $"agent-client-{agent.Name}";
+                var newCert = await db.IssuedCertificates
+                    .FirstOrDefaultAsync(c => c.Name == certName && c.IsActive);
+
+                return Results.Ok(new RenewCertificateResponse(
+                    CertificatePem: certPem,
+                    PrivateKeyPem: keyPem,
+                    CaCertificatePem: pkiService.GetCaCertificatePem(),
+                    ExpiresAt: newCert?.NotAfter ?? expiresAt,
+                    SerialNumber: newCert?.SerialNumber ?? ""));
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message);
+            }
+        })
+        .WithName("RenewAgentClientCert")
+        .WithDescription("Agent-initiated renewal of its mTLS client certificate")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent);
     }
 }
 
@@ -266,3 +362,14 @@ public record CertificateSummary(
     string? CertPath,
     DateTime? RenewedAt,
     string? ReplacedByThumbprint);
+
+public record RenewCertificateRequest(
+    string CurrentCertSerial,
+    string AgentName);
+
+public record RenewCertificateResponse(
+    string CertificatePem,
+    string PrivateKeyPem,
+    string CaCertificatePem,
+    DateTime ExpiresAt,
+    string SerialNumber);
