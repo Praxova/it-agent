@@ -61,6 +61,9 @@ class ExecutionContext:
     # Admin portal URL for capability routing
     admin_portal_url: str = ""
 
+    # Agent identity (needed for operation token requests)
+    agent_name: str = ""
+
     # Integration points (optional, set by runner)
     servicenow_client: Any = None  # ServiceNowClient
     capability_router: Any = None  # CapabilityRouter

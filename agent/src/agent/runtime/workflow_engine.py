@@ -148,6 +148,7 @@ class WorkflowEngine:
             context.servicenow_client = self.servicenow_client
             context.capability_router = self.capability_router
             context.portal_client = self.portal_client
+            context.agent_name = self.agent_name
             context.variables["agent_name"] = self.agent_name
             context.status = ExecutionStatus.RUNNING
 
@@ -324,6 +325,7 @@ class WorkflowEngine:
         context.servicenow_client = self.servicenow_client
         context.capability_router = self.capability_router
         context.portal_client = self.portal_client
+        context.agent_name = self.agent_name
         context.status = ExecutionStatus.RUNNING
 
         # Restore workflow stack from snapshot, or initialize fresh

@@ -74,6 +74,7 @@ class ExecuteExecutor(BaseStepExecutor):
                 tool_server_url=tool_server_url,
                 capability=capability,
                 params=params,
+                context=context,
             )
 
             result.complete({
@@ -174,6 +175,7 @@ class ExecuteExecutor(BaseStepExecutor):
         tool_server_url: str,
         capability: str,
         params: dict[str, Any],
+        context: ExecutionContext | None = None,
     ) -> dict[str, Any]:
         """Call the Tool Server API."""
         # Map capability to (method, endpoint)
@@ -202,6 +204,46 @@ class ExecuteExecutor(BaseStepExecutor):
 
         logger.info(f"Calling Tool Server: {method} {url}")
         logger.debug(f"Parameters: {remaining_params}")
+
+        # Determine target and target_type for operation token
+        target = None
+        target_type = "user"
+
+        if capability in ("ad-password-reset", "ad-group-add", "ad-group-remove",
+                          "ad-computer-lookup"):
+            target = remaining_params.get("username")
+            target_type = "user"
+        elif capability in ("ntfs-permission-grant", "ntfs-permission-revoke"):
+            target = remaining_params.get("path")
+            target_type = "path"
+        elif capability == "remote-software-install":
+            target = remaining_params.get("computer_name") or remaining_params.get("username")
+            target_type = "user"
+        else:
+            # Fallback: try username, then path
+            target = (remaining_params.get("username")
+                      or remaining_params.get("path")
+                      or remaining_params.get("target", "unknown"))
+
+        # Request operation token for POST requests
+        auth_headers: dict[str, str] = {}
+        if method == "POST" and target and context:
+            try:
+                token = await self._request_operation_token(
+                    context=context,
+                    capability=capability,
+                    target=target,
+                    target_type=target_type,
+                    tool_server_url=tool_server_url,
+                )
+                if token:
+                    auth_headers["Authorization"] = f"Bearer {token}"
+                    logger.info("Operation token attached to request")
+            except Exception as e:
+                logger.error(f"Operation token request failed: {e}")
+                return {"success": False, "message": f"Authorization failed: {e}"}
+        elif method == "POST" and not context:
+            logger.warning("No execution context — skipping operation token request")
 
         try:
             cert_path = CERT_DIR / "agent-client.crt"
@@ -234,9 +276,9 @@ class ExecuteExecutor(BaseStepExecutor):
                     f"tls_post_handshake_auth={'YES' if ssl_context else 'N/A'}"
                 )
                 if method == "GET":
-                    response = await client.get(url, params=remaining_params)
+                    response = await client.get(url, params=remaining_params, headers=auth_headers)
                 else:
-                    response = await client.post(url, json=remaining_params)
+                    response = await client.post(url, json=remaining_params, headers=auth_headers)
 
                 if response.status_code >= 400:
                     return {
@@ -250,3 +292,71 @@ class ExecuteExecutor(BaseStepExecutor):
             return {"success": False, "message": "Tool Server request timed out"}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    async def _request_operation_token(
+        self,
+        context: ExecutionContext,
+        capability: str,
+        target: str,
+        target_type: str,
+        tool_server_url: str,
+    ) -> str | None:
+        """Request a scoped operation token from the Admin Portal.
+
+        The portal issues a short-lived JWT authorising exactly one
+        (capability, target) pair.  The tool server validates this
+        token before executing the operation.
+        """
+        if not context.admin_portal_url:
+            logger.warning("No Admin Portal URL — skipping operation token request")
+            return None
+
+        url = f"{context.admin_portal_url}/api/authz/operation-token"
+        payload = {
+            "agent_name": context.agent_name or "unknown",
+            "capability": capability,
+            "target": target,
+            "target_type": target_type,
+            "tool_server_url": tool_server_url,
+            "ticket_id": context.ticket_id,
+        }
+
+        try:
+            if context.portal_client:
+                response = await context.portal_client.post(url, json=payload, timeout=10.0)
+            else:
+                verify = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else False
+                async with httpx.AsyncClient(verify=verify, timeout=10.0) as client:
+                    response = await client.post(url, json=payload)
+
+            if response.status_code == 200:
+                data = response.json()
+                token = data.get("token")
+                if token:
+                    logger.info(
+                        f"Operation token issued for {capability} -> {target} "
+                        f"(expires: {data.get('expires_at', 'unknown')})"
+                    )
+                    return token
+                logger.warning("Operation token response missing 'token' field")
+                return None
+
+            if response.status_code == 429:
+                logger.warning("Operation token rate-limited (429) — proceeding without token")
+                return None
+
+            logger.error(
+                f"Operation token request failed: {response.status_code} {response.text}"
+            )
+            raise RuntimeError(
+                f"Operation token request returned {response.status_code}"
+            )
+
+        except httpx.TimeoutException:
+            logger.error("Operation token request timed out")
+            raise
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.error(f"Operation token request error: {e}")
+            raise
