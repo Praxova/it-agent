@@ -1,7 +1,9 @@
 """Execute step executor - calls Tool Server."""
 from __future__ import annotations
 import logging
+import os
 import re as _re
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -11,6 +13,9 @@ from ..execution_context import ExecutionContext, StepResult, ExecutionStatus
 from .base import BaseStepExecutor
 
 logger = logging.getLogger(__name__)
+
+CERT_DIR = Path(os.environ.get("AGENT_CERT_DIR", "/tmp/praxova"))
+CA_CERT_PATH = Path(os.environ.get("SSL_CERT_FILE", "/tmp/praxova-ca.pem"))
 
 
 class ExecuteExecutor(BaseStepExecutor):
@@ -105,8 +110,9 @@ class ExecuteExecutor(BaseStepExecutor):
             if context.portal_client:
                 response = await context.portal_client.get(url, timeout=10.0)
             else:
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(url, timeout=10.0)
+                verify = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else False
+                async with httpx.AsyncClient(verify=verify, timeout=10.0) as client:
+                    response = await client.get(url)
 
             if response.status_code == 404:
                 return None
@@ -197,11 +203,23 @@ class ExecuteExecutor(BaseStepExecutor):
         logger.debug(f"Parameters: {remaining_params}")
 
         try:
-            async with httpx.AsyncClient() as client:
+            cert_path = CERT_DIR / "agent-client.crt"
+            key_path = CERT_DIR / "agent-client.key"
+
+            client_cert = None
+            if cert_path.exists() and key_path.exists():
+                client_cert = (str(cert_path), str(key_path))
+                logger.debug(f"Using mTLS client cert: {cert_path}")
+            else:
+                logger.warning("Agent mTLS client cert not found — tool server calls may fail")
+
+            verify = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else False
+
+            async with httpx.AsyncClient(cert=client_cert, verify=verify, timeout=30.0) as client:
                 if method == "GET":
-                    response = await client.get(url, params=remaining_params, timeout=30.0)
+                    response = await client.get(url, params=remaining_params)
                 else:
-                    response = await client.post(url, json=remaining_params, timeout=30.0)
+                    response = await client.post(url, json=remaining_params)
 
                 if response.status_code >= 400:
                     return {
