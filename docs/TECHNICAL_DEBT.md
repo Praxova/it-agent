@@ -207,3 +207,54 @@ All options are transparent to the agent thanks to the pluggable driver factory 
 - Demo/MVP acceptable with the Docker network isolation mitigation, but must be resolved before first customer deployment.
 
 *Last updated: 2026-02-15*
+
+
+---
+
+## TD-009: Remove Tool Server API Key Field from Admin Portal UI (LOW)
+
+**Location:** Admin Portal → Tool Servers → Edit panel; `LucidAdmin.Web/Components/Pages/ToolServers/`
+**Introduced:** Original tool server registration design (pre-ADR-014)
+**Decision:** ADR-016 (2026-03-01) — Tool Server API Key Removal
+
+**Problem:**
+The tool server setup panel includes an API key field that is no longer part of the authentication model. Agent-to-tool-server authentication is now handled by mTLS (ADR-014) + operation authorization tokens (ADR-015). The API key field causes confusion during setup and implies a security layer that doesn't exist.
+
+**Fix:**
+1. Remove the API key field from the tool server create/edit UI components.
+2. Remove any API key validation middleware from the tool server if present.
+3. Remove the `ApiKey` column from the `ToolServer` entity if it exists in the schema.
+4. Update the tool server provisioning script (`provision-toolserver-certs.ps1`) documentation to clarify the two-layer auth model (mTLS + operation tokens).
+
+**Risk if Deferred:**
+- Operators may configure an API key expecting it to be enforced, creating a false sense of security.
+- New contributors may attempt to wire up unused API key validation, adding complexity with no benefit.
+
+*Added: 2026-03-01*
+
+---
+
+## TD-010: Tool Server AD Credentials in appsettings.json (MEDIUM)
+
+**Location:** Tool server `appsettings.json` → `ToolServer.ServiceAccountUsername` / `ServiceAccountPassword`; `ActiveDirectoryService.cs`
+**Introduced:** Original tool server design (pre-ADR-015)
+**Workaround:** Credentials set directly in `appsettings.json` on tool01, readable by SYSTEM and Administrators only.
+
+**Problem:**
+The tool server's AD service account credentials (`svc-praxova-tool`) are stored in plaintext in `appsettings.json` on the tool server host. The admin portal already stores these credentials encrypted (envelope encryption, AES-256-GCM, Argon2id — ADR-015) in the `windows-ad` ServiceAccount record, but the tool server does not fetch them from the portal.
+
+The architecture vision (ARCHITECTURE.md) is that the tool server retrieves its AD bind credentials from the portal at startup via the capability mapping's `service_account_id`, eliminating local credential storage entirely.
+
+**Fix:**
+1. Add a portal API endpoint: `GET /api/tool-servers/{id}/credentials` (mTLS-authenticated, returns decrypted AD credentials for the mapped service account).
+2. Tool server calls this endpoint at startup, caching credentials in memory only.
+3. Remove `ServiceAccountUsername` / `ServiceAccountPassword` from `appsettings.json`.
+4. Add periodic credential refresh (e.g., every 60 minutes) to pick up rotations without restart.
+5. Fallback: if portal is unreachable at startup, log a warning and refuse AD operations until credentials are available (fail-closed).
+
+**Risk if Deferred:**
+- Plaintext credentials on disk violate enterprise security policies (SOC 2, ISO 27001).
+- Credential rotation requires manual `appsettings.json` edits + service restart on every tool server.
+- Acceptable for lab/demo environments but must be resolved before first customer deployment.
+
+*Added: 2026-03-01*
