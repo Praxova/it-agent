@@ -209,13 +209,14 @@ class ExecuteExecutor(BaseStepExecutor):
             client_cert = None
             if cert_path.exists() and key_path.exists():
                 client_cert = (str(cert_path), str(key_path))
-                logger.debug(f"Using mTLS client cert: {cert_path}")
+                logger.info(f"mTLS config: cert={cert_path} (exists={cert_path.exists()}), key={key_path} (exists={key_path.exists()}), ca={CA_CERT_PATH} (exists={CA_CERT_PATH.exists()})")
             else:
                 logger.warning("Agent mTLS client cert not found — tool server calls may fail")
 
             verify = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else False
 
             async with httpx.AsyncClient(cert=client_cert, verify=verify, timeout=30.0) as client:
+                logger.info(f"Tool server request: {method} {url}, client_cert={'YES' if client_cert else 'NO'}, verify={verify}")
                 if method == "GET":
                     response = await client.get(url, params=remaining_params)
                 else:
