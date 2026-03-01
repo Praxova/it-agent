@@ -68,12 +68,17 @@ def _get_config_value(config: dict, key: str, default: Any = None) -> Any:
     return default
 
 
-def create_prompt_driver(provider: ProviderExportInfo) -> BasePromptDriver:
+def create_prompt_driver(
+    provider: ProviderExportInfo,
+    resolved_credentials: dict[str, str] | None = None,
+) -> BasePromptDriver:
     """
     Create a Griptape PromptDriver from provider configuration.
 
     Args:
         provider: Provider configuration from export
+        resolved_credentials: Pre-resolved credentials (e.g., fetched from portal API).
+            If provided, used directly instead of calling resolve_credential().
 
     Returns:
         Configured BasePromptDriver instance
@@ -85,9 +90,12 @@ def create_prompt_driver(provider: ProviderExportInfo) -> BasePromptDriver:
     config = provider.config or {}
 
     # Resolve credentials
-    credentials = {}
-    if provider.credentials:
+    if resolved_credentials is not None:
+        credentials = resolved_credentials
+    elif provider.credentials:
         credentials = resolve_credential(provider.credentials)
+    else:
+        credentials = {}
 
     try:
         if provider_type == "llm-ollama":

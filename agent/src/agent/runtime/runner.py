@@ -171,7 +171,8 @@ class AgentRunner:
             self._awaiting_configuration = True
             return
 
-        llm_driver = create_prompt_driver(export.llm_provider)
+        llm_creds = await self._config_loader.get_llm_credentials()
+        llm_driver = create_prompt_driver(export.llm_provider, resolved_credentials=llm_creds)
         logger.info(f"Created LLM driver: {export.llm_provider.provider_type}")
 
         # Create ServiceNow client
