@@ -114,6 +114,7 @@ public static class DependencyInjection
         services.AddScoped<IServiceAccountProvider, LinuxProvider>();
         services.AddScoped<IServiceAccountProvider, AwsProvider>();
         services.AddScoped<IServiceAccountProvider, OllamaProvider>();
+        services.AddScoped<IServiceAccountProvider, LlamaCppProvider>();
         services.AddScoped<IServiceAccountProvider, AzureOpenAiProvider>();
         services.AddScoped<IServiceAccountProvider, BedrockProvider>();
 
