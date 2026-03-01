@@ -379,7 +379,7 @@ public static class ServiceAccountEndpoints
             AdditionalConfig = config
         };
 
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient("ToolServer");
         client.BaseAddress = new Uri(toolServer.Endpoint.TrimEnd('/'));
         // AD authentication with invalid credentials can take 30-60s due to Kerberos/LDAP retries
         client.Timeout = TimeSpan.FromSeconds(90);

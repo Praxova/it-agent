@@ -205,7 +205,7 @@ public static class ToolServerEndpoints
 
             try
             {
-                var client = httpClientFactory.CreateClient();
+                var client = httpClientFactory.CreateClient("ToolServer");
                 client.Timeout = TimeSpan.FromSeconds(10);
 
                 // Try to hit the tool server's health endpoint

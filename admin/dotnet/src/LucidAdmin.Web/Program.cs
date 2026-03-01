@@ -37,6 +37,48 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // Add services
+
+// Named "ToolServer" client: trusts Praxova internal CA for tool server HTTPS calls.
+// IHttpClientFactory creates a fresh handler per client, so the CA cert is loaded once
+// at handler-creation time via the singleton IInternalPkiService.
+builder.Services.AddHttpClient("ToolServer")
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+    {
+        var handler = new HttpClientHandler();
+
+        try
+        {
+            var pkiService = sp.GetService<IInternalPkiService>();
+            if (pkiService?.IsInitialized == true)
+            {
+                var caPem = pkiService.GetCaCertificatePem();
+                var caCert = X509Certificate2.CreateFromPem(caPem);
+
+                handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) =>
+                {
+                    if (errors == System.Net.Security.SslPolicyErrors.None)
+                        return true;
+                    if (cert == null)
+                        return false;
+
+                    using var customChain = new X509Chain();
+                    customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                    customChain.ChainPolicy.CustomTrustStore.Add(caCert);
+                    customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                    return customChain.Build(new X509Certificate2(cert));
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            // First boot or sealed store — fall back to OS trust only
+            Log.Warning(ex, "Could not configure Praxova CA trust for ToolServer HttpClient");
+        }
+
+        return handler;
+    });
+
+// Default unnamed HttpClient for Blazor internals and other non-tool-server uses
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

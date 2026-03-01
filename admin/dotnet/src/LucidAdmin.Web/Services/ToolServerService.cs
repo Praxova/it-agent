@@ -130,7 +130,7 @@ public class ToolServerService : IToolServerService
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient("ToolServer");
             client.Timeout = TimeSpan.FromSeconds(10);
 
             // Try to hit the tool server's health endpoint
