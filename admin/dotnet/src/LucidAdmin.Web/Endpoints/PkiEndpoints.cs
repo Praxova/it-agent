@@ -272,6 +272,52 @@ public static class PkiEndpoints
         .WithDescription("Get or issue an mTLS client certificate for an agent")
         .RequireAuthorization(AuthorizationPolicies.RequireAgent);
 
+        // GET /api/pki/certificates/service/{serviceName} — issue TLS cert for infrastructure services
+        // Requires agent API key auth — infrastructure containers (LLM, etc.) call this at startup.
+        // No identity validation — any valid Agent-role key can request allowed service certs.
+        group.MapGet("/certificates/service/{serviceName}", async (
+            string serviceName,
+            IInternalPkiService pkiService) =>
+        {
+            if (!pkiService.IsInitialized)
+                return Results.StatusCode(503);
+
+            var allowedServices = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["llm"] = new[] { "llm", "praxova-llm", "localhost" },
+                ["praxova-llm"] = new[] { "llm", "praxova-llm", "localhost" },
+                // Future: add more infrastructure services here
+            };
+
+            if (!allowedServices.TryGetValue(serviceName, out var sanDnsNames))
+            {
+                return Results.NotFound(new { error = "unknown_service" });
+            }
+
+            try
+            {
+                var (certPem, keyPem) = await pkiService.IssueCertificateAsync(
+                    name: $"service-tls-{serviceName}",
+                    commonName: serviceName,
+                    sanDnsNames: sanDnsNames,
+                    sanIpAddresses: null,
+                    lifetimeDays: 90);
+
+                return Results.Ok(new IssueCertificateResponse(
+                    Name: $"service-tls-{serviceName}",
+                    CertificatePem: certPem,
+                    PrivateKeyPem: keyPem,
+                    CaCertificatePem: pkiService.GetCaCertificatePem()));
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        })
+        .WithName("GetServiceCert")
+        .WithDescription("Issue a TLS certificate for an allowed infrastructure service")
+        .RequireAuthorization(AuthorizationPolicies.RequireAgent);
+
         // POST /api/pki/certificates/renew — agent-initiated cert renewal
         // Agents call this when their client cert is approaching expiry.
         // Distinct from the admin force-renew endpoint (POST /certificates/{name}/renew).

@@ -80,13 +80,10 @@ else
         exit 1
     fi
 
-    ISSUE_URL="${PORTAL_URL}/api/pki/certificates/issue"
-    ISSUE_BODY='{"Name":"llm-server","CommonName":"praxova-llm","DnsNames":["llm","praxova-llm","localhost"],"LifetimeDays":90}'
+    SERVICE_CERT_URL="${PORTAL_URL}/api/pki/certificates/service/praxova-llm"
 
-    RESPONSE=$(curl -sf -X POST "${ISSUE_URL}" \
-        -H "Content-Type: application/json" \
+    RESPONSE=$(curl -sf "${SERVICE_CERT_URL}" \
         -H "X-API-Key: ${API_KEY}" \
-        -d "${ISSUE_BODY}" \
         2>&1)
 
     if [ $? -ne 0 ]; then
