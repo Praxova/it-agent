@@ -166,7 +166,63 @@ if (operationTokenSigningKey != null)
             sp.GetRequiredService<ILogger<OperationTokenValidator>>()));
 }
 
+// Portal credential service — fetches AD credentials from portal secrets store
+var portalConfig = builder.Configuration.GetSection("ToolServer:Portal");
+var portalUrl = portalConfig["Url"];
+
+if (!string.IsNullOrEmpty(portalUrl) && !string.IsNullOrEmpty(portalConfig["ToolServerId"]))
+{
+    builder.Services.AddHttpClient(PortalCredentialService.HttpClientName, client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(15);
+    }).ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var handler = new HttpClientHandler();
+        if (praxovaCA != null)
+        {
+            handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) =>
+            {
+                if (errors == System.Net.Security.SslPolicyErrors.None)
+                    return true;
+                if (cert == null)
+                    return false;
+
+                using var customChain = new X509Chain();
+                customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                customChain.ChainPolicy.CustomTrustStore.Add(praxovaCA);
+                customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                return customChain.Build(new X509Certificate2(cert));
+            };
+        }
+        return handler;
+    });
+    builder.Services.AddSingleton<IPortalCredentialService, PortalCredentialService>();
+    Log.Information("Portal credential service configured — URL: {Url}", portalUrl);
+}
+else
+{
+    Log.Information("Portal URL not configured — using local credentials");
+}
+
 var app = builder.Build();
+
+// Attempt initial credential fetch from portal at startup (populates the singleton cache)
+var portalCredService = app.Services.GetService<IPortalCredentialService>();
+if (portalCredService != null)
+{
+    try
+    {
+        var creds = await portalCredService.FetchAdCredentialsAsync();
+        if (creds.HasValue)
+            Log.Information("AD credentials loaded from portal secrets store for {Username}", creds.Value.Username);
+        else
+            Log.Warning("Portal credential fetch failed — falling back to local config");
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Portal credential fetch failed at startup — falling back to local config");
+    }
+}
 
 // Background nonce cleanup (only when validator is registered)
 if (operationTokenSigningKey != null)

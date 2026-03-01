@@ -54,4 +54,30 @@ public class ToolServerSettings
     /// Azure / Entra ID configuration for cloud operations.
     /// </summary>
     public AzureSettings? Azure { get; set; }
+
+    /// <summary>
+    /// Admin Portal connection settings for credential retrieval.
+    /// </summary>
+    public PortalSettings? Portal { get; set; }
+}
+
+/// <summary>
+/// Settings for connecting to the Praxova Admin Portal.
+/// </summary>
+public class PortalSettings
+{
+    /// <summary>
+    /// Admin Portal URL (e.g., "https://admin-portal:5001").
+    /// </summary>
+    public string? Url { get; set; }
+
+    /// <summary>
+    /// This tool server's ID in the portal (GUID).
+    /// </summary>
+    public string? ToolServerId { get; set; }
+
+    /// <summary>
+    /// API key for portal authentication (X-API-Key header).
+    /// </summary>
+    public string? ApiKey { get; set; }
 }

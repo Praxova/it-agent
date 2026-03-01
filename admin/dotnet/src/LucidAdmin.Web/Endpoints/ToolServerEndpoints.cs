@@ -1,6 +1,8 @@
+using System.Text.Json;
 using LucidAdmin.Core.Entities;
 using LucidAdmin.Core.Enums;
 using LucidAdmin.Core.Exceptions;
+using LucidAdmin.Core.Interfaces.Credentials;
 using LucidAdmin.Core.Interfaces.Repositories;
 using LucidAdmin.Core.Interfaces.Services;
 using LucidAdmin.Web.Authorization;
@@ -256,6 +258,110 @@ public static class ToolServerEndpoints
                 Message: message,
                 CheckedAt: checkedAt,
                 Details: null
+            ));
+        });
+
+        // AD credential fetch — tool server retrieves its AD service account
+        // credentials from the portal's encrypted secrets store
+        group.MapGet("/{id:guid}/ad-credentials", async (
+            Guid id,
+            IToolServerRepository repository,
+            ICapabilityMappingRepository mappingRepo,
+            IServiceAccountRepository serviceAccountRepo,
+            ICredentialService credentialService,
+            IAuditEventRepository auditRepository,
+            ILogger<Program> logger) =>
+        {
+            var server = await repository.GetByIdAsync(id);
+            if (server == null)
+                throw new EntityNotFoundException("ToolServer", id);
+
+            // Find capability mappings for this tool server with a windows-ad service account
+            var mappings = await mappingRepo.GetByToolServerIdAsync(id);
+            var adMapping = mappings.FirstOrDefault(m =>
+                m.IsEnabled && m.ServiceAccountId != Guid.Empty);
+
+            if (adMapping == null)
+            {
+                return Results.NotFound(new { error = "NoAdMapping", message = "No enabled capability mapping with a service account found for this tool server" });
+            }
+
+            // Load the service account
+            var serviceAccount = await serviceAccountRepo.GetByIdAsync(adMapping.ServiceAccountId);
+            if (serviceAccount == null)
+            {
+                return Results.NotFound(new { error = "ServiceAccountNotFound", message = "Linked service account not found" });
+            }
+
+            if (serviceAccount.Provider != "windows-ad")
+            {
+                return Results.BadRequest(new { error = "NotAdAccount", message = $"Service account provider is '{serviceAccount.Provider}', expected 'windows-ad'" });
+            }
+
+            // Parse configuration for domain and samAccountName
+            string? domain = null;
+            string? samAccountName = null;
+            if (!string.IsNullOrEmpty(serviceAccount.Configuration))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(serviceAccount.Configuration);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("domain", out var d) || root.TryGetProperty("Domain", out d))
+                        domain = d.GetString();
+                    if (root.TryGetProperty("samAccountName", out var s) || root.TryGetProperty("SamAccountName", out s))
+                        samAccountName = s.GetString();
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogWarning(ex, "Failed to parse service account configuration for {AccountName}", serviceAccount.Name);
+                }
+            }
+
+            domain ??= server.Domain;
+            samAccountName ??= serviceAccount.Name;
+
+            // Decrypt credentials
+            var credentials = await credentialService.GetCredentialsAsync(serviceAccount.Id);
+            if (credentials == null || credentials.IsEmpty)
+            {
+                return Results.NotFound(new { error = "NoCredentials", message = "No credentials stored for this service account" });
+            }
+
+            var password = credentials.Get(CredentialSet.Keys.Password);
+            if (string.IsNullOrEmpty(password))
+            {
+                return Results.NotFound(new { error = "NoPassword", message = "Password not found in stored credentials" });
+            }
+
+            // Build the full username (UPN format)
+            var username = samAccountName.Contains('@')
+                ? samAccountName
+                : $"{samAccountName}@{domain}";
+
+            // Audit
+            await auditRepository.AddAsync(new AuditEvent
+            {
+                ToolServerId = server.Id,
+                Action = AuditAction.CredentialAccessed,
+                PerformedBy = "ToolServer",
+                TargetResource = serviceAccount.Name,
+                Success = true,
+                DetailsJson = JsonSerializer.Serialize(new { action = "tool-server-ad-credential-fetch", toolServer = server.Name })
+            });
+
+            logger.LogInformation("AD credentials fetched for tool server {ToolServer} (service account: {Account})",
+                server.Name, serviceAccount.Name);
+
+            return Results.Ok(new ToolServerAdCredentialResponse(
+                ToolServerId: id,
+                ServiceAccountName: samAccountName,
+                Domain: domain,
+                Username: username,
+                Password: password,
+                ExpiresAt: serviceAccount.CredentialExpiresAt,
+                Source: "portal-encrypted-db"
             ));
         });
     }

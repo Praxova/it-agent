@@ -53,6 +53,16 @@ public record TestConnectivityResponse(
     [property: JsonPropertyName("details")] Dictionary<string, object>? Details
 );
 
+public record ToolServerAdCredentialResponse(
+    [property: JsonPropertyName("tool_server_id")] Guid ToolServerId,
+    [property: JsonPropertyName("service_account_name")] string ServiceAccountName,
+    [property: JsonPropertyName("domain")] string Domain,
+    [property: JsonPropertyName("username")] string Username,
+    [property: JsonPropertyName("password")] string Password,
+    [property: JsonPropertyName("expires_at")] DateTime? ExpiresAt,
+    [property: JsonPropertyName("source")] string Source
+);
+
 public class ToolServerFormModel
 {
     public Guid? Id { get; set; }

@@ -14,15 +14,19 @@ public class ActiveDirectoryService : IActiveDirectoryService
 {
     private readonly ToolServerSettings _settings;
     private readonly ILogger<ActiveDirectoryService> _logger;
+    private readonly IPortalCredentialService? _portalCredentialService;
+    private bool _loggedCredentialSource;
 
     public ActiveDirectoryService(
         IOptions<ToolServerSettings> settings,
-        ILogger<ActiveDirectoryService> logger)
+        ILogger<ActiveDirectoryService> logger,
+        IPortalCredentialService? portalCredentialService = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(logger);
         _settings = settings.Value;
         _logger = logger;
+        _portalCredentialService = portalCredentialService;
     }
 
     /// <inheritdoc />
@@ -658,16 +662,53 @@ public class ActiveDirectoryService : IActiveDirectoryService
     }
 
     /// <summary>
-    /// Create a PrincipalContext using configured domain and optional service account credentials.
+    /// Create a PrincipalContext using configured domain and service account credentials.
+    /// Credential priority: 1) Portal secrets store  2) Local config  3) Process identity
     /// </summary>
     private PrincipalContext CreatePrincipalContext()
     {
-        if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
-            && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+        string? username = null;
+        string? password = null;
+        string source;
+
+        // 1) Try portal credentials (singleton cache, refreshed by PortalCredentialService)
+        var portalCreds = _portalCredentialService?.CachedCredentials;
+        if (portalCreds.HasValue)
+        {
+            username = portalCreds.Value.Username;
+            password = portalCreds.Value.Password;
+            source = "portal";
+        }
+        // 2) Fall back to local config
+        else if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
+                 && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+        {
+            username = _settings.ServiceAccountUsername;
+            password = _settings.ServiceAccountPassword;
+            source = "local-config";
+        }
+        // 3) Process identity
+        else
+        {
+            source = "process-identity";
+        }
+
+        if (!_loggedCredentialSource)
+        {
+            _logger.LogInformation("AD credential source: {Source}{User}",
+                source, username != null ? $" (user: {username})" : "");
+            _loggedCredentialSource = true;
+        }
+        else
+        {
+            _logger.LogDebug("AD credential source: {Source}", source);
+        }
+
+        if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
         {
             return string.IsNullOrEmpty(_settings.DomainName)
-                ? new PrincipalContext(ContextType.Domain, null, _settings.ServiceAccountUsername, _settings.ServiceAccountPassword)
-                : new PrincipalContext(ContextType.Domain, _settings.DomainName, _settings.ServiceAccountUsername, _settings.ServiceAccountPassword);
+                ? new PrincipalContext(ContextType.Domain, null, username, password)
+                : new PrincipalContext(ContextType.Domain, _settings.DomainName, username, password);
         }
 
         return string.IsNullOrEmpty(_settings.DomainName)
