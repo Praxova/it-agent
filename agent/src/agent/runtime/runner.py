@@ -171,7 +171,6 @@ class AgentRunner:
             self._awaiting_configuration = True
             return
 
-        self._awaiting_configuration = False
         llm_driver = create_prompt_driver(export.llm_provider)
         logger.info(f"Created LLM driver: {export.llm_provider.provider_type}")
 
@@ -234,6 +233,7 @@ class AgentRunner:
         self._engine.portal_client = self._ensure_portal_client()
 
         self._last_config_refresh = datetime.utcnow()
+        self._awaiting_configuration = False
         logger.info("Agent initialized successfully")
 
     async def run(self):
@@ -261,6 +261,14 @@ class AgentRunner:
                 logger.info("Agent stopped cleanly")
                 return
             logger.info("LLM provider now configured. Starting normal operation.")
+
+        # Safety check: ensure trigger and engine are initialized before main loop
+        if self._trigger is None or self._engine is None:
+            logger.error(
+                "Trigger or engine is None after configuration loop — "
+                "re-initializing before entering main loop"
+            )
+            await self.initialize()
 
         logger.info(f"Agent '{self.agent_name}' starting main loop...")
 
@@ -505,7 +513,7 @@ class AgentRunner:
             if not self._awaiting_configuration:
                 logger.info("LLM provider detected on configuration reload")
         except Exception as e:
-            logger.debug(f"Configuration reload failed: {e}")
+            logger.warning(f"Configuration reload failed: {e}", exc_info=True)
 
     async def _send_shutdown_heartbeat(self):
         """Send a final heartbeat with status='stopped' during shutdown."""
