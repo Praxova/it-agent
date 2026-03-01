@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re as _re
+import ssl
 from pathlib import Path
 from typing import Any
 
@@ -206,17 +207,32 @@ class ExecuteExecutor(BaseStepExecutor):
             cert_path = CERT_DIR / "agent-client.crt"
             key_path = CERT_DIR / "agent-client.key"
 
-            client_cert = None
+            ssl_context = None
             if cert_path.exists() and key_path.exists():
-                client_cert = (str(cert_path), str(key_path))
-                logger.info(f"mTLS config: cert={cert_path} (exists={cert_path.exists()}), key={key_path} (exists={key_path.exists()}), ca={CA_CERT_PATH} (exists={CA_CERT_PATH.exists()})")
+                ca_path = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else None
+                ssl_context = ssl.create_default_context(cafile=ca_path)
+                ssl_context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+                ssl_context.post_handshake_auth = True  # Required for TLS 1.3 mTLS
+                logger.info(
+                    f"mTLS config: cert={cert_path} (exists=True), "
+                    f"key={key_path} (exists=True), "
+                    f"ca={CA_CERT_PATH} (exists={CA_CERT_PATH.exists()}), "
+                    f"post_handshake_auth=True"
+                )
             else:
                 logger.warning("Agent mTLS client cert not found — tool server calls may fail")
 
-            verify = str(CA_CERT_PATH) if CA_CERT_PATH.exists() else False
+            # When ssl_context is set, pass it as verify= (httpx uses it for both
+            # server verification AND client cert presentation).
+            # When no certs available, fall back to no verification.
+            verify_param = ssl_context if ssl_context else False
 
-            async with httpx.AsyncClient(cert=client_cert, verify=verify, timeout=30.0) as client:
-                logger.info(f"Tool server request: {method} {url}, client_cert={'YES' if client_cert else 'NO'}, verify={verify}")
+            async with httpx.AsyncClient(verify=verify_param, timeout=30.0) as client:
+                logger.info(
+                    f"Tool server request: {method} {url}, "
+                    f"client_cert={'YES' if ssl_context else 'NO'}, "
+                    f"tls_post_handshake_auth={'YES' if ssl_context else 'N/A'}"
+                )
                 if method == "GET":
                     response = await client.get(url, params=remaining_params)
                 else:
