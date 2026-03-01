@@ -584,6 +584,7 @@ else
             {
                 new("password", "Password", true, true, null, "SSH password")
             },
+            "llm-llamacpp" => new(), // llama.cpp doesn't need credentials
             _ => new()
             {
                 new("password", "Password/Secret", true, false, null, "Primary credential"),

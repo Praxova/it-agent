@@ -109,6 +109,30 @@ def create_prompt_driver(
                 temperature=float(_get_config_value(config, "temperature", 0.1)),
             )
 
+        elif provider_type == "llm-llamacpp":
+            from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
+
+            # llama.cpp uses OpenAI-compatible API but requires base_url
+            # and doesn't need a real API key
+            base_url = (
+                _get_config_value(config, "base_url")
+                or _get_config_value(config, "endpoint")
+            )
+            if not base_url:
+                raise DriverFactoryError(
+                    "llm-llamacpp requires a base_url (e.g. https://llm:8443/v1)"
+                )
+
+            # llama.cpp accepts any API key value — use a placeholder
+            api_key = credentials.get("api_key") or "not-needed"
+
+            return OpenAiChatPromptDriver(
+                model=_get_config_value(config, "model", "llama3.1"),
+                api_key=api_key,
+                base_url=base_url,
+                temperature=float(_get_config_value(config, "temperature", 0.1)),
+            )
+
         elif provider_type == "llm-openai":
             from griptape.drivers.prompt.openai import OpenAiChatPromptDriver
 

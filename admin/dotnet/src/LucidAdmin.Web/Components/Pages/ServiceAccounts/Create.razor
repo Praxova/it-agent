@@ -393,6 +393,7 @@
                 new("password", "Password", true, true, "SSH password", "Password for SSH authentication")
             },
             "llm-ollama" or "ollama" => new(), // Ollama doesn't need credentials
+            "llm-llamacpp" => new(), // llama.cpp doesn't need credentials
             _ => new()
             {
                 new("password", "Password/Secret", true, false, "Primary credential", "Enter the primary credential for this account"),

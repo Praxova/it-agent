@@ -153,6 +153,15 @@ public class ServiceAccountFormModel
             if (Temperature.HasValue)
                 config["temperature"] = Temperature.Value.ToString("F1");
         }
+        else if (Provider == "llm-llamacpp")
+        {
+            if (!string.IsNullOrWhiteSpace(Endpoint))
+                config["base_url"] = Endpoint;
+            if (!string.IsNullOrWhiteSpace(Model))
+                config["model"] = Model;
+            if (Temperature.HasValue)
+                config["temperature"] = Temperature.Value.ToString("F1");
+        }
         else if (Provider == "llm-openai")
         {
             if (!string.IsNullOrWhiteSpace(Model))
@@ -244,7 +253,7 @@ public class ServiceAccountFormModel
                             model.Temperature = tempVal;
 
                         // Provider-specific fields
-                        if (response.Provider == "llm-ollama" || response.Provider == "llm-openai")
+                        if (response.Provider == "llm-ollama" || response.Provider == "llm-llamacpp" || response.Provider == "llm-openai")
                         {
                             model.Endpoint = config.TryGetValue("base_url", out var baseUrl) ? baseUrl : null;
                         }
