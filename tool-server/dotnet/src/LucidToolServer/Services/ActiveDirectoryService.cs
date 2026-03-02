@@ -32,7 +32,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<PasswordResetResponse> ResetPasswordAsync(string username, string newPassword)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Attempting password reset for user: {Username}", username);
 
@@ -45,7 +45,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -106,7 +106,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<GroupMembershipResponse> AddUserToGroupAsync(string username, string groupName)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Adding user {Username} to group {GroupName}", username, groupName);
 
@@ -119,7 +119,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -174,7 +174,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<GroupMembershipResponse> RemoveUserFromGroupAsync(string username, string groupName)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Removing user {Username} from group {GroupName}", username, groupName);
 
@@ -187,7 +187,7 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -242,13 +242,13 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<GroupInfoResponse> GetGroupAsync(string groupName)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Getting information for group: {GroupName}", groupName);
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 using var group = GroupPrincipal.FindByIdentity(context, IdentityType.SamAccountName, groupName);
 
                 if (group == null)
@@ -283,13 +283,13 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<List<string>> GetUserGroupsAsync(string username)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Getting groups for user: {Username}", username);
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 using var user = FindUserByMultipleStrategies(context, username);
 
                 if (user == null)
@@ -318,11 +318,11 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<bool> TestConnectionAsync()
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
                 // Try to get the computer name to test connectivity
                 _ = context.ConnectedServer;
                 _logger.LogInformation("Successfully connected to Active Directory");
@@ -339,13 +339,13 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<UserSearchResponse> SearchUsersAsync(string query)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Searching for users with query: {Query}", query);
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
 
                 var results = new List<UserSearchResult>();
 
@@ -434,13 +434,13 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<GroupListResponse> ListGroupsAsync(string? categoryFilter = null)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Listing groups with category filter: {CategoryFilter}", categoryFilter ?? "none");
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
 
                 var results = new List<GroupListItem>();
 
@@ -508,13 +508,13 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<GroupListResponse> SearchGroupsAsync(string query)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Searching groups with query: {Query}", query);
 
             try
             {
-                using var context = CreatePrincipalContext();
+                using var context = await CreatePrincipalContextAsync();
 
                 var results = new List<GroupListItem>();
 
@@ -584,11 +584,11 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// <inheritdoc />
     public async Task<UserComputersResponse> GetUserComputersAsync(string username)
     {
-        return await Task.Run(() =>
+        return await Task.Run(async () =>
         {
             _logger.LogInformation("Looking up computers for user: {Username}", username);
 
-            using var context = CreatePrincipalContext();
+            using var context = await CreatePrincipalContextAsync();
 
             using var user = FindUserByMultipleStrategies(context, username);
             if (user == null)
@@ -665,38 +665,49 @@ public class ActiveDirectoryService : IActiveDirectoryService
     /// Create a PrincipalContext using configured domain and service account credentials.
     /// Credential priority: 1) Portal secrets store  2) Local config  3) Process identity
     /// </summary>
-    private PrincipalContext CreatePrincipalContext()
+    private async Task<PrincipalContext> CreatePrincipalContextAsync()
     {
         string? username = null;
         string? password = null;
         string source;
 
-        // 1) Try portal credentials (singleton cache, refreshed by PortalCredentialService)
-        var portalCreds = _portalCredentialService?.CachedCredentials;
-        if (portalCreds.HasValue)
+        // 1) Try portal credentials (calls portal if cache expired, returns cached otherwise)
+        if (_portalCredentialService != null)
         {
-            username = portalCreds.Value.Username;
-            password = portalCreds.Value.Password;
-            source = "portal";
+            var portalCreds = await _portalCredentialService.FetchAdCredentialsAsync();
+            if (portalCreds.HasValue)
+            {
+                username = portalCreds.Value.Username;
+                password = portalCreds.Value.Password;
+                source = "portal";
+            }
         }
+
         // 2) Fall back to local config
-        else if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
-                 && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+        if (username == null
+            && !string.IsNullOrEmpty(_settings.ServiceAccountUsername)
+            && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
         {
             username = _settings.ServiceAccountUsername;
             password = _settings.ServiceAccountPassword;
             source = "local-config";
         }
-        // 3) Process identity
+        else if (username == null)
+        {
+            // 3) Process identity
+            source = "process-identity";
+        }
         else
         {
-            source = "process-identity";
+            source = "portal";
         }
 
         if (!_loggedCredentialSource)
         {
-            _logger.LogInformation("AD credential source: {Source}{User}",
-                source, username != null ? $" (user: {username})" : "");
+            if (username != null)
+                _logger.LogInformation("AD credential source: {Source} (user: {User})", source, username);
+            else
+                _logger.LogInformation("AD credential source: {Source}", source);
             _loggedCredentialSource = true;
         }
         else
