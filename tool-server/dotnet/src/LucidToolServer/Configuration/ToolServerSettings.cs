@@ -80,4 +80,9 @@ public class PortalSettings
     /// API key for portal authentication (X-API-Key header).
     /// </summary>
     public string? ApiKey { get; set; }
+
+    /// <summary>
+    /// Interval between portal heartbeats in seconds. Default: 60.
+    /// </summary>
+    public int HeartbeatIntervalSeconds { get; set; } = 60;
 }
