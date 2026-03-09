@@ -421,7 +421,7 @@ class ClassifyExecutor(BaseStepExecutor):
 Your response MUST be valid JSON with these fields:
 - ticket_type: One of {cat_list}
 - confidence: A number between 0.0 and 1.0 indicating your confidence
-- affected_user: The username of the person the request is about (if identifiable, else null)
+- affected_user: The AD username of the person this request is about. First, check if the ticket text names a specific person (e.g., "reset Tom Wilson's password", "Sarah Davis needs VPN access"). If it does, use that person's username. If the ticket does not name anyone specific (e.g., "I can't access...", "my password expired"), use the caller's username — most tickets are self-service requests where the caller is the affected user. Only return null if there is truly no identifiable user.
 - target_group: The AD group name (if this is a group access request, else null)
 - target_resource: The file/folder path (if this is a permission request, else null)
 - reasoning: Brief explanation of your classification
@@ -450,10 +450,21 @@ Respond with ONLY the JSON object, no other text."""
         """Build the ticket-to-classify section."""
         short_desc = ticket_data.get("short_description", "")
         description = ticket_data.get("description", "")
-        caller = ticket_data.get("caller_id", "Unknown")
+        caller_name = ticket_data.get("caller_name", "")
+        caller_username = ticket_data.get("caller_username", "")
+
+        if caller_username and caller_name:
+            caller_display = f"{caller_name} (username: {caller_username})"
+        elif caller_username:
+            caller_display = caller_username
+        elif caller_name:
+            caller_display = caller_name
+        else:
+            caller_display = "Unknown"
+
         return f"""## Ticket to Classify
 
-**Caller**: {caller}
+**Caller**: {caller_display}
 **Short Description**: {short_desc}
 **Description**: {description}
 

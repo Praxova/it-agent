@@ -27,6 +27,8 @@ class Ticket:
     caller_id: str
     state: str
     assignment_group: str
+    caller_name: str = ""     # Display name resolved from caller_id sys_id
+    caller_username: str = "" # AD username resolved from caller_id sys_id
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Ticket":
@@ -49,6 +51,8 @@ class Ticket:
             "short_description": self.short_description,
             "description": self.description,
             "caller_id": self.caller_id,
+            "caller_name": self.caller_name,
+            "caller_username": self.caller_username,
             "state": self.state,
             "assignment_group": self.assignment_group,
         }
@@ -113,6 +117,43 @@ class ServiceNowClient:
         except Exception as e:
             logger.error(f"Failed to poll ServiceNow: {e}")
             return []
+
+    async def resolve_caller(self, caller_sys_id: str) -> dict[str, str]:
+        """
+        Resolve a caller sys_id to display name and AD username.
+
+        Args:
+            caller_sys_id: The sys_id GUID of the caller from the incident record.
+
+        Returns:
+            Dict with keys: display_name, username, email.
+            Returns safe defaults if the lookup fails so ticket processing continues.
+        """
+        if not caller_sys_id:
+            return {"display_name": "", "username": "", "email": ""}
+
+        url = f"{self.base_url}/api/now/table/sys_user/{caller_sys_id}"
+        params = {"sysparm_fields": "user_name,name,email"}
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    url,
+                    params=params,
+                    auth=self._auth,
+                    headers={"Accept": "application/json"},
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                result = response.json().get("result", {})
+                return {
+                    "display_name": result.get("name", ""),
+                    "username": result.get("user_name", ""),
+                    "email": result.get("email", ""),
+                }
+        except Exception as e:
+            logger.warning(f"Failed to resolve caller {caller_sys_id}: {e}")
+            return {"display_name": "", "username": "", "email": ""}
 
     async def get_ticket(self, sys_id: str) -> Ticket | None:
         """Get a single ticket by sys_id."""

@@ -169,16 +169,38 @@ class TestBuildFewShotSection:
 
 class TestBuildTicketSection:
     def test_includes_ticket_fields(self, executor):
-        """Ticket section should include all ticket data fields."""
+        """Ticket section should include resolved caller name and username."""
         ticket_data = {
             "short_description": "Password reset needed",
             "description": "User jsmith forgot password",
-            "caller_id": "helpdesk@company.com",
+            "caller_name": "John Smith",
+            "caller_username": "jsmith",
         }
         section = executor._build_ticket_section(ticket_data)
         assert "Password reset needed" in section
         assert "User jsmith forgot password" in section
-        assert "helpdesk@company.com" in section
+        assert "John Smith" in section
+        assert "jsmith" in section
+
+    def test_caller_display_username_only(self, executor):
+        """If only username is resolved, display it alone."""
+        ticket_data = {
+            "short_description": "VPN issue",
+            "description": "Can't connect",
+            "caller_username": "twilson",
+        }
+        section = executor._build_ticket_section(ticket_data)
+        assert "twilson" in section
+
+    def test_caller_display_name_only(self, executor):
+        """If only display name is resolved, display it alone."""
+        ticket_data = {
+            "short_description": "VPN issue",
+            "description": "Can't connect",
+            "caller_name": "Tom Wilson",
+        }
+        section = executor._build_ticket_section(ticket_data)
+        assert "Tom Wilson" in section
 
     def test_handles_missing_fields(self, executor):
         """Missing fields should default gracefully."""

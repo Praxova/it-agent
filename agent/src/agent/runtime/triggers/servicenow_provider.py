@@ -47,6 +47,20 @@ class ServiceNowTriggerProvider(TriggerProvider):
             limit=self._poll_limit,
         )
 
+        # Resolve caller identity for each ticket; cache within this poll cycle
+        # so multiple tickets from the same caller only make one API call.
+        caller_cache: dict[str, dict[str, str]] = {}
+        for ticket in tickets:
+            if not ticket.caller_id:
+                continue
+            if ticket.caller_id not in caller_cache:
+                caller_cache[ticket.caller_id] = await self._client.resolve_caller(
+                    ticket.caller_id
+                )
+            info = caller_cache[ticket.caller_id]
+            ticket.caller_name = info.get("display_name", "")
+            ticket.caller_username = info.get("username", "")
+
         return [self._ticket_to_work_item(t) for t in tickets]
 
     async def acknowledge(self, item: WorkItem) -> None:
