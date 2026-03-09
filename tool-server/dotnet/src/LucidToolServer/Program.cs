@@ -403,12 +403,42 @@ app.Use(async (context, next) =>
 
         if (!string.IsNullOrEmpty(body))
         {
+            // Peek at target_type claim from the token (structural read only, no signature validation).
+            // This tells us which body field to use as the request target — "path" operations carry
+            // both "username" and "path" in the body, so we must check the token's intent first.
+            // Full validation (signature, expiry, issuer, target match) still happens in Validate().
+            string? tokenTargetType = null;
+            try
+            {
+                var peekHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+                if (peekHandler.CanReadToken(tokenString))
+                {
+                    var peekedToken = peekHandler.ReadJwtToken(tokenString);
+                    tokenTargetType = peekedToken.Claims
+                        .FirstOrDefault(c => c.Type == "target_type")?.Value;
+                }
+            }
+            catch
+            {
+                // If token can't be read structurally, fall through to default extraction
+            }
+
             using var doc = System.Text.Json.JsonDocument.Parse(body);
-            // Try common target fields in order of specificity
-            if (doc.RootElement.TryGetProperty("username", out var u))
-                requestTarget = u.GetString();
-            else if (doc.RootElement.TryGetProperty("path", out var p))
-                requestTarget = p.GetString();
+
+            if (string.Equals(tokenTargetType, "path", StringComparison.OrdinalIgnoreCase))
+            {
+                // Path-scoped operation (e.g., NTFS permissions): use "path" field as target
+                if (doc.RootElement.TryGetProperty("path", out var p))
+                    requestTarget = p.GetString();
+            }
+            else
+            {
+                // User/group-scoped operation (password reset, group management, etc.): use "username"
+                if (doc.RootElement.TryGetProperty("username", out var u))
+                    requestTarget = u.GetString();
+                else if (doc.RootElement.TryGetProperty("group_name", out var g))
+                    requestTarget = g.GetString();
+            }
         }
     }
     catch
