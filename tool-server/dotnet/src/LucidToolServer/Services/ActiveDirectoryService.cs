@@ -56,22 +56,39 @@ public class ActiveDirectoryService : IActiveDirectoryService
 
                 var userDn = user.DistinguishedName;
 
+                // Resolve credentials using the same priority order as CreatePrincipalContextAsync:
+                // 1) Portal secrets store  2) Local config  3) Process identity
+                string? adUsername = null;
+                string? adPassword = null;
+
+                if (_portalCredentialService != null)
+                {
+                    var portalCreds = await _portalCredentialService.FetchAdCredentialsAsync();
+                    if (portalCreds.HasValue)
+                    {
+                        adUsername = portalCreds.Value.Username;
+                        adPassword = portalCreds.Value.Password;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(adUsername) && !string.IsNullOrEmpty(_settings.ServiceAccountUsername))
+                {
+                    adUsername = _settings.ServiceAccountUsername;
+                    adPassword = _settings.ServiceAccountPassword;
+                }
+
                 // Use DirectoryEntry.Invoke("SetPassword") when explicit credentials
-                // are configured — UserPrincipal.SetPassword() fails via COM interop
+                // are available — UserPrincipal.SetPassword() fails via COM interop
                 // even with working LDAPS and delegated service accounts.
-                if (!string.IsNullOrEmpty(_settings.ServiceAccountUsername)
-                    && !string.IsNullOrEmpty(_settings.ServiceAccountPassword))
+                if (!string.IsNullOrEmpty(adUsername) && !string.IsNullOrEmpty(adPassword))
                 {
                     var ldapPath = $"LDAP://{_settings.DomainName}/{userDn}";
                     _logger.LogDebug("Resetting password via DirectoryEntry for {Username} at {Path}",
                         username, ldapPath);
 
-                    using var entry = new DirectoryEntry(
-                        ldapPath,
-                        _settings.ServiceAccountUsername,
-                        _settings.ServiceAccountPassword);
+                    using var entry = new DirectoryEntry(ldapPath, adUsername, adPassword);
                     entry.Invoke("SetPassword", new object[] { newPassword });
-                    entry.CommitChanges();
+                    // No CommitChanges here — SetPassword is an immediate ADSI method call
 
                     // Expire password so user must change on next login
                     entry.Properties["pwdLastSet"].Value = 0;
