@@ -1,4 +1,4 @@
-# Lucid Tool Server (.NET 8)
+# Praxova Tool Server (.NET 8)
 
 .NET 8 implementation of the Praxova IT Agent Tool Server for native Windows/Active Directory integration.
 
@@ -111,7 +111,7 @@ dotnet run --project src/LucidToolServer/LucidToolServer.csproj --urls "http://l
 Build Windows container:
 
 ```powershell
-docker build -t lucid-tool-server:latest -f src/LucidToolServer/Dockerfile .
+docker build -t praxova-tool-server:latest -f src/LucidToolServer/Dockerfile .
 ```
 
 Run container (must be domain-joined Windows host):
@@ -119,7 +119,7 @@ Run container (must be domain-joined Windows host):
 ```powershell
 docker run -d -p 8080:8080 `
   -e ToolServer__ApiKey="your-api-key" `
-  lucid-tool-server:latest
+  praxova-tool-server:latest
 ```
 
 ## Security

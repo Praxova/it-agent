@@ -3,7 +3,7 @@ jsmith,John,Smith,John Smith,Engineering,Software Developer,john.smith,high,ters
 mjohnson,Mary,Johnson,Mary Johnson,Finance,Senior Accountant,mary.johnson,low,rambling,dchen,password_reset|file_permission
 bwilson,Bob,Wilson,Bob Wilson,IT,Systems Administrator,bob.wilson,high,normal,,group_access_add|group_access_remove|file_permission
 agarcia,Ana,Garcia,Ana Garcia,Marketing,Marketing Coordinator,ana.garcia,medium,verbose,,password_reset|file_permission
-twilson,Tom,Wilson,Tom Wilson,Sales,Account Executive,tom.wilson,low,angry,,password_reset
+twilson,Tom,Wilson,Tom Wilson,Sales,Account Executive,tom.wilson,low,angry,mrodriguez,password_reset|group_access_add
 klee,Kevin,Lee,Kevin Lee,Engineering,Engineering Lead,kevin.lee,high,terse,,group_access_add|group_access_remove
 spark,Sarah,Park,Sarah Park,Human Resources,HR Coordinator,sarah.park,medium,formal,,password_reset|group_access_add
 jdavis,Jim,Davis,Jim Davis,Finance,Financial Analyst,jim.davis,medium,normal,,file_permission|password_reset

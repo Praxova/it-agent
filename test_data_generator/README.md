@@ -1,6 +1,6 @@
-# Lucid IT Agent — Test Data Generator
+# Praxova IT Agent — Test Data Generator
 
-A framework for generating realistic IT helpdesk tickets for testing the Lucid IT Agent.
+A framework for generating realistic IT helpdesk tickets for testing the Praxova IT Agent.
 
 ## Dual Purpose
 

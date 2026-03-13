@@ -382,7 +382,7 @@ public static class ServiceAccountEndpoints
             if (response.IsSuccessStatusCode)
             {
                 var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-                var adConnected = json.TryGetProperty("adConnected", out var adProp) && adProp.GetBoolean();
+                var adConnected = json.TryGetProperty("ad_connected", out var adProp) && adProp.GetBoolean();
                 var message = json.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
 
                 return new TestConnectivityResponse(

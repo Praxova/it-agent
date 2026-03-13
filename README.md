@@ -1,150 +1,186 @@
-# Lucid IT Agent
+# Praxova IT Agent
 
-An AI-powered IT helpdesk automation agent that autonomously resolves Level 1 support tickets.
+> ⚠️ **Beta Release** — This project is functional but under active development. APIs and configuration formats may change before v1.0 stable. Use in production at your own risk.
+
+An AI-powered IT helpdesk automation platform that autonomously resolves Level 1 support tickets with human oversight built in.
 
 ## Overview
 
-Lucid IT Agent monitors your IT ticket queue, classifies incoming tickets, and automatically resolves common issues like:
+Praxova IT Agent monitors your IT ticket queue, classifies incoming tickets using LLM-powered analysis, and automatically resolves common IT requests — while keeping humans in the loop for sensitive actions.
+
+**What it automates today:**
 
 - 🔐 Password resets
 - 👥 Active Directory group membership changes
-- 📁 File and folder permission modifications
-- *(More tools coming soon)*
+- 🔓 Account unlocks
+- 📁 NTFS file share permissions
+- 💾 Approved software deployments
 
-Built on the [Griptape](https://github.com/griptape-ai/griptape) framework with support for local LLM deployment via [Ollama](https://ollama.com/).
+Built on the [Griptape](https://github.com/griptape-ai/griptape) agent framework, with a Blazor Server admin portal, a Windows-native .NET 8 tool server, and support for local or cloud LLM deployment.
 
-## Features
+## Architecture
 
-- **Queue Integration**: Connects to ServiceNow (more connectors planned)
-- **Local LLM Support**: Run entirely on-premises with Ollama + Llama 3.1
-- **Cloud LLM Support**: Optional integration with OpenAI, Anthropic, Azure
-- **Extensible Tools**: Add custom tools for your environment
-- **Audit Trail**: Full logging of all agent actions
-- **Human Escalation**: Automatic escalation for tickets outside agent capability
+```
+┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│   ServiceNow    │────▶│  Praxova Agent   │────▶│   Admin Portal   │
+│   (Tickets)     │     │  (Griptape/Py)   │     │  (Blazor Server) │
+└─────────────────┘     └──────────────────┘     └──────────────────┘
+                               │                         │
+                               ▼                         ▼
+                        ┌──────────────┐        ┌──────────────────┐
+                        │  LLM Backend │        │   Tool Server    │
+                        │  (Ollama or  │        │  (.NET 8, Win,   │
+                        │   Cloud API) │        │   domain-joined) │
+                        └──────────────┘        └──────────────────┘
+```
+
+**Components:**
+
+- **Agent** (`agent/`) — Python/Griptape agent that polls the ticket queue, classifies tickets, and orchestrates resolution workflows
+- **Admin Portal** (`admin/`) — Blazor Server web UI for configuration, visual workflow design, approval queue management, and audit log review
+- **Tool Server** (`tool-server/dotnet/`) — Windows .NET 8 service that executes privileged AD and file system operations via mTLS
+- **Connectors** (`connectors/`) — Queue integrations (ServiceNow today; Jira, email, and Teams planned)
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full system design details.
+
+## Key Features
+
+**Security-first by design:**
+- Internal PKI — auto-generated RSA 4096 root CA; all inter-component traffic uses mTLS with certs issued from this CA (no external CA required)
+- Envelope encryption (AES-256-GCM + Argon2id) for all stored credentials; a raw database dump exposes nothing
+- Token-based authentication for all agent↔portal communication
+
+**Human oversight built in:**
+- Human approval gates — workflows pause before sensitive actions for operator review
+- Confidence-based routing — low-confidence classifications automatically route to human review
+- Full audit trail — every agent action is logged and queryable from the portal
+
+**Flexible LLM support:**
+- Local deployment via llama.cpp server with native TLS — entirely on-premises, no data leaves your network
+- Cloud providers: OpenAI, Anthropic, Azure OpenAI, AWS Bedrock — swap without code changes
+
+**Composable workflows:**
+- Visual workflow designer in the admin portal
+- Pluggable sub-workflows and triggers
+- Capability routing — agent requests capabilities by name; portal resolves to the right tool server at runtime
+
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.10+
-- Ollama (for local LLM)
-- Access to ServiceNow instance (or PDI for development)
-- Domain Controller with appropriate service account (for AD tools)
+- Docker and Docker Compose
+- Python 3.10+ (for agent development)
+- .NET 8 SDK (for tool server development)
+- Access to a ServiceNow instance (or PDI for development)
+- Windows domain-joined machine for the tool server (for AD operations)
+- Ollama (for local LLM) or API keys for a cloud provider
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/lucid-it-agent.git
-cd lucid-it-agent
+git clone https://github.com/Praxova/it-agent.git
+cd it-agent
 
-# Install the agent
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Copy and configure component settings
+cp config/agent.yaml.example config/agent.yaml
+cp config/servicenow.yaml.example config/servicenow.yaml
+cp config/tools.yaml.example config/tools.yaml
+
+# Start the stack
+docker compose up -d
+```
+
+### Tool Server (Windows)
+
+The tool server runs as a Windows Service on a domain-joined machine. Install using the provided MSI from the [Releases](https://github.com/Praxova/it-agent/releases) page, then provision certificates:
+
+```powershell
+# On the domain-joined tool server machine
+.\scripts\provision-toolserver-certs.ps1
+```
+
+See [tool-server/dotnet/DEPLOYMENT.md](tool-server/dotnet/DEPLOYMENT.md) for full deployment instructions.
+
+
+### Development Environment
+
+```bash
+# Install Python agent dependencies
 cd agent
 pip install -e ".[dev]"
 
-# Install Ollama and pull a model
-# See https://ollama.com for installation
-ollama pull llama3.1
-
-# Copy and configure settings
-cp config/agent.yaml.example config/agent.yaml
-# Edit config/agent.yaml with your settings
-```
-
-### Running the Agent
-
-```bash
-# Start Ollama (if not running as service)
-ollama serve
-
-# Run the agent
-python -m agent.main
-```
-
-## Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   ServiceNow    │────▶│   Lucid Agent   │────▶│   Tool Server   │
-│   (Tickets)     │     │   (Griptape)    │     │   (AD/NTFS)     │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌─────────────────┐
-                        │   Ollama/LLM    │
-                        │  (Llama 3.1)    │
-                        └─────────────────┘
-```
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed system design.
-
-## Configuration
-
-Configuration is managed via YAML files in the `config/` directory:
-
-- `agent.yaml` - Core agent settings (LLM, logging, behavior)
-- `servicenow.yaml` - ServiceNow connection and queue settings
-- `tools.yaml` - Tool server connection and enabled tools
-
-See the `.example` files for documentation of all options.
-
-## Development
-
-### Setting Up Development Environment
-
-```bash
-# Set up ServiceNow PDI (Personal Developer Instance)
+# Set up ServiceNow PDI
 python env-setup/servicenow/setup_pdi.py
 
 # Set up test Domain Controller (PowerShell, run on DC)
 ./env-setup/dc/Setup-TestEnvironment.ps1
-```
 
-### Running Tests
-
-```bash
-cd agent
+# Run tests
 pytest
 ```
 
-### Project Structure
+For local infrastructure provisioning (Proxmox/Packer/OpenTofu):
+
+```bash
+cd infra/opentofu
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars
+tofu apply
+```
+
+See [docs/DEV-QUICKREF.md](docs/DEV-QUICKREF.md) for the full development quick reference.
+
+## Project Structure
 
 ```
-lucid-it-agent/
-├── agent/              # Griptape agent
+it-agent/
+├── agent/              # Python/Griptape agent
+├── admin/              # Blazor Server admin portal
 ├── connectors/         # Queue connectors (ServiceNow, etc.)
-├── tool-server/        # Tool implementations
-├── env-setup/          # Development environment scripts
+├── tool-server/        # Tool implementations (.NET and Python)
+├── env-setup/          # Dev environment setup scripts
+├── infra/              # Proxmox/Packer/OpenTofu IaC
 ├── config/             # Configuration examples
-└── docs/               # Documentation
+├── docs/               # Architecture docs, ADRs, runbooks
+└── scripts/            # Build, deploy, and cert provisioning scripts
 ```
 
-## Adding Custom Tools
+## Documentation
 
-See [docs/TOOL_DEVELOPMENT.md](docs/TOOL_DEVELOPMENT.md) for guide on creating custom tools.
+Full documentation is in progress and will be published with the v1.0 stable release. In the meantime, see [ROADMAP.md](ROADMAP.md) for the project direction and current status.
+
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full roadmap. Current status:
+
+- ✅ **v1.0** — Core platform: admin portal, composable workflows, human approval gates, mTLS PKI, secrets encryption, AD tools, ServiceNow connector
+- 🔧 **v1.1** — Hardening & polish: portal auth hardening, reliability fixes, dynamic classification
+- 📋 **v1.2** — Connector expansion: Jira, email, Teams, Zendesk
+- 📋 **v2.0** — Enterprise platform: external CA/vault integration, multi-agent, RBAC, compliance exports
+
+## Contributing
+
+Bug reports and feature requests: [GitHub Issues](https://github.com/Praxova/it-agent/issues)
+
+Contributions welcome. Please open an issue before submitting a PR for significant changes so we can discuss the approach first.
 
 ## License
 
-Apache License 2.0 - See [LICENSE](LICENSE) for details.
+Apache License 2.0 — See [LICENSE](LICENSE) for details.
 
 ## Support
 
 - **Documentation**: [docs/](docs/)
-- **Issues**: GitHub Issues
-- **Commercial Support**: Contact [support@lucidsoftware.ai](mailto:support@lucidsoftware.ai)
-
-## Roadmap
-
-- [x] Core agent framework
-- [x] ServiceNow connector
-- [x] Password reset tool
-- [x] AD group management tool
-- [ ] File permission tool
-- [ ] Microsoft Teams integration
-- [ ] Jira connector
-- [ ] Web UI for monitoring
-- [ ] Multi-agent support
+- **Issues**: [GitHub Issues](https://github.com/Praxova/it-agent/issues)
+- **Commercial Support**: [support@praxova.ai](mailto:support@praxova.ai)
 
 ---
 
-*Lucid IT Agent is open source software. Commercial support and implementation services available.*
+*Praxova IT Agent is open source software. Commercial support and implementation services available from [Praxova](https://praxova.ai).*

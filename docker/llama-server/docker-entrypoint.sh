@@ -123,6 +123,6 @@ exec llama-server \
     --model /models/model.gguf \
     --ssl-cert-file "${CERT_FILE}" \
     --ssl-key-file "${KEY_FILE}" \
-    --n-gpu-layers -1 \
+    --n-gpu-layers 99 \
     --ctx-size 8192 \
     --parallel 2

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI for the Lucid IT Agent Test Data Generator.
+"""CLI for the Praxova IT Agent Test Data Generator.
 
 Usage:
     # Show registry summary

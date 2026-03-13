@@ -1,4 +1,4 @@
-"""Lucid IT Agent — Test Data Generator
+"""Praxova IT Agent — Test Data Generator
 
 A framework for generating realistic IT helpdesk tickets for:
 - E2E agent testing

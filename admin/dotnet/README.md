@@ -1,4 +1,4 @@
-# Lucid Admin Portal
+# Praxova Admin Portal
 
 A .NET 8 web application for managing the Praxova IT Agent system, including service accounts, tool servers, capability mappings, and audit logging.
 

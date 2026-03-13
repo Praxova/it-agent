@@ -1,6 +1,6 @@
 # ServiceNow Connector
 
-A production-ready, async ServiceNow connector for the Lucid IT Agent with comprehensive retry logic and error handling.
+A production-ready, async ServiceNow connector for the Praxova IT Agent with comprehensive retry logic and error handling.
 
 ## Features
 

@@ -232,6 +232,8 @@ pull-model:
 .PHONY: ping
 ping:
 	@printf "$(CYAN)Checking SSH connectivity to $(HOST)$(RESET)\n"
+	@ssh-keygen -R $(HOST_IP) > /dev/null 2>&1 || true
+	@ssh-keyscan -H $(HOST_IP) >> ~/.ssh/known_hosts 2>/dev/null
 	@ssh -o ConnectTimeout=5 -o BatchMode=yes $(HOST) "echo ok" > /dev/null 2>&1 || { \
 		printf "$(RED)ERROR: Cannot reach $(HOST) -- is the VM up and SSH key loaded?$(RESET)\n"; \
 		exit 1; \

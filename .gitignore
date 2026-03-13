@@ -175,6 +175,11 @@ scratch/
 tmp/
 temp/
 
+# Docs not ready for public release — will be published separately once reviewed
+docs/
+infra/
+env-setup/
+
 # ServiceNow export files
 *.xml.bak
 
