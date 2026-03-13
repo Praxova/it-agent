@@ -180,6 +180,10 @@ docs/
 infra/
 env-setup/
 
+# Claude Code project context — internal dev tooling
+CLAUDE.md
+.claude/
+
 # ServiceNow export files
 *.xml.bak
 
