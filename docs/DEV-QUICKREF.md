@@ -172,7 +172,7 @@ The agent authenticates to the portal using an API key. Without it, heartbeats, 
 1. Log into portal UI: `https://10.0.0.10:5001`
 2. Navigate to **API Keys** page
 3. Create a new key:
-   - Name: `test-agent`
+   - Name: `helpdesk-01`
    - Role: `Agent`
 4. Copy the plaintext key (shown only once)
 5. Add to `.env`:
@@ -247,7 +247,7 @@ curl -sk https://localhost:5001/api/agents \
   -H "Authorization: Bearer $TOKEN" | jq
 
 # ── Agent config export (anonymous) ──────────────────────
-curl -s http://localhost:5000/api/agents/by-name/test-agent/export | jq
+curl -s http://localhost:5000/api/agents/by-name/helpdesk-01/export | jq
 
 # ── Tool server ──────────────────────────────────────────
 curl -s http://tool01:8080/api/v1/health | jq            # HTTP
@@ -267,6 +267,9 @@ docker compose logs -f agent-helpdesk-01  # Agent logs
 docker compose logs -f llm               # LLM server logs
 ```
 
+Running on Proxmox
+Check agent logs
+ssh packer@10.0.0.51 "cd /opt/praxova && docker compose logs -f agent-helpdesk-01"
 ---
 
 ## 8. Test Tickets

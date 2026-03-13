@@ -49,11 +49,12 @@ setup wizard steps.
 
 ---
 
-## BL-002: Rename default agent from "test-agent" to production-appropriate name
+## BL-002: ~~Rename default agent from "test-agent" to production-appropriate name~~ RESOLVED
 
 **Severity:** Low (cosmetic / release polish)
-**Found:** 2026-02-28
+**Found:** 2026-02-28  |  **Resolved:** 2026-03-13
 **Phase:** E2E Testing — API Key Setup / Agent Pairing
+**Resolution:** Renamed to `helpdesk-01` / "Helpdesk Dispatch Agent" in seeder, docker-compose, and docs.
 
 **Observed behavior:**
 The default agent name used throughout documentation, `.env.example`, test
@@ -104,5 +105,207 @@ elevated privileges intended for VM image builds, not day-to-day operations.
 - Scope file access to the Praxova project directory only
 - Update all documentation and scripts to reference the new account
 - Reserve `packer` for infrastructure provisioning only
+
+---
+
+## BL-004: Tool server AD credentials bypass portal secrets management (v1.0 blocker)
+
+**Severity:** High (security architecture gap — must fix before release)
+**Found:** 2026-02-28
+**Phase:** E2E Testing — Tool Server AD Operations
+
+**Observed behavior:**
+The tool server reads AD service account credentials (`ServiceAccountUsername`,
+`ServiceAccountPassword`) directly from its local `appsettings.json` file on
+tool01. The password is stored in plaintext on the tool server's filesystem.
+
+When these values are empty, the tool server falls back to process identity
+(`LocalSystem` / `TOOL01$`), which gets "Access is denied" from AD because
+the computer account lacks delegated permissions.
+
+The current workaround is to manually set the credentials in appsettings.json
+on tool01 and restart the service.
+
+**Expected behavior (per ADR-006 and ADR-015):**
+The portal is the single source of truth for all credentials. The tool server
+should fetch AD credentials from the portal through the capability routing
+system, not from a local config file. The flow should be:
+
+```
+Tool server starts up
+  → Authenticates to portal (mTLS)
+  → Fetches its assigned capability mappings
+  → For each mapping, retrieves the associated ServiceAccount credentials
+    via the portal's ISecretsService (envelope-encrypted in DB)
+  → Caches credentials in memory (never persisted locally)
+  → Uses credentials for AD LDAPS bind operations
+```
+
+**Why this matters:**
+- Plaintext password on the filesystem violates the security architecture
+- Defeats the purpose of ADR-015 envelope encryption (Argon2id + AES-256-GCM)
+- Credential rotation requires manual file edits + service restart on each
+  tool server instead of a single portal update
+- No audit trail for credential access
+- Inconsistent with how the agent fetches its credentials (via portal API)
+
+**Architectural context:**
+The `ICredentialProvider` abstraction layer was designed early (see ADR-006)
+to support multiple backends:
+- `DatabaseEncrypted` — current portal implementation (AES-256-GCM, working)
+- `EnvironmentVariable` — legacy/dev fallback
+- `HashiCorpVault` — planned for v2.0
+- `AzureKeyVault` — planned for v2.0
+
+The tool server needs to become a consumer of this abstraction via the portal
+API, rather than maintaining its own local credential store.
+
+**Implementation approach:**
+1. Add a portal API endpoint for tool servers to fetch their assigned
+   service account credentials (authenticated via mTLS client cert)
+2. Tool server calls this endpoint at startup and caches credentials
+   in memory
+3. Remove `ServiceAccountPassword` from `ToolServerSettings.cs` and
+   `appsettings.json`
+4. Add periodic refresh so credential rotation in the portal propagates
+   without tool server restart
+5. Fallback: if portal is unreachable, use cached credentials from last
+   successful fetch (bounded TTL)
+
+**References:**
+- ADR-006: ServiceAccount as Unified Provider Pattern
+- ADR-015: Secrets Storage (envelope encryption)
+- Chat: "Tool server software deployment pipeline issue" (2026-02-25)
+- Chat: "Security architecture discussion and assessment" (2026-02-28)
+
+---
+
+## BL-005: Tool server has no automatic heartbeat to portal (v1.0 blocker)
+
+**Severity:** High (capabilities are invisible without heartbeat)
+**Found:** 2026-03-01
+**Phase:** E2E Testing — Capability Routing
+
+**Observed behavior:**
+After deploying the tool server and configuring capability mappings in the portal,
+the capability routing endpoint (`GET /api/capabilities/{name}/servers`) returns
+an empty server list. All capability mappings show Health Status = "Unknown" in
+the portal UI.
+
+The routing endpoint filters for `HealthStatus.Healthy` by default (in
+`CapabilityRoutingEndpoints.cs` → `ParseStatusFilter()`). Since the tool server
+never sends a heartbeat, its status stays "Unknown" and it is never returned
+as an available server for any capability.
+
+The agent sees `No Tool Server found for capability: ad-password-reset` and
+workflows fail silently — the ticket is marked "completed" without the action
+actually executing.
+
+**Workaround:**
+Manually POST a heartbeat to flip the status:
+```
+POST /api/tool-servers/{guid}/heartbeat
+{ "status": "Healthy", "capabilities": [] }
+```
+
+**Expected behavior:**
+The tool server should send periodic heartbeats to the portal, similar to how
+the agent sends heartbeats via `POST /api/agents/by-name/{name}/runtime/heartbeat`.
+
+**Implementation approach:**
+1. Add a background `IHostedService` in the tool server (`PortalHeartbeatService`)
+2. On a configurable interval (default 60 seconds), POST to the portal:
+   - Tool server ID, status, timestamp
+   - AD connectivity result (from `TestConnectionAsync()`)
+   - List of capabilities the tool server can handle
+3. Use the same portal connection settings added in BL-004 (`Portal:Url`,
+   `Portal:ToolServerId`, `Portal:ApiKey`)
+4. If portal is unreachable, log a warning and retry next interval
+5. On startup, send an immediate heartbeat so the tool server is discoverable
+   without waiting for the first interval
+
+**Secondary issue — silent failure path:**
+When capability routing returns no servers, the workflow should escalate rather
+than silently complete. This is related to TD-004 (failed workflows route to
+escalation) in TECHNICAL_DEBT.md. The logs show:
+```
+WARNING: No transition condition matched for step sub-file-permissions
+INFO: No outgoing transition from sub-file-permissions, completing
+INFO: INC0010155 completed successfully after approval
+```
+This ticket did NOT complete successfully — it should have escalated. The
+dispatcher workflow needs `outcome == 'failed'` transitions on all sub-workflow
+steps.
+
+**References:**
+- `CapabilityRoutingEndpoints.cs` — `ParseStatusFilter()` defaults to Healthy
+- `ToolServerEndpoints.cs` — existing heartbeat endpoint
+- TD-004 in `docs/TECHNICAL_DEBT.md` — failed workflow escalation
+- BL-004 — portal connection settings already added to tool server
+
+---
+
+## BL-005: Tool server has no automatic heartbeat to portal (v1.0 blocker)
+
+**Severity:** High (capabilities are invisible without heartbeat)
+**Found:** 2026-03-01
+**Phase:** E2E Testing — Capability Routing
+
+**Observed behavior:**
+After deploying the tool server and configuring capability mappings in the portal,
+the capability routing endpoint (`GET /api/capabilities/{name}/servers`) returns
+an empty server list. All capability mappings show Health Status = "Unknown" in
+the portal UI.
+
+The routing endpoint filters for `HealthStatus.Healthy` by default (in
+`CapabilityRoutingEndpoints.cs` → `ParseStatusFilter()`). Since the tool server
+never sends a heartbeat, its status stays "Unknown" and it is never returned
+as an available server for any capability.
+
+The agent sees "No Tool Server found for capability: ad-password-reset" and
+workflows fail silently — the ticket is marked "completed" without the action
+actually executing.
+
+**Workaround:**
+Manually POST a heartbeat to flip the status:
+```
+POST /api/tool-servers/{guid}/heartbeat
+{ "status": "Healthy", "capabilities": [] }
+```
+
+**Expected behavior:**
+The tool server should send periodic heartbeats to the portal, similar to how
+the agent sends heartbeats via `POST /api/agents/by-name/{name}/runtime/heartbeat`.
+
+**Implementation approach:**
+1. Add a background `IHostedService` in the tool server (`PortalHeartbeatService`)
+2. On a configurable interval (default 60 seconds), POST to the portal:
+   - Tool server ID, status, timestamp
+   - AD connectivity result (from `TestConnectionAsync()`)
+   - List of capabilities the tool server can handle
+3. Use the same portal connection settings added in BL-004 (`Portal:Url`,
+   `Portal:ToolServerId`, `Portal:ApiKey`)
+4. If portal is unreachable, log a warning and retry next interval
+5. On startup, send an immediate heartbeat so the tool server is discoverable
+   without waiting for the first interval
+
+**Secondary issue — silent failure path:**
+When capability routing returns no servers, the workflow should escalate rather
+than silently complete. This is related to TD-004 (failed workflows route to
+escalation) in TECHNICAL_DEBT.md. The logs show:
+```
+WARNING: No transition condition matched for step sub-file-permissions
+INFO: No outgoing transition from sub-file-permissions, completing
+INFO: INC0010155 completed successfully after approval
+```
+This ticket did NOT complete successfully — it should have escalated. The
+dispatcher workflow needs `outcome == 'failed'` transitions on all sub-workflow
+steps.
+
+**References:**
+- `CapabilityRoutingEndpoints.cs` — `ParseStatusFilter()` defaults to Healthy
+- `ToolServerEndpoints.cs` — existing heartbeat endpoint
+- TD-004 in `docs/TECHNICAL_DEBT.md` — failed workflow escalation
+- BL-004 — portal connection settings already added to tool server
 
 ---

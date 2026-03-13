@@ -330,7 +330,7 @@ public class WorkflowSeeder
 
         _logger.LogInformation("Seeding workflow: {WorkflowName}", workflowName);
 
-        // Ensure test-agent exists
+        // Ensure helpdesk-01 exists
         var agent = await EnsureTestAgentExistsAsync();
 
         // Get required rulesets
@@ -502,7 +502,7 @@ public class WorkflowSeeder
         _context.StepRulesetMappings.AddRange(stepRulesetMappings);
         await _context.SaveChangesAsync();
 
-        // Link workflow to test-agent
+        // Link workflow to helpdesk-01
         agent.WorkflowDefinitionId = workflow.Id;
         agent.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
@@ -793,14 +793,14 @@ public class WorkflowSeeder
 
         await _context.SaveChangesAsync();
 
-        // Link dispatcher to test-agent
-        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+        // Link dispatcher to helpdesk-01
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "helpdesk-01");
         if (agent != null)
         {
             agent.WorkflowDefinitionId = workflow.Id;
             agent.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
-            _logger.LogInformation("Linked dispatcher workflow to test-agent");
+            _logger.LogInformation("Linked dispatcher workflow to helpdesk-01");
         }
 
         _logger.LogInformation("Seeded dispatcher workflow: {Name} with 9 steps, 14 transitions", name);
@@ -1661,10 +1661,10 @@ public class WorkflowSeeder
             await _context.SaveChangesAsync();
         }
 
-        // Step 4: Point test-agent to customer dispatcher
+        // Step 4: Point helpdesk-01 to customer dispatcher
         if (customerWorkflows.TryGetValue("it-dispatch", out var dispatcherForAgent))
         {
-            var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+            var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "helpdesk-01");
             if (agent != null)
             {
                 agent.WorkflowDefinitionId = dispatcherForAgent.Id;
@@ -1672,14 +1672,14 @@ public class WorkflowSeeder
                 await _context.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "Linked test-agent to customer dispatcher: {Name}", dispatcherForAgent.Name);
+                    "Linked helpdesk-01 to customer dispatcher: {Name}", dispatcherForAgent.Name);
             }
         }
     }
 
     private async Task<Agent> EnsureTestAgentExistsAsync()
     {
-        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "test-agent");
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Name == "helpdesk-01");
         if (agent != null) return agent;
 
         // Get service accounts for LLM and ServiceNow (if they exist)
@@ -1690,9 +1690,9 @@ public class WorkflowSeeder
 
         agent = new Agent
         {
-            Name = "test-agent",
-            DisplayName = "Test Helpdesk Agent",
-            Description = "Test agent for development and validation",
+            Name = "helpdesk-01",
+            DisplayName = "Helpdesk Dispatch Agent",
+            Description = "Primary helpdesk dispatch agent",
             IsEnabled = true,
             LlmServiceAccountId = llmAccount?.Id,
             ServiceNowAccountId = snowAccount?.Id,

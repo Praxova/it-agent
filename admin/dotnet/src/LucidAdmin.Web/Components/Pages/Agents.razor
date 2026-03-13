@@ -271,7 +271,7 @@
     {
         try
         {
-            var response = await Http.GetFromJsonAsync<List<ServiceAccountResponse>>("/api/service-accounts");
+            var response = await Http.GetFromJsonAsync<List<ServiceAccountResponse>>("/api/v1/service-accounts");
             if (response != null)
             {
                 _serviceAccounts = response;

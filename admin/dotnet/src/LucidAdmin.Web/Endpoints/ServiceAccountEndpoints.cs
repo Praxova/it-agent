@@ -368,47 +368,39 @@ public static class ServiceAccountEndpoints
             }
         }
 
-        // Build the test request
-        var testRequest = new
-        {
-            ProviderType = serviceAccount.Provider,
-            Domain = domain,
-            Server = server,
-            Username = username,
-            Password = password,
-            AdditionalConfig = config
-        };
-
+        // Call the tool server's health endpoint (GET /api/v1/health) which checks AD
+        // connectivity using the tool server's own credentials (fetched from the portal
+        // via BL-004). This endpoint is exempt from mTLS and JWT requirements.
         var client = httpClientFactory.CreateClient("ToolServer");
-        client.BaseAddress = new Uri(toolServer.Endpoint.TrimEnd('/'));
-        // AD authentication with invalid credentials can take 30-60s due to Kerberos/LDAP retries
-        client.Timeout = TimeSpan.FromSeconds(90);
+        var healthUrl = $"{toolServer.Endpoint.TrimEnd('/')}/api/v1/health";
+        client.Timeout = TimeSpan.FromSeconds(15);
 
         try
         {
-            var response = await client.PostAsJsonAsync("/api/v1/health/test-connection", testRequest);
+            var response = await client.GetAsync(healthUrl);
 
             if (response.IsSuccessStatusCode)
             {
-                var result = await response.Content.ReadFromJsonAsync<ToolServerTestConnectionResponse>();
-                if (result != null)
-                {
-                    Dictionary<string, object>? details = null;
-                    if (!string.IsNullOrEmpty(result.Details))
-                    {
-                        details = new Dictionary<string, object> { ["info"] = result.Details };
-                    }
+                var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                var adConnected = json.TryGetProperty("adConnected", out var adProp) && adProp.GetBoolean();
+                var message = json.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : null;
 
-                    return new TestConnectivityResponse(
-                        Status: result.Success ? "healthy" : "unhealthy",
-                        Message: result.Message,
-                        CheckedAt: result.TestedAt,
-                        Details: details
-                    );
-                }
+                return new TestConnectivityResponse(
+                    Status: adConnected ? "healthy" : "unhealthy",
+                    Message: adConnected
+                        ? $"AD connectivity verified via {toolServer.Name}"
+                        : $"Tool server reachable but AD connection failed: {message}",
+                    CheckedAt: DateTime.UtcNow,
+                    Details: new Dictionary<string, object>
+                    {
+                        ["toolServer"] = toolServer.Name,
+                        ["endpoint"] = toolServer.Endpoint,
+                        ["adConnected"] = adConnected,
+                        ["serviceAccount"] = username ?? "(portal-managed)"
+                    }
+                );
             }
 
-            var errorContent = await response.Content.ReadAsStringAsync();
             return new TestConnectivityResponse(
                 Status: "unhealthy",
                 Message: $"Tool server returned error: {response.StatusCode}",
@@ -416,7 +408,7 @@ public static class ServiceAccountEndpoints
                 Details: new Dictionary<string, object>
                 {
                     ["statusCode"] = (int)response.StatusCode,
-                    ["error"] = errorContent
+                    ["endpoint"] = toolServer.Endpoint
                 }
             );
         }
@@ -424,13 +416,9 @@ public static class ServiceAccountEndpoints
         {
             return new TestConnectivityResponse(
                 Status: "unhealthy",
-                Message: $"Tool server request timed out after 90 seconds",
+                Message: $"Tool server health check timed out",
                 CheckedAt: DateTime.UtcNow,
-                Details: new Dictionary<string, object>
-                {
-                    ["endpoint"] = toolServer.Endpoint,
-                    ["error"] = "The AD connectivity test took too long. This can happen with invalid credentials or unreachable domain controllers."
-                }
+                Details: new Dictionary<string, object> { ["endpoint"] = toolServer.Endpoint }
             );
         }
         catch (HttpRequestException ex)
